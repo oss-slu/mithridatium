@@ -41,10 +41,14 @@ def get_device(device_index=0):
     return model'''
 
 
-def run_mmbd(model, configs):
+def run_mmbd(model, configs, device=None):
 
     random.seed()
-    device = get_device(0)
+    if device is None:
+        try:
+            device = next(model.parameters()).device
+        except StopIteration:
+            device = get_device(0)
 
     # Detection parameters
     NC = 10
@@ -55,12 +59,12 @@ def run_mmbd(model, configs):
     batch_size = 20
 
     # Load model
-    #model = load_resnet18_cifar10(args.model_dir, device)
+    model = model.to(device=device, dtype=torch.float32).eval()
     criterion = nn.CrossEntropyLoss()
 
     model.eval()
-    mean = torch.tensor(configs.get_mean(), device=device).view(1, 3, 1, 1)
-    std = torch.tensor(configs.get_std(), device=device).view(1, 3, 1, 1)
+    mean = torch.tensor(configs.get_mean(), device=device, dtype=torch.float32).view(1, 3, 1, 1)
+    std = torch.tensor(configs.get_std(),  device=device, dtype=torch.float32).view(1, 3, 1, 1)
 
     def lr_scheduler(iter_idx):
         lr = 1e-2
@@ -70,12 +74,13 @@ def run_mmbd(model, configs):
 
     res = []
     for t in range(10):
-        images = torch.rand([30, *configs.input_size], device=device, requires_grad=True)
+        images = torch.rand([30, *configs.input_size], device=device, dtype=torch.float32, requires_grad=True)
         last_loss = 1000.0
         labels = torch.full((len(images),), t, dtype=torch.long, device=device)
-        onehot_label = F.one_hot(labels, num_classes=NC)
+        onehot_label = F.one_hot(labels, num_classes=NC).to(device=device, dtype=torch.float32)
 
         optimizer = torch.optim.SGD([images], lr=1e-2, momentum=0.9)
+        
 
         for iter_idx in range(NSTEP):
             optimizer.zero_grad(set_to_none=True)
@@ -90,7 +95,10 @@ def run_mmbd(model, configs):
             optimizer.step()
 
             curr = float(loss.item())
+            if iter_idx % 50 == 0 or iter_idx == NSTEP - 1:
+                print(f"[MMBD]   Iter {iter_idx}/{NSTEP}, loss={curr:.4f}")
             if abs(last_loss - curr) / max(abs(last_loss), 1e-12) < 1e-5:
+                print(f"[MMBD]   Converged early at iter {iter_idx}")
                 break
             last_loss = curr
 
