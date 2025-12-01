@@ -1,0 +1,91 @@
+{
+  "name": "mithridatium",
+  "@context": "https://w3id.org/codemeta/3.0",
+  "applicationCategory": "Security and protection software",
+  "author": [
+    {
+      "affiliation": {
+        "name": "Saint Louis University",
+        "type": "Organization"
+      },
+      "email": "pelumi.oluwategbe@slu.edu",
+      "familyName": "Oluwategbe",
+      "id": "https://pelumi-tegbe.vercel.app/",
+      "givenName": "Pelumi",
+      "type": "Person"
+    },
+    {
+      "affiliation": {
+        "name": "Saint Louis University",
+        "type": "Organization"
+      },
+      "email": "will.phoenix@slu.edu",
+      "familyName": "Phoenix",
+      "id": "_:author_2",
+      "givenName": "William",
+      "type": "Person"
+    },
+    {
+      "affiliation": {
+        "name": "Saint Louis University",
+        "type": "Organization"
+      },
+      "email": "gustavo.lucca@slu.edu",
+      "familyName": "Lucca",
+      "id": "_:author_3",
+      "givenName": "Gustavo",
+      "type": "Person"
+    },
+    {
+      "affiliation": {
+        "name": "Saint Louis University",
+        "type": "Organization"
+      },
+      "email": "payton.guffey@slu.edu",
+      "familyName": "Guffey",
+      "id": "_:author_4",
+      "givenName": "Payton",
+      "type": "Person"
+    },
+    {
+      "roleName": "Team Lead",
+      "startDate": "2025-08-27",
+      "schema:author": "https://pelumi-tegbe.vercel.app/",
+      "type": "Role"
+    },
+    {
+      "roleName": "Developer",
+      "startDate": "2025-08-27",
+      "schema:author": "_:author_2",
+      "type": "Role"
+    },
+    {
+      "roleName": "Developer",
+      "startDate": "2025-08-27",
+      "schema:author": "_:author_3",
+      "type": "Role"
+    },
+    {
+      "roleName": "Developer",
+      "startDate": "2025-08-27",
+      "schema:author": "_:author_4",
+      "type": "Role"
+    }
+  ],
+  "codeRepository": "https://github.com/oss-slu/mithridatium",
+  "dateCreated": "2025-08-28",
+  "description": "Mithridatium is a research-driven project aimed at detecting backdoors and data poisoning in downloaded pretrained models or pipelines (e.g., from Hugging Face).   Our goal is to provide a modular, command-line tool that helps researchers and engineers trust the models they use.",
+  "developmentStatus": "active",
+  "issueTracker": "https://github.com/oss-slu/mithridatium/issues",
+  "keywords": [
+    "data privacy",
+    "machine-learning",
+    "python",
+    "security"
+  ],
+  "license": "https://spdx.org/licenses/MIT-Modern-Variant",
+  "programmingLanguage": [
+    "Python"
+  ],
+  "type": "SoftwareSourceCode"
+}
