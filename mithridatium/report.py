@@ -71,6 +71,18 @@ def render_summary(report: Dict[str, Any]) -> str:
     if ("entropies" in r):
         #STRIP Report
         lines = [head]
+        mean_e = r.get("entropy_mean")
+        min_e  = r.get("entropy_min")
+        max_e  = r.get("entropy_max")
+
+        if isinstance(mean_e, (int, float)):
+            lines.append(f"- entropy_mean:      {mean_e:.6f}\n")
+        if isinstance(min_e, (int, float)):
+            lines.append(f"- entropy_min:       {min_e:.6f}\n")
+        if isinstance(max_e, (int, float)):
+            lines.append(f"- entropy_max:       {max_e:.6f}\n")
+
+
         num_bases = r.get("num_bases")
         if num_bases is not None:
             lines.append(f"- num_bases: {num_bases}\n")
