@@ -48,7 +48,7 @@
       "type": "Person"
     },
     {
-      "roleName": "Team Lead",
+      "roleName": "Technical Lead",
       "startDate": "2025-08-27",
       "schema:author": "https://pelumi-tegbe.vercel.app/",
       "type": "Role"
