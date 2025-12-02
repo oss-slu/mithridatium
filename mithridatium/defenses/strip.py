@@ -96,7 +96,22 @@ def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 1
             entropies_list.append(mean_entropy)
 
     return {
+        "defense": "strip",
         "entropies": entropies_list,
+<<<<<<< Updated upstream
         "num_bases": num_bases,
         "num_perturbations": num_perturbations
+=======
+        "statistics": {
+            "entropy_mean": entropy_mean,
+            "entropy_min": entropy_min,
+            "entropy_max": entropy_max,
+        },
+        "parameters": {
+            "num_bases": num_bases,
+            "num_perturbations": num_perturbations,
+        },
+        "dataset": str(configs.get_dataset()),
+>>>>>>> Stashed changes
     }
+

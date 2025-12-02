@@ -68,9 +68,10 @@ def render_summary(report: Dict[str, Any]) -> str:
         return "".join(lines).rstrip()
 
     
-    if ("entropies" in r):
+    if r.get("defense") == "strip":
         #STRIP Report
         lines = [head]
+<<<<<<< Updated upstream
         num_bases = r.get("num_bases")
         if num_bases is not None:
             lines.append(f"- num_bases: {num_bases}\n")
@@ -79,10 +80,31 @@ def render_summary(report: Dict[str, Any]) -> str:
             lines.append(f"- num_perturbations: {num_perturbations}\n")
         entropies = r.get("entropies")
         if entropies is not None:
+=======
+        # Parameters
+        params = r.get("parameters", {})
+        lines.append(f"- num_bases:         {params.get('num_bases')}\n")
+        lines.append(f"- num_perturbations: {params.get('num_perturbations')}\n")
+
+        # Statistics
+        stats = r.get("statistics", {})
+        lines.append(f"- entropy_mean:      {stats.get('entropy_mean')}\n")
+        lines.append(f"- entropy_min:       {stats.get('entropy_min')}\n")
+        lines.append(f"- entropy_max:       {stats.get('entropy_max')}\n")
+
+        # Dataset
+        ds = r.get("dataset")
+        lines.append(f"- dataset:           {ds}\n")
+
+        # Raw entropies
+        ent = r.get("entropies")
+        if ent:
+>>>>>>> Stashed changes
             lines.append(f"- entropies:\n")
-            for index, entropy in enumerate(entropies):
-                lines.append(f"#{index}: {entropy}\n")
-            return "".join(lines).rstrip()
+            for idx, e in enumerate(ent):
+                lines.append(f"  #{idx}: {e}\n")
+
+        return "".join(lines).rstrip()
     
     # Fallback for legacy/ reports
     return (
