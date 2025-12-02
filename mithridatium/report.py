@@ -50,8 +50,10 @@ def render_summary(report: Dict[str, Any]) -> str:
         f"- model_path:        {report.get('model_path')}\n"
     )
 
+    defense = report.get("defense")
+
     # Prefer MMBD-style fields when present
-    if ("verdict" in r) or ("p_value" in r) or ("per_class_scores" in r):
+    if defense == "mmbd":
         lines = [head]
         verdict = r.get("verdict")
         if verdict is not None:
@@ -65,12 +67,25 @@ def render_summary(report: Dict[str, Any]) -> str:
         pcs = r.get("per_class_scores")
         if isinstance(pcs, list):
             lines.append(f"- per_class_scores:  {len(pcs)} classes\n")
+        tev = r.get("top_eigenvalue")
+        if isinstance(tev, (int, float)):
+            lines.append(f"- top_eigenvalue:    {tev}\n")
         return "".join(lines).rstrip()
 
-    
-    if r.get("defense") == "strip":
+    if defense == "strip":
         #STRIP Report
         lines = [head]
+
+        # Verdict
+        verdict1 = r.get("verdict")
+        if verdict1 is not None:
+            lines.append(f"- verdict:           {verdict1}\n")
+
+        # Thresholds
+        thr = r.get("thresholds", {}).get("entropy_mean_threshold")
+        if thr is not None:
+            lines.append(f"- entropy_thr:       {thr}\n")
+
         # Parameters
         params = r.get("parameters", {})
         lines.append(f"- num_bases:         {params.get('num_bases')}\n")
@@ -92,16 +107,6 @@ def render_summary(report: Dict[str, Any]) -> str:
             lines.append(f"- entropies:\n")
             for idx, e in enumerate(ent):
                 lines.append(f"  #{idx}: {e}\n")
-
-        # Verdict
-        verdict = r.get("verdict")
-        if verdict is not None:
-            lines.append(f"- verdict:           {verdict}\n")
-
-        # Thresholds
-        thr = r.get("thresholds", {}).get("entropy_mean_threshold")
-        if thr is not None:
-            lines.append(f"- entropy_thr:       {thr}\n")
 
         return "".join(lines).rstrip()
     

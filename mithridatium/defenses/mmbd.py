@@ -85,7 +85,7 @@ def run_mmbd(model, configs, device=None):
 
     res = []
     for t in range(N_CLASSES_TO_PROBE):
-        print(f"[mmbd] optimizing class {t+1}/{N_CLASSES_TO_PROBE}…", flush=True)
+        print(f"[MMBD] optimizing class {t+1}/{N_CLASSES_TO_PROBE}…", flush=True)
         images = torch.rand([NUM_IMAGES, *configs.input_size], device=device, dtype=torch.float32, requires_grad=True)
         last_loss = 1000.0
         labels = torch.full((len(images),), t, dtype=torch.long, device=device)
@@ -163,7 +163,7 @@ def run_mmbd(model, configs, device=None):
         "per_class_scores": stats.tolist(),
         "normalized_scores": score.tolist(),
         "p_value": float(pv),
-        "suspected_backdoor": verdict,
+        "verdict": verdict,
         # "suspected_target": (int(ind_max) if verdict == "attack" else None),
         "thresholds": thresholds,
         "parameters": parameters,
