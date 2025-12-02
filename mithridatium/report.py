@@ -71,16 +71,6 @@ def render_summary(report: Dict[str, Any]) -> str:
     if r.get("defense") == "strip":
         #STRIP Report
         lines = [head]
-<<<<<<< Updated upstream
-        num_bases = r.get("num_bases")
-        if num_bases is not None:
-            lines.append(f"- num_bases: {num_bases}\n")
-        num_perturbations = r.get("num_perturbations")
-        if num_perturbations is not None:
-            lines.append(f"- num_perturbations: {num_perturbations}\n")
-        entropies = r.get("entropies")
-        if entropies is not None:
-=======
         # Parameters
         params = r.get("parameters", {})
         lines.append(f"- num_bases:         {params.get('num_bases')}\n")
@@ -99,10 +89,19 @@ def render_summary(report: Dict[str, Any]) -> str:
         # Raw entropies
         ent = r.get("entropies")
         if ent:
->>>>>>> Stashed changes
             lines.append(f"- entropies:\n")
             for idx, e in enumerate(ent):
                 lines.append(f"  #{idx}: {e}\n")
+
+        # Verdict
+        verdict = r.get("verdict")
+        if verdict is not None:
+            lines.append(f"- verdict:           {verdict}\n")
+
+        # Thresholds
+        thr = r.get("thresholds", {}).get("entropy_mean_threshold")
+        if thr is not None:
+            lines.append(f"- entropy_thr:       {thr}\n")
 
         return "".join(lines).rstrip()
     

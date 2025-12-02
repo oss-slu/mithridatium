@@ -133,10 +133,10 @@ def run_mmbd(model, configs, device=None):
 
     shape, loc, scale = gamma.fit(r_null)
     pv = 1 - pow(gamma.cdf(r_eval, a=shape, loc=loc, scale=scale), len(r_null)+1)
-    verdict = "no_attack" if pv > 0.05 else "attack"
+    verdict = "Likely clean" if pv > 0.05 else "Likely backdoored"
 
-    suspected_backdoor = (verdict == "attack")
-    num_flagged = 1 if suspected_backdoor else 0
+    # suspected_backdoor = (verdict == "attack")
+    # num_flagged = 1 if suspected_backdoor else 0
     top_eigenvalue = float(r_eval)
 
 
@@ -163,14 +163,14 @@ def run_mmbd(model, configs, device=None):
         "per_class_scores": stats.tolist(),
         "normalized_scores": score.tolist(),
         "p_value": float(pv),
-        "verdict": verdict,
-        "suspected_target": (int(ind_max) if verdict == "attack" else None),
+        "suspected_backdoor": verdict,
+        # "suspected_target": (int(ind_max) if verdict == "attack" else None),
         "thresholds": thresholds,
         "parameters": parameters,
         "dataset": configs.get_dataset(),
 
-        "suspected_backdoor": suspected_backdoor,
-        "num_flagged": int(num_flagged),
+        # "suspected_backdoor": suspected_backdoor,
+        # "num_flagged": int(num_flagged),
         "top_eigenvalue": float(top_eigenvalue),
     }
 
