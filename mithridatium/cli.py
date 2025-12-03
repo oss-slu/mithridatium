@@ -13,7 +13,7 @@ from mithridatium.loader import validate_model
 
 
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 DEFENSES = {"mmbd", "strip"}
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)

@@ -102,7 +102,7 @@ mithridatium show-report -f reports/spectral.json --mode summary
 
 ```json
 {
-	"mithridatium_version": "0.1.0",
+	"mithridatium_version": "0.1.1",
 	"model_path": "models/resnet18_clean.pth",
 	"defense": "spectral",
 	"dataset": "cifar10",
