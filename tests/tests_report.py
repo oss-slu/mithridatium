@@ -150,7 +150,7 @@ def test_force_overwrite(tmp_path):
 
 def test_build_report_schema_helper():
     res = {"suspected_backdoor": True, "num_flagged": 500, "top_eigenvalue": 42.3}
-    rep = rpt.build_report("models/resnet18_bd.pth", "mmbd", "cifar10", "0.1.0", res)
+    rep = rpt.build_report("models/resnet18_bd.pth", "mmbd", "cifar10", "0.1.1", res)
     for k in ("mithridatium_version", "model_path", "defense", "dataset", "results"):
         assert k in rep
     r = rep["results"]

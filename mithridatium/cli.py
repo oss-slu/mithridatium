@@ -13,7 +13,7 @@ from mithridatium.loader import validate_model
 
 
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 DEFENSES = {"mmbd", "strip"}
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
@@ -175,11 +175,13 @@ def detect(
     mdl = loader.load_weights(mdl, str(p))
 
     # 6) Validate model BEFORE any defense runs
-    cfg = utils.load_preprocess_config(str(p))  # has input_size etc.
+    # cfg = utils.load_preprocess_config(str(p))  # has input_size etc.
+    cfg = utils.get_preprocess_config(data)  # has input_size etc.
 
     try:
         print("[cli] validating model (architecture + dry forward)…")
-        validate_model(mdl, arch, cfg.input_size)
+        input_size = cfg.get_input_size() 
+        validate_model(mdl, arch, input_size)
         print("[cli] model validation OK")
     except Exception as ex:
         typer.secho(
@@ -202,7 +204,7 @@ def detect(
             # Move model to appropriate device for MMBD
             results = run_mmbd(mdl, config)
         elif d == "strip":
-            results = strip_scores(mdl, config)
+            results = strip_scores(mdl, test_loader, config, device=device)
         else:
             results = {"suspected_backdoor": False, "num_flagged": 0, "top_eigenvalue": 0.0}
 

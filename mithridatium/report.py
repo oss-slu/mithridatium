@@ -20,7 +20,7 @@ def build_report(
     model_path: str,
     defense: str,
     dataset: str,
-    version: str = "0.1.0",
+    version: str = "0.1.1",
     results: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Single source of truth for a report payload."""

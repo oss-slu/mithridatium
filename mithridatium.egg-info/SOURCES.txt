@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 mithridatium/__init__.py
@@ -14,6 +15,11 @@ mithridatium.egg-info/requires.txt
 mithridatium.egg-info/top_level.txt
 mithridatium/defenses/__init__.py
 mithridatium/defenses/mmbd.py
+mithridatium/defenses/strip.py
+tests/test_dataloader_normalization.py
 tests/test_evaluator.py
 tests/test_preprocess_config.py
+tests/test_strip_entropy.py
+tests/test_strip_scores.py
+tests/test_utils_configs.py
 tests/tests_report.py

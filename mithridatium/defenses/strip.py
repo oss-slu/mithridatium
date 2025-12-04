@@ -2,8 +2,6 @@ import torch
 import random
 import numpy as np
 from typing import Dict, Any, List
-
-from mithridatium import utils
 from mithridatium.defenses.mmbd import get_device
 
 def prediction_entropy(logits: torch.Tensor) -> torch.Tensor:
@@ -19,7 +17,14 @@ def prediction_entropy(logits: torch.Tensor) -> torch.Tensor:
     p = torch.nn.Softmax(dim=1)(logits) + 1e-8
     return (-p * p.log()).sum(1)
 
-def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 16, device=None, entropy_mean_threshold=0.45 ) -> Dict[str, Any]:
+def strip_scores(
+        model, 
+        test_loader, 
+        configs, 
+        num_bases: int = 32, 
+        num_perturbations: int = 16, 
+        device=None
+        ) -> Dict[str, Any]:
     """
     Computes STRIP-style entropy scores.
 
@@ -40,15 +45,6 @@ def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 1
             device = get_device(0)
 
     model = model.to(device=device, dtype=torch.float32).eval()
-
-    # -------- Build test dataloader ----------
-    # configs already contains dataset name, batch size, transforms, etc.
-    test_loader, _ = utils.dataloader_for(
-        configs.get_dataset(),
-        split="test",
-        batch_size=256
-    )
-
 
     # Collect all images from the dataloader to use as a pool for mixing
     all_images = []

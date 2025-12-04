@@ -181,5 +181,5 @@ def run_mmbd(model, configs, device=None):
         defense="MMBD",
         out_path=args.report_out,
         details=results,
-        version="0.1.0"
+        version="0.1.1"
     )'''
