@@ -95,6 +95,12 @@ def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 1
             # Aggregate entropy for this base sample
             mean_entropy = entropies.mean().item()
             entropies_list.append(mean_entropy)
+    if not entropies_list:
+        raise ValueError("No entropies were computed.")
+    
+    entropy_mean = float(np.mean(entropies_list))
+    entropy_min  = float(np.min(entropies_list))
+    entropy_max  = float(np.max(entropies_list))
 
     if not entropies_list:
         raise ValueError("No entropies were computed.")
