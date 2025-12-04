@@ -1,5 +1,6 @@
 import torch
 import random
+import numpy as np
 from typing import Dict, Any, List
 from mithridatium.defenses.mmbd import get_device
 
@@ -90,9 +91,18 @@ def strip_scores(
             # Aggregate entropy for this base sample
             mean_entropy = entropies.mean().item()
             entropies_list.append(mean_entropy)
+    if not entropies_list:
+        raise ValueError("No entropies were computed.")
+    
+    entropy_mean = float(np.mean(entropies_list))
+    entropy_min  = float(np.min(entropies_list))
+    entropy_max  = float(np.max(entropies_list))
 
     return {
         "entropies": entropies_list,
         "num_bases": num_bases,
+        "entropy_mean": entropy_mean,
+        "entropy_min": entropy_min,
+        "entropy_max": entropy_max,
         "num_perturbations": num_perturbations
     }
