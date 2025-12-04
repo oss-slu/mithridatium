@@ -6,6 +6,8 @@ from typing import Dict, Any, List
 from mithridatium import utils
 from mithridatium.defenses.mmbd import get_device
 
+#comment
+
 def prediction_entropy(logits: torch.Tensor) -> torch.Tensor:
     """
     Returns per-sample entropy over the softmax distribution.
