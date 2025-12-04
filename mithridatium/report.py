@@ -50,8 +50,10 @@ def render_summary(report: Dict[str, Any]) -> str:
         f"- model_path:        {report.get('model_path')}\n"
     )
 
+    defense = report.get("defense")
+
     # Prefer MMBD-style fields when present
-    if ("verdict" in r) or ("p_value" in r) or ("per_class_scores" in r):
+    if defense == "mmbd":
         lines = [head]
         verdict = r.get("verdict")
         if verdict is not None:
@@ -65,36 +67,48 @@ def render_summary(report: Dict[str, Any]) -> str:
         pcs = r.get("per_class_scores")
         if isinstance(pcs, list):
             lines.append(f"- per_class_scores:  {len(pcs)} classes\n")
+        tev = r.get("top_eigenvalue")
+        if isinstance(tev, (int, float)):
+            lines.append(f"- top_eigenvalue:    {tev}\n")
         return "".join(lines).rstrip()
 
-    
-    if ("entropies" in r):
+    if defense == "strip":
         #STRIP Report
         lines = [head]
-        mean_e = r.get("entropy_mean")
-        min_e  = r.get("entropy_min")
-        max_e  = r.get("entropy_max")
 
-        if isinstance(mean_e, (int, float)):
-            lines.append(f"- entropy_mean:      {mean_e:.6f}\n")
-        if isinstance(min_e, (int, float)):
-            lines.append(f"- entropy_min:       {min_e:.6f}\n")
-        if isinstance(max_e, (int, float)):
-            lines.append(f"- entropy_max:       {max_e:.6f}\n")
+        # Verdict
+        verdict1 = r.get("verdict")
+        if verdict1 is not None:
+            lines.append(f"- verdict:           {verdict1}\n")
 
+        # Thresholds
+        thr = r.get("thresholds", {}).get("entropy_mean_threshold")
+        if thr is not None:
+            lines.append(f"- entropy_thr:       {thr}\n")
 
-        num_bases = r.get("num_bases")
-        if num_bases is not None:
-            lines.append(f"- num_bases: {num_bases}\n")
-        num_perturbations = r.get("num_perturbations")
-        if num_perturbations is not None:
-            lines.append(f"- num_perturbations: {num_perturbations}\n")
-        entropies = r.get("entropies")
-        if entropies is not None:
+        # Parameters
+        params = r.get("parameters", {})
+        lines.append(f"- num_bases:         {params.get('num_bases')}\n")
+        lines.append(f"- num_perturbations: {params.get('num_perturbations')}\n")
+
+        # Statistics
+        stats = r.get("statistics", {})
+        lines.append(f"- entropy_mean:      {stats.get('entropy_mean')}\n")
+        lines.append(f"- entropy_min:       {stats.get('entropy_min')}\n")
+        lines.append(f"- entropy_max:       {stats.get('entropy_max')}\n")
+
+        # Dataset
+        ds = r.get("dataset")
+        lines.append(f"- dataset:           {ds}\n")
+
+        # Raw entropies
+        ent = r.get("entropies")
+        if ent:
             lines.append(f"- entropies:\n")
-            for index, entropy in enumerate(entropies):
-                lines.append(f"#{index}: {entropy}\n")
-            return "".join(lines).rstrip()
+            for idx, e in enumerate(ent):
+                lines.append(f"  #{idx}: {e}\n")
+
+        return "".join(lines).rstrip()
     
     # Fallback for legacy/ reports
     return (

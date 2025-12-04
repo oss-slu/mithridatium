@@ -19,7 +19,7 @@ def prediction_entropy(logits: torch.Tensor) -> torch.Tensor:
     p = torch.nn.Softmax(dim=1)(logits) + 1e-8
     return (-p * p.log()).sum(1)
 
-def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 16, device=None) -> Dict[str, Any]:
+def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 16, device=None, entropy_mean_threshold=0.45 ) -> Dict[str, Any]:
     """
     Computes STRIP-style entropy scores.
 
@@ -102,11 +102,34 @@ def strip_scores(model, configs, num_bases: int = 32, num_perturbations: int = 1
     entropy_min  = float(np.min(entropies_list))
     entropy_max  = float(np.max(entropies_list))
 
+    if not entropies_list:
+        raise ValueError("No entropies were computed.")
+
+    entropy_mean = float(np.mean(entropies_list))
+    entropy_min  = float(np.min(entropies_list))
+    entropy_max  = float(np.max(entropies_list))
+
+    if entropy_mean > entropy_mean_threshold:
+        verdict = "likely backdoored"
+    else:
+        verdict = "likely clean"
+
     return {
+        "defense": "strip",
         "entropies": entropies_list,
-        "num_bases": num_bases,
-        "entropy_mean": entropy_mean,
-        "entropy_min": entropy_min,
-        "entropy_max": entropy_max,
-        "num_perturbations": num_perturbations
+        "statistics": {
+            "entropy_mean": entropy_mean,
+            "entropy_min": entropy_min,
+            "entropy_max": entropy_max,
+        },
+        "parameters": {
+            "num_bases": num_bases,
+            "num_perturbations": num_perturbations,
+        },
+        "dataset": str(configs.get_dataset()),
+        "verdict": verdict,
+        "thresholds": {
+            "entropy_mean_threshold": entropy_mean_threshold
+        }
     }
+
