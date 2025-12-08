@@ -13,6 +13,7 @@ dependencies = [
     "torch",    
     "torchvision", 
     "jsonschema",  
+    "scipy"
 ]
 
 [tool.setuptools.packages.find]

@@ -138,6 +138,44 @@ def get_preprocess_config(dataset: str) -> PreprocessConfig:
         dataset=dataset_lower
     )
 
+def load_preprocess_config(model_path: str) -> PreprocessConfig:
+    """
+    DEPRECATED: Load preprocessing config from model's JSON sidecar file.
+    
+    This function is deprecated. Use get_preprocess_config(dataset) instead,
+    which provides canonical preprocessing configs based on dataset name.
+    
+    Args:
+        model_path: Path to the model checkpoint file.
+        
+    Returns:
+        PreprocessConfig with loaded or default values.
+    """
+    import warnings
+    warnings.warn(
+        "load_preprocess_config() is deprecated. Use get_preprocess_config(dataset) "
+        "with canonical dataset configs instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    card_path = Path(model_path).with_suffix(".json")
+    if not card_path.exists():
+        print(f"[warn] No model sidecar found at {card_path}, using CIFAR-10 defaults")
+        return PreprocessConfig()
+    
+    data = json.loads(card_path.read_text())
+    pp = data.get("preprocess", {})
+    return PreprocessConfig(
+        input_size=tuple(pp.get("input_size", (32, 32))),
+        channels_first=pp.get("channels_first", True),
+        value_range=tuple(pp.get("value_range", (0.0, 1.0))),
+        mean=tuple(pp["mean"]),
+        std=tuple(pp["std"]),
+        normalize=pp.get("normalize", True),
+        ops=list(pp.get("ops", [])),
+    )
+
 def dataloader_for(dataset: str, split: str, batch_size: int = 256):
     """
     Create a dataloader for the specified dataset using canonical transforms.
