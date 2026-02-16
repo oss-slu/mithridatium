@@ -1,0 +1,21 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"type": "object",
+	"required": [
+		"mithridatium_version",
+		"timestamp_utc",
+		"model_path",
+		"defense",
+		"dataset",
+		"results"
+	],
+	"properties": {
+		"mithridatium_version": { "type": "string" },
+		"timestamp_utc": { "type": "string" },
+		"model_path": { "type": "string" },
+		"defense": { "type": "string" },
+		"dataset": { "type": "string" },
+		"results": { "type": "object" }
+	},
+	"additionalProperties": true
+}

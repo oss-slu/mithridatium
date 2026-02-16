@@ -1,0 +1,32 @@
+title: mithridatium
+authors:
+  - given-names: Pelumi
+    family-names: Oluwategbe
+    email: pelumi.oluwategbe@slu.edu
+    affiliation: Saint Louis University
+  - given-names: William
+    family-names: Phoenix
+    email: will.phoenix@slu.edu
+    affiliation: Saint Louis University
+  - given-names: Gustavo
+    family-names: Lucca
+    email: gustavo.lucca@slu.edu
+    affiliation: Saint Louis University
+  - given-names: Payton
+    family-names: Guffey
+    email: payton.guffey@slu.edu
+    affiliation: Saint Louis University
+cff-version: 1.2.0
+message: If you use this software, please cite it using the metadata from this file.
+type: software
+abstract: Mithridatium is a research-driven project aimed at detecting backdoors
+  and data poisoning in downloaded pretrained models or pipelines (e.g., from
+  Hugging Face).   Our goal is to provide a modular, command-line tool that
+  helps researchers and engineers trust the models they use.
+keywords:
+  - data privacy
+  - machine-learning
+  - python
+  - security
+license: MIT-Modern-Variant
+repository-code: https://github.com/oss-slu/mithridatium

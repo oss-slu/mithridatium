@@ -7,7 +7,7 @@ Thank you for checking out **Mithridatium**! We are excited to have you here. Th
 ⚠️ **Note:**
 
 - Issues labeled **`internal team`** are reserved for the project’s assigned developers and will not be accepted from outside contributors.
-- Once the framework is stable, we will open up selected issues for external contributors with labels such as **`good first issue`** or **`help wanted`**.
+- **`good first issue`** and **`help wanted`** indicate tasks that are open to the community.
 
 We encourage you to watch this repository if you’d like to stay updated!
 

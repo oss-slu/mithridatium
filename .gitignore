@@ -3,6 +3,7 @@
 venv/
 env/
 .env/
+mith/
 
 # Python cache
 __pycache__/
@@ -18,7 +19,8 @@ dist/
 # Data & models
 data/
 models/
-reports/*.json
+/reports/*
+!/reports/report_schema.json
 
 # Notebooks & logs
 *.ipynb_checkpoints/
@@ -36,3 +38,5 @@ Thumbs.db
 .coverage
 .pytest_cache/
 .mypy_cache/
+
+results.npy

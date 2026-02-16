@@ -1,0 +1,12 @@
+{
+  "mithridatium_version": "0.1.0",
+  "timestamp_utc": "2025-01-01T00:00:00Z",
+  "model_path": "models/resnet18_poison.pth",
+  "defense": "mmbd",
+  "dataset": "cifar10",
+  "results": {
+    "suspected_backdoor": true,
+    "num_flagged": 500,
+    "top_eigenvalue": 42.3
+  }
+}

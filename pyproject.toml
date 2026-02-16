@@ -4,11 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mithridatium"
-version = "0.1.0"
+version = "0.1.1"
 requires-python = ">=3.10"
 description = "Framework for verifying integrity of pretrained AI models"
 readme = "README.md"
+dependencies = [
+    "typer>=0.12",
+    "torch",    
+    "torchvision", 
+    "jsonschema",  
+    "scipy"
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["mithridatium*"]
+
+[project.scripts]
+mithridatium = "mithridatium.cli:app"
