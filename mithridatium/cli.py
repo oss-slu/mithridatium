@@ -166,14 +166,11 @@ def detect(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
     
-        # 4) Build model arch
-    print(f"[cli] building model architecture '{arch}'…")
-    mdl, feature_module = loader.build_model(arch, num_classes=10)
+    # 4) Auto-detect architecture variant from checkpoint and build + load
+    print(f"[cli] detecting architecture and loading model…")
+    mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=10)
 
-    # 5) Load weights from checkpoint
-    print("[cli] loading weights…")
-    mdl = loader.load_weights(mdl, str(p))
-
+    
     # 6) Validate model BEFORE any defense runs
     # cfg = utils.load_preprocess_config(str(p))  # has input_size etc.
     cfg = utils.get_preprocess_config(data)  # has input_size etc.
