@@ -281,10 +281,10 @@ def main(args):
         f"Output Path = {args.output_path}\n",
         f"Device = {args.device}\n")
     
+    best_score = float("-inf")
     best_val_acc = 0.0
-    best_model_state = None
-
     best_epoch_asr = None
+    best_model_state = None
 
     for epoch in range(epochs):
         model.train()
@@ -302,11 +302,25 @@ def main(args):
             epoch_asr = evaluate_asr(model, asr_loader, device, args.target_class)
             print(f"ASR: {epoch_asr:.1f}%")
 
-        if val_acc > best_val_acc:
+        # Model selection criterion:
+        # - Clean training: use val_acc
+        # - Backdoor training: maximize (val_acc + ASR/100)
+        epoch_score = float(val_acc)
+        if epoch_asr is not None:
+            epoch_score = float(val_acc) + float(epoch_asr) / 100.0
+
+        if epoch_score > best_score:
+            best_score = epoch_score
             best_val_acc = val_acc
             best_model_state = model.state_dict()
             best_epoch_asr = epoch_asr
-            print(f"New best model found at epoch {epoch+1} with val_acc: {val_acc:.3f}")
+            if epoch_asr is not None:
+                print(
+                    "New best model found at epoch "
+                    f"{epoch+1} with score={best_score:.3f} (val_acc={val_acc:.3f}, ASR={epoch_asr:.1f}%)"
+                )
+            else:
+                print(f"New best model found at epoch {epoch+1} with val_acc: {val_acc:.3f}")
 
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     torch.save(best_model_state, args.output_path)
@@ -318,10 +332,15 @@ def main(args):
     if asr_loader is not None:
         final_asr = evaluate_asr(model, asr_loader, device, args.target_class)
 
+    final_score = float(final_val_acc)
+    if final_asr is not None:
+        final_score = float(final_val_acc) + float(final_asr) / 100.0
+
     print(
         f"Best model saved to {args.output_path} "
         f"with clean_val_acc: {final_val_acc:.3f}"
         + (f"  ASR: {final_asr:.1f}%" if final_asr is not None else "")
+        + (f"  score: {final_score:.3f}" if final_asr is not None else "")
     )
 
 if __name__ == "__main__":
