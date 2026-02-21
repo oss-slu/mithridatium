@@ -7,6 +7,8 @@ import argparse
 import random
 import os
 
+from mithridatium.attacks.semantic import SemanticBackdoorDataset, WhiteObjectHeuristic
+
 class BadNetDataset(Dataset):
 
     def __init__(self, dataset, poison_rate, target_class, trigger_size, trigger_pos, mode='train', pre_transform=None, post_transform=None):
@@ -203,6 +205,55 @@ def main(args):
 
         train_dataset = poisoned_train
 
+    elif args.dataset.lower() == "semantic":
+        predicate = WhiteObjectHeuristic(
+            v_min=args.white_v_min,
+            s_max=args.white_s_max,
+            frac_min=args.white_frac_min,
+        )
+
+        semantic_train = SemanticBackdoorDataset(
+            dataset=clean_train_ds,
+            poison_rate=args.train_poison_rate,
+            source_class=args.source_class,
+            target_class=args.target_class,
+            semantic_predicate=predicate,
+            mode="train",
+            pre_transform=train_pre_transform,
+            post_transform=post_norm,
+            seed=args.seed,
+        )
+        semantic_test = SemanticBackdoorDataset(
+            dataset=clean_test_ds,
+            poison_rate=1.0,
+            source_class=args.source_class,
+            target_class=args.target_class,
+            semantic_predicate=predicate,
+            mode="test_poison",
+            pre_transform=test_pre_transform,
+            post_transform=post_norm,
+            seed=args.seed,
+        )
+
+        if args.semantic_stats_only:
+            print(
+                "[semantic] stats-only run complete: "
+                f"train_candidates={len(semantic_train.candidate_indices)} "
+                f"train_poisoned={len(semantic_train.poisoned_indices)} "
+                f"test_candidates={len(semantic_test.candidate_indices)}"
+            )
+            return
+
+        asr_loader = DataLoader(
+            semantic_test,
+            batch_size=args.eval_batch_size,
+            shuffle=False,
+            num_workers=2,
+            pin_memory=use_pin,
+        )
+
+        train_dataset = semantic_train
+
     else:
         train_dataset = datasets.CIFAR10(
             "./data", train=True, download=True,
@@ -233,6 +284,8 @@ def main(args):
     best_val_acc = 0.0
     best_model_state = None
 
+    best_epoch_asr = None
+
     for epoch in range(epochs):
         model.train()
         for x, y in train_loader:
@@ -244,18 +297,32 @@ def main(args):
         val_loss, val_acc = evaluate(model, test_loader, device, criterion)
         print(f"Epoch {epoch+1}/{epochs} - val_loss: {val_loss:.4f}  val_acc: {val_acc:.3f}")
 
+        epoch_asr = None
+        if asr_loader is not None:
+            epoch_asr = evaluate_asr(model, asr_loader, device, args.target_class)
+            print(f"ASR: {epoch_asr:.1f}%")
+
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_model_state = model.state_dict()
+            best_epoch_asr = epoch_asr
             print(f"New best model found at epoch {epoch+1} with val_acc: {val_acc:.3f}")
-
-        if asr_loader is not None:
-            asr = evaluate_asr(model, asr_loader, device, args.target_class)
-            print(f"ASR: {asr:.1f}%")
 
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     torch.save(best_model_state, args.output_path)
-    print(f"Best model saved to {args.output_path} with val_acc: {best_val_acc:.3f}")
+
+    # Re-evaluate the best checkpoint for stable reporting
+    model.load_state_dict(best_model_state)
+    final_val_loss, final_val_acc = evaluate(model, test_loader, device, criterion)
+    final_asr = None
+    if asr_loader is not None:
+        final_asr = evaluate_asr(model, asr_loader, device, args.target_class)
+
+    print(
+        f"Best model saved to {args.output_path} "
+        f"with clean_val_acc: {final_val_acc:.3f}"
+        + (f"  ASR: {final_asr:.1f}%" if final_asr is not None else "")
+    )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -266,11 +333,18 @@ if __name__ == "__main__":
     parser.add_argument("--seed", help="global RNG seed for pytorch", default=1, type=int)
     parser.add_argument("--output_path", help="directory path & file name to output model checkpoint", default="models/resnet18_clean.pth", type=str)
     parser.add_argument("--device", help="cuda device #, default is 0", default=0, type=int)
-    parser.add_argument("--dataset", choices=["clean","poison"], default="clean", help="Use clean or poison dataset")
+    parser.add_argument("--dataset", choices=["clean", "poison", "semantic"], default="clean", help="Use clean, poison, or semantic dataset")
     parser.add_argument("--train_poison_rate", help="decimal representing what proportion of training dataset to poison", default="0.1", type=float)
     parser.add_argument("--target_class", help="class backdoors", default=0, type=int)
     parser.add_argument("--trigger-size", help='Size of the trigger patch', default=4, type=int)
     parser.add_argument("--trigger-pos", help="Position of the trigger patch", default='bottom-right', choices=['bottom-right', 'bottom-left', 'top-right', 'top-left'], type=str)
+
+    # Semantic backdoor options (CIFAR-10 default: horse=7 -> frog=6)
+    parser.add_argument("--source_class", help="source class for semantic trigger (e.g., horse=7)", default=7, type=int)
+    parser.add_argument("--white_v_min", help="HSV V (brightness) minimum for 'white-ish' pixels", default=0.78, type=float)
+    parser.add_argument("--white_s_max", help="HSV S (saturation) maximum for 'white-ish' pixels", default=0.25, type=float)
+    parser.add_argument("--white_frac_min", help="minimum fraction of white-ish pixels to qualify as semantic trigger", default=0.18, type=float)
+    parser.add_argument("--semantic_stats_only", help="print semantic candidate/poison counts then exit", action="store_true")
 
     args = parser.parse_args()
     main(args)
