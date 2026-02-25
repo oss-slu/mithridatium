@@ -94,6 +94,7 @@ def render_summary(report: Dict[str, Any]) -> str:
         # Statistics
         stats = r.get("statistics", {})
         lines.append(f"- entropy_mean:      {stats.get('entropy_mean')}\n")
+        lines.append(f"- entropy_std:       {stats.get('entropy_std')}\n")
         lines.append(f"- entropy_min:       {stats.get('entropy_min')}\n")
         lines.append(f"- entropy_max:       {stats.get('entropy_max')}\n")
 
