@@ -1,7 +1,7 @@
 import torch
 import random
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from mithridatium import utils
 
 from mithridatium.defenses.mmbd import get_device
@@ -27,7 +27,8 @@ def strip_scores(
         num_bases: int = 32, 
         num_perturbations: int = 16, 
         device=None,
-        entropy_mean_threshold=0.45
+        entropy_mean_threshold=0.45,
+        seed: Optional[int] = None
         ) -> Dict[str, Any]:
     """
     Computes STRIP-style entropy scores.
@@ -42,6 +43,11 @@ def strip_scores(
     Returns:
         A dictionary containing the raw entropy scores.
     """
+    if seed is not None:
+        torch.manual_seed(seed)
+        random.seed(seed)
+        np.random.seed(seed)
+
     if device is None:
         try:
             device = next(model.parameters()).device
@@ -104,20 +110,17 @@ def strip_scores(
             # Aggregate entropy for this base sample
             mean_entropy = entropies.mean().item()
             entropies_list.append(mean_entropy)
+
     if not entropies_list:
         raise ValueError("No entropies were computed.")
     
     entropy_mean = float(np.mean(entropies_list))
     entropy_min  = float(np.min(entropies_list))
     entropy_max  = float(np.max(entropies_list))
+    entropy_std = float(np.std(entropies_list))
 
-    if not entropies_list:
-        raise ValueError("No entropies were computed.")
-
-    entropy_mean = float(np.mean(entropies_list))
-    entropy_min  = float(np.min(entropies_list))
-    entropy_max  = float(np.max(entropies_list))
-
+    # High mean entropy -> model is less robust to perturbation -> likely backdoored
+    # Low mean entropy -> model handles perturbation well -> likely clean
     if entropy_mean > entropy_mean_threshold:
         verdict = "likely backdoored"
     else:
@@ -130,10 +133,14 @@ def strip_scores(
             "entropy_mean": entropy_mean,
             "entropy_min": entropy_min,
             "entropy_max": entropy_max,
+            "entropy_std": entropy_std,
+
         },
         "parameters": {
             "num_bases": num_bases,
             "num_perturbations": num_perturbations,
+            "seed": seed,
+
         },
         "dataset": str(configs.get_dataset()),
         "verdict": verdict,
