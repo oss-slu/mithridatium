@@ -12,11 +12,15 @@ from mithridatium.utils import get_preprocess_config
 class MockModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear = torch.nn.Linear(10, 4)  # 10 features, 4 classes
+        # linear layer initialized lazily when we know input size
+        self.linear = None
 
     def forward(self, x):
         if x.dim() > 2:
             x = x.view(x.size(0), -1)  # Flatten if needed
+        if self.linear is None:
+            # create linear layer matching incoming feature dimension
+            self.linear = torch.nn.Linear(x.size(1), 4)
         return self.linear(x)
 
 def test_strip_scores():
@@ -36,11 +40,20 @@ def test_strip_scores():
     
     dataset = TensorDataset(data, labels)
     dataloader = DataLoader(dataset, batch_size=10)
+
+    # monkeypatch the utils.dataloader_for function so strip_scores uses our dummy loader
+    import mithridatium.utils as utils_mod
+
+    original_dl_for = utils_mod.dataloader_for
+    def fake_dataloader_for(dataset_name, split, batch_size):
+        # ignore parameters and return our small dataloader
+        return dataloader, None
+    utils_mod.dataloader_for = fake_dataloader_for
     
     # Test execution
     try:
-        # Run strip_scores on the mock model and dummy data
-        results = strip_scores(model, dataloader, num_bases=5, num_perturbations=10, device='cpu', configs=config)
+        # Run strip_scores on the mock model using the preprocess config
+        results = strip_scores(model, configs=config, num_bases=5, num_perturbations=10, device='cpu')
         
         # Extract entropies from the results
         entropies = results.get("entropies")

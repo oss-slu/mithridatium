@@ -8,6 +8,10 @@ import random
 import os
 
 from mithridatium.attacks.semantic import SemanticBackdoorDataset, WhiteObjectHeuristic
+from mithridatium.attacks.invisible import (
+    create_random_uap,
+    InvisibleBackdoorDataset,
+)
 
 class BadNetDataset(Dataset):
 
@@ -253,6 +257,51 @@ def main(args):
         )
 
         train_dataset = semantic_train
+    elif args.dataset.lower() == "invisible":
+        # create or load universal perturbation
+        if args.uap_path:
+            try:
+                uap = torch.load(args.uap_path)
+                print(f"Loaded UAP from {args.uap_path}")
+            except Exception:
+                print(f"Failed to load UAP from {args.uap_path}, generating new one")
+                uap = create_random_uap((3, 32, 32), xi=args.uap_xi, p=args.uap_norm, seed=args.seed)
+        else:
+            uap = create_random_uap((3, 32, 32), xi=args.uap_xi, p=args.uap_norm, seed=args.seed)
+
+        if args.uap_path and not os.path.exists(args.uap_path):
+            os.makedirs(os.path.dirname(args.uap_path), exist_ok=True)
+            torch.save(uap, args.uap_path)
+            print(f"Saved generated UAP to {args.uap_path}")
+
+        inv_train = InvisibleBackdoorDataset(
+            dataset=clean_train_ds,
+            poison_rate=args.train_poison_rate,
+            target_class=args.target_class,
+            uap=uap,
+            mode='train',
+            pre_transform=train_pre_transform,
+            post_transform=post_norm,
+            seed=args.seed,
+        )
+        inv_test = InvisibleBackdoorDataset(
+            dataset=clean_test_ds,
+            poison_rate=1.0,
+            target_class=args.target_class,
+            uap=uap,
+            mode='test_poison',
+            pre_transform=test_pre_transform,
+            post_transform=post_norm,
+            seed=args.seed,
+        )
+        asr_loader = DataLoader(
+            inv_test,
+            batch_size=args.eval_batch_size,
+            shuffle=False,
+            num_workers=2,
+            pin_memory=use_pin,
+        )
+        train_dataset = inv_train
 
     else:
         train_dataset = datasets.CIFAR10(
@@ -291,7 +340,22 @@ def main(args):
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(x), y)
+
+            # compute loss; optionally weight poisoned/target samples more heavily
+            if args.poison_loss_weight != 1.0 and args.dataset.lower() in ["poison", "semantic", "invisible"]:
+                outputs = model(x)
+                per_sample = torch.nn.functional.cross_entropy(outputs, y, reduction="none")
+                # weight samples whose label equals the configured target_class
+                mask = y == args.target_class
+                if mask.any():
+                    weights = torch.ones_like(per_sample)
+                    weights[mask] = args.poison_loss_weight
+                    loss = (per_sample * weights).mean()
+                else:
+                    loss = per_sample.mean()
+            else:
+                loss = criterion(model(x), y)
+
             loss.backward()
             optimizer.step()
         val_loss, val_acc = evaluate(model, test_loader, device, criterion)
@@ -352,7 +416,36 @@ if __name__ == "__main__":
     parser.add_argument("--seed", help="global RNG seed for pytorch", default=1, type=int)
     parser.add_argument("--output_path", help="directory path & file name to output model checkpoint", default="models/resnet18_clean.pth", type=str)
     parser.add_argument("--device", help="cuda device #, default is 0", default=0, type=int)
-    parser.add_argument("--dataset", choices=["clean", "poison", "semantic"], default="clean", help="Use clean, poison, or semantic dataset")
+    parser.add_argument(
+        "--dataset",
+        choices=["clean", "poison", "semantic", "invisible"],
+        default="clean",
+        help="Use clean, poison, semantic, or invisible-trigger dataset",
+    )
+    parser.add_argument(
+        "--uap-norm",
+        choices=["inf", "2"],
+        default="inf",
+        help="Lp norm for random UAP used by invisible trigger",
+    )
+    parser.add_argument(
+        "--uap-xi",
+        type=float,
+        default=0.05,
+        help="norm bound (xi) for the universal perturbation",
+    )
+    parser.add_argument(
+        "--uap-path",
+        type=str,
+        default="",
+        help="optional file to load/save the uap tensor",
+    )
+    parser.add_argument(
+        "--poison_loss_weight",
+        type=float,
+        default=1.0,
+        help="Multiplier for the loss of poisoned/target examples (>1 emphasizes ASR)",
+    )
     parser.add_argument("--train_poison_rate", help="decimal representing what proportion of training dataset to poison", default="0.1", type=float)
     parser.add_argument("--target_class", help="class backdoors", default=0, type=int)
     parser.add_argument("--trigger-size", help='Size of the trigger patch', default=4, type=int)
