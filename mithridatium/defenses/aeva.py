@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
+import re
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -23,6 +25,31 @@ def _nan_to_none_list(arr: np.ndarray) -> list:
     out = arr.astype(object)
     out[np.isnan(arr)] = None
     return out.tolist()
+
+
+def _sanitize_cache_component(value: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-")
+    return token or "model"
+
+
+def _cache_namespace_from_model_path(model_path: str | Path) -> str:
+    path = Path(model_path)
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError:
+        resolved = path
+
+    hasher = hashlib.sha1()
+    hasher.update(str(resolved).encode("utf-8"))
+    try:
+        stat = path.stat()
+        hasher.update(str(stat.st_size).encode("utf-8"))
+        hasher.update(str(stat.st_mtime_ns).encode("utf-8"))
+    except OSError:
+        pass
+
+    digest = hasher.hexdigest()[:12]
+    return f"{_sanitize_cache_component(path.stem)}-{digest}"
 
 
 def _normalized_bounds(configs: utils.PreprocessConfig, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -391,6 +418,7 @@ class BDDetect:
         configs: Optional[utils.PreprocessConfig] = None,
         device: Optional[torch.device] = None,
         output_dir: Optional[str | Path] = None,
+        cache_namespace: Optional[str] = None,
         batch_size: int = 256,
         samples_per_class: int = 40,
         hsja_iterations: int = 50,
@@ -418,8 +446,12 @@ class BDDetect:
         self.anomaly_index_threshold = float(anomaly_index_threshold)
         self.verbose = bool(verbose)
 
-        default_dir = f"{task}_adv_per"
-        self.output_dir = Path(output_dir or default_dir)
+        default_dir = Path(f"{task}_adv_per")
+        if output_dir is None:
+            namespace = _sanitize_cache_component(cache_namespace or "model")
+            self.output_dir = default_dir / namespace
+        else:
+            self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         clip_min_t, clip_max_t = _normalized_bounds(self.configs, self.device)
@@ -589,6 +621,7 @@ def run_aeva(
     configs: Optional[utils.PreprocessConfig] = None,
     *,
     task: Optional[str] = None,
+    model_path: Optional[str | Path] = None,
     sp: int = 0,
     ep: Optional[int] = None,
     device: Optional[torch.device] = None,
@@ -608,12 +641,17 @@ def run_aeva(
         else:
             task = "cifar10"
 
+    cache_namespace = None
+    if output_dir is None and model_path is not None:
+        cache_namespace = _cache_namespace_from_model_path(model_path)
+
     detector = BDDetect(
         model=model,
         task=task,
         configs=configs,
         device=device,
         output_dir=output_dir,
+        cache_namespace=cache_namespace,
         batch_size=batch_size,
         samples_per_class=samples_per_class,
         hsja_iterations=hsja_iterations,

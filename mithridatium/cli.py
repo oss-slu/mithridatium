@@ -202,7 +202,7 @@ def detect(
             # Move model to appropriate device for MMBD
             results = run_mmbd(mdl, config)
         elif d == "aeva":
-            results = run_aeva(mdl, config, task=data, device=device)
+            results = run_aeva(mdl, config, task=data, device=device, model_path=p)
         elif d == "strip":
             results = strip_scores(mdl, config)
         else:

@@ -14,6 +14,7 @@ mithridatium.egg-info/entry_points.txt
 mithridatium.egg-info/requires.txt
 mithridatium.egg-info/top_level.txt
 mithridatium/defenses/__init__.py
+mithridatium/defenses/aeva.py
 mithridatium/defenses/mmbd.py
 mithridatium/defenses/strip.py
 tests/test_dataloader_normalization.py
