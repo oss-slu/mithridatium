@@ -39,54 +39,198 @@ python3 -m scripts/train_resnet18 \
 
 ## Quick training run
 
-Below is an example command producing a small trojaned model.  We only train
-two epochs for brevity; for a real benchmark run 20–60 epochs as with others.
+Below is an example command producing a higher-accuracy trojaned model.
 
 ```bash
-python3 -m scripts/train_resnet18 \
-    --dataset invisible \
-    --epochs 2 \
-    --train_poison_rate 0.1 \
-    --target_class 0 \
-    --uap-norm 2 \
-    --uap-xi 0.05 \    --poison_loss_weight 2.0 \  # emphasize poisoned examples    --output_path models/resnet18_invisible.pth
+python3 -m scripts.train_resnet18 \
+  --dataset invisible \
+  --epochs 200 \
+  --train_poison_rate 0.15 \
+  --target_class 0 \
+  --uap-norm 2 \
+  --uap-xi 0.15 \
+  --poison_loss_weight 3.0 \
+  --output_path models/resnet18_invisible.pth
 ```
 
-Sample output from one run:
+✅ Expected result (approx):
 
-```
-[invisible] poisoning 5000/50000 training samples
-[invisible] ASR subset size 9000 (target=0)
-Training with the following parameters:
- Epochs = 2
- ...
-Epoch 1/2 - val_loss: 1.8208  val_acc: 0.332
-ASR: 23.4%
-...
-Epoch 2/2 - val_loss: 1.6172  val_acc: 0.444
-ASR: 12.4%
-Best model saved to models/resnet18_invisible.pth with clean_val_acc: 0.444  ASR: 12.4%  score: 0.568
-```
+- clean_val_acc: 0.772
+- ASR: 66.3%
 
 The saved checkpoint can now be evaluated with any of the built-in defenses.
 
 ## Evaluating with defenses
 
-```bash
-python3 -m mithridatium.cli detect \
-  -m models/resnet18_invisible.pth \
-  -d cifar10 \
-  -D mmbd -o reports/invisible_mmbd.json --force
+### 1) Strip
 
-python3 -m mithridatium.cli detect \
-  -m models/resnet18_invisible.pth \
-  -d cifar10 \
-  -D strip -o reports/invisible_strip.json --force
+```bash
+mithridatium detect --model models/resnet18_invisible.pth --defense strip --data cifar10
 ```
 
-(Results omitted here; after training for more epochs ASR should be
-substantially higher.)
+✅ Example output (trimmed):
 
+```
+[cli] detecting architecture and loading model…
+[loader] loaded 122/122 parameter tensors from 'models/resnet18_invisible.pth' into 'resnet18'
+[cli] validating model (architecture + dry forward)…
+[cli] model validation OK
+[cli] building dataloader…
+[cli] running defense=strip…
+{
+  "mithridatium_version": "0.1.1",
+  "timestamp_utc": "2026-03-15T18:32:50.509620Z",
+  "model_path": "models/resnet18_invisible.pth",
+  "defense": "strip",
+  "dataset": "cifar10",
+  "results": {
+    "defense": "strip",
+    "entropies": [
+      0.49675869941711426,
+      0.5878192186355591,
+      0.8606917262077332,
+      0.46591854095458984,
+      0.4866228997707367,
+      0.5499169826507568,
+      0.6624696254730225,
+      0.44766658544540405,
+      0.6401920914649963,
+      0.5192099809646606,
+      0.6722453236579895,
+      0.5456846952438354,
+      0.6219775080680847,
+      0.811526894569397,
+      0.421306848526001,
+      0.6522171497344971,
+      0.25220686197280884,
+      0.46911585330963135,
+      0.5022743344306946,
+      0.5404767990112305,
+      0.3224033713340759,
+      0.7188610434532166,
+      0.46343544125556946,
+      0.5473989248275757,
+      0.6743206977844238,
+      0.6497867703437805,
+      0.652094304561615,
+      0.5616298913955688,
+      0.3998267650604248,
+      0.6372117400169373,
+      0.49382340908050537,
+      0.22164572775363922
+    ],
+    "statistics": {
+      "entropy_mean": 0.5483980220742524,
+      "entropy_min": 0.22164572775363922,
+      "entropy_max": 0.8606917262077332,
+      "entropy_std": 0.13942518637911042
+    },
+    "parameters": {
+      "num_bases": 32,
+      "num_perturbations": 16,
+      "seed": null
+    },
+    "dataset": "cifar10",
+    "verdict": "likely backdoored",
+    "thresholds": {
+      "entropy_mean_threshold": 0.45
+    }
+  }
+}
+```
+
+### 2) MMBD
+
+```bash
+mithridatium detect --model models/resnet18_invisible.pth --defense mmbd --data cifar10
+```
+
+✅ Example output (trimmed):
+
+```
+[cli] detecting architecture and loading model…
+[loader] loaded 122/122 parameter tensors from 'models/resnet18_invisible.pth' into 'resnet18'
+[cli] validating model (architecture + dry forward)…
+[cli] model validation OK
+[cli] building dataloader…
+[cli] running defense=mmbd…
+[MMBD] optimizing class 1/5…
+[MMBD]   Iter 0/75, loss=-79.1270
+[MMBD]   Iter 50/75, loss=-5224.8965
+[MMBD]   Iter 74/75, loss=-5609.5928
+[MMBD] optimizing class 2/5…
+[MMBD]   Iter 0/75, loss=275.6509
+[MMBD]   Iter 50/75, loss=-739.4514
+[MMBD]   Iter 74/75, loss=-914.2614
+[MMBD] optimizing class 3/5…
+[MMBD]   Iter 0/75, loss=386.2618
+[MMBD]   Iter 50/75, loss=-339.8500
+[MMBD]   Iter 74/75, loss=-399.3386
+[MMBD] optimizing class 4/5…
+[MMBD]   Iter 0/75, loss=237.2043
+[MMBD]   Iter 50/75, loss=-803.7642
+[MMBD]   Iter 74/75, loss=-908.9487
+[MMBD] optimizing class 5/5…
+[MMBD]   Iter 0/75, loss=394.4505
+[MMBD]   Iter 50/75, loss=-393.9834
+[MMBD]   Iter 74/75, loss=-647.4910
+{
+  "mithridatium_version": "0.1.1",
+  "timestamp_utc": "2026-03-15T18:33:02.625251Z",
+  "model_path": "models/resnet18_invisible.pth",
+  "defense": "mmbd",
+  "dataset": "cifar10",
+  "results": {
+    "defense": "mmbd",
+    "per_class_scores": [
+      220.2105255126953,
+      35.43918228149414,
+      34.9631233215332,
+      35.12466812133789,
+      34.253395080566406
+    ],
+    "normalized_scores": [
+      396.92493862503596,
+      0.6744897501960817,
+      0.3464400827346166,
+      0.0,
+      1.8684841894895554
+    ],
+    "p_value": 0.0,
+    "verdict": "Likely backdoored",
+    "thresholds": {
+      "p_value": 0.05,
+      "normalized_score": {
+        "normal": [
+          0.0,
+          1.5
+        ],
+        "mild": [
+          1.5,
+          3.0
+        ],
+        "suspicious": [
+          3.0,
+          5.0
+        ],
+        "very_suspicious": [
+          5.0,
+          null
+        ]
+      }
+    },
+    "parameters": {
+      "NC": 10,
+      "NSTEP": 75,
+      "optimizer": "SGD(momentum=0.2)",
+      "lr_init": 0.01,
+      "device": "cuda:0"
+    },
+    "dataset": "cifar10",
+    "top_eigenvalue": 220.2105255126953
+  }
+}
+```
 ## Visual inspection / sanity check
 
 Once a model has been trained it can be useful to look at the actual
