@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from typing import Tuple, List
 import json
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_ROOT = PROJECT_ROOT / "data"
+
 class PreprocessConfig:
     """Configuration for input preprocessing."""
 
@@ -103,6 +106,19 @@ DATASET_CONFIGS = {
         "std": (0.229, 0.224, 0.225),
         "normalize": True,
     },
+    "cifar10_for_imagenet": {
+        "input_size": (3, 224, 224),
+        "mean": (0.485, 0.456, 0.406),
+        "std": (0.229, 0.224, 0.225),
+        "normalize": True,
+    },
+    "fake_imagenet": {
+        "input_size": (3, 224, 224),
+        "mean": (0.485, 0.456, 0.406),
+        "std": (0.229, 0.224, 0.225),
+        "normalize": True,
+    },
+
 }
 
 
@@ -208,14 +224,14 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
     # Build dataset-specific transform pipeline
     # Standard order: Resize/Crop → ToTensor() → Normalize()
     if dataset_lower == "cifar10":
-        # CIFAR-10: 32x32 RGB images (already correct size)
         transform_list = [
-            # No resize needed - images are already 32x32
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(config.mean, config.std)
         ]
         ds = datasets.CIFAR10(
-            root="data",
+            root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
             transform=transforms.Compose(transform_list)
@@ -229,7 +245,7 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
             transforms.Normalize(config.mean, config.std)
         ]
         ds = datasets.CIFAR100(
-            root="data",
+            root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
             transform=transforms.Compose(transform_list)
@@ -256,7 +272,7 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
         try:
             from torchvision.datasets import ImageNet
             ds = ImageNet(
-                root="data/imagenet",
+                root=str(DATA_ROOT),
                 split="train" if split_lower == "train" else "val",
                 transform=transforms.Compose(transform_list)
             )
@@ -265,6 +281,33 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
                 f"ImageNet dataset not found. Please download ImageNet manually and place it in "
                 f"'data/imagenet/' directory. Original error: {e}"
             )
+        
+    elif dataset_lower == "cifar10_for_imagenet":
+        transform_list = [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(config.mean, config.std)
+        ]
+        ds = datasets.CIFAR10(
+            root=str(DATA_ROOT),
+            train=(split_lower == "train"),
+            download=True,
+            transform=transforms.Compose(transform_list)
+        )
+
+    elif dataset_lower == "fake_imagenet":
+        transform_list = [
+            transforms.ToTensor(),
+            transforms.Normalize(config.mean, config.std)
+    ]
+
+        ds = datasets.FakeData(
+            size=512,
+            image_size=(3, 224, 224),
+            num_classes=1000,
+            transform=transforms.Compose(transform_list)
+    )
     
     dataloader = torch.utils.data.DataLoader(
         ds,

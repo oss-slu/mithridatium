@@ -5,6 +5,7 @@ import torchvision.models as models
 from dataclasses import dataclass, field
 from typing import Tuple, List
 import json
+from mithridatium.loader_hf import HFImageClassifier
 
 def load_resnet18(model_path: str | None):
     """
@@ -29,6 +30,14 @@ def load_resnet18(model_path: str | None):
 
     model.eval()
     return model, feature_module
+
+def build_huggingface_model(model_id: str):
+    """
+    Build a Hugging Face image classification model by model ID.
+    Example model_id: 'microsoft/resnet-50'
+    """
+    m = HFImageClassifier(model_id)
+    return m, None
 
 def get_feature_module(model):
     """
@@ -152,30 +161,37 @@ def _detect_resnet_variant(state_dict: dict) -> str:
 def build_model(arch: str = "resnet18", num_classes: int = 10):
     """
     Build a model with the specified architecture.
-    
-    Args:
-        arch: Architecture name (currently only "resnet18" supported).
-        num_classes: Number of output classes.
-        
-    Returns:
-        Tuple of (model, feature_module).
+
+    Supported:
+      - resnet18
+      - resnet18_cifar
+      - resnet34
+      - hf_resnet50
     """
     arch_lower = arch.lower()
-
 
     if arch_lower == "resnet18":
         from torchvision.models import resnet18
         m = resnet18(weights=None)
+        m.fc = torch.nn.Linear(m.fc.in_features, num_classes)
+        return m, get_feature_module(m)
+
     elif arch_lower == "resnet18_cifar":
         m = _build_resnet18_cifar(num_classes)
-    elif arch == "resnet34":
+        return m, get_feature_module(m)
+
+    elif arch_lower == "resnet34":
         from torchvision.models import resnet34
         m = resnet34(weights=None)
+        m.fc = torch.nn.Linear(m.fc.in_features, num_classes)
+        return m, get_feature_module(m)
+
+    elif arch_lower == "hf_resnet50":
+        m = HFImageClassifier("microsoft/resnet-50")
+        return m, None
+
     else:
         raise NotImplementedError(f"Architecture '{arch}' not yet supported")
-        
-    m.fc = torch.nn.Linear(m.fc.in_features, num_classes)
-    return m, get_feature_module(m)
  
 def _unwrap_state_dict(ckpt: dict) -> dict:
     """
@@ -247,41 +263,39 @@ def load_weights(model, ckpt_path: str):
 def validate_model(model: torch.nn.Module, arch: str, input_size):
     """
     Basic model validation:
-    - Check that the model type roughly matches the requested arch
-    - Run a dry forward pass with dummy data to confirm shape compatibility
-
-    Raises:
-        ValueError: for obvious architecture / input_size mismatches
-        RuntimeError: when the forward pass fails (bad layers, shapes, etc.)
+    - Verify input_size looks correct
+    - Run a dry forward pass
+    - Verify output is [batch, num_classes]
     """
-    # --- sanity check input_size ---
     if not isinstance(input_size, (tuple, list)) or len(input_size) != 3:
         raise ValueError(f"Invalid input_size for validation: {input_size} (expected (C, H, W))")
 
     C, H, W = input_size
-
-    # --- rough architecture check ---
-    arch = arch.lower()
-    model_name = model.__class__.__name__.lower()
-
-    if "resnet" in arch and "resnet" not in model_name:
-        raise ValueError(
-            f"Model incompatible with chosen architecture '{arch}'. "
-            f"Loaded model type: '{model.__class__.__name__}'."
-        )
-
-    # --- dry forward pass on CPU ---
     model_cpu = model.cpu().eval()
     dummy = torch.randn(1, C, H, W)
 
     with torch.no_grad():
         try:
-            _ = model_cpu(dummy)
+            out = model_cpu(dummy)
         except Exception as ex:
             raise RuntimeError(
                 "Dry forward pass failed — model architecture or weights "
                 f"are incompatible with input size {input_size}.\nReason: {ex}"
             )
 
-    # if we get here, validation passed
+    if not isinstance(out, torch.Tensor):
+        raise RuntimeError(
+            f"Model forward must return a torch.Tensor of logits, got {type(out)}"
+        )
+
+    if out.ndim != 2:
+        raise RuntimeError(
+            f"Model forward must return logits of shape [batch, num_classes], got shape {tuple(out.shape)}"
+        )
+
+    if out.shape[0] != 1:
+        raise RuntimeError(
+            f"Validation forward pass expected batch dimension 1, got output shape {tuple(out.shape)}"
+        )
+
     return True
