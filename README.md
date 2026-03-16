@@ -33,9 +33,14 @@ pip install pytest pytest-cov
 # Clean model on 5 epochs (Increase epochs for better accuracy, but it will take longer)
 python -m scripts.train_resnet18 --dataset clean --epochs 5 --output_path models/resnet18_clean.pth
 
-# Poisoned model on 5 epochs (Increase epochs for better accuracy, but it will take longer)
+# Poisoned model on 5 epochs (increase epochs for better accuracy)
 python -m scripts.train_resnet18 --dataset poison --train_poison_rate 0.1 --target_class 0 \
   --epochs 5 --output_path models/resnet18_poison.pth
+
+# Invisible-trigger model using a small universal perturbation
+python -m scripts.train_resnet18 --dataset invisible --train_poison_rate 0.1 --target_class 0 \
+  --uap-norm 2 --uap-xi 0.05 --poison_loss_weight 2.0 \
+  --epochs 5 --output_path models/resnet18_invisible.pth
 
 # (B) Run detection (default: resnet18)
 mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
