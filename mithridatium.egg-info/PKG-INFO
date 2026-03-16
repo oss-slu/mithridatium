@@ -9,6 +9,7 @@ Requires-Dist: typer>=0.12
 Requires-Dist: torch
 Requires-Dist: torchvision
 Requires-Dist: jsonschema
+Requires-Dist: scipy
 Dynamic: license-file
 
 # Mithridatium 🛡️
