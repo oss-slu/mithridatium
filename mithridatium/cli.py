@@ -5,14 +5,12 @@ from pathlib import Path
 import sys
 from mithridatium import report as rpt
 from mithridatium import loader as loader
+from mithridatium import loader_hf as loader_hf
 from mithridatium import utils
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defenses.mmbd import run_mmbd
 from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
-from mithridatium.loader import validate_model
-
-
 
 VERSION = "0.1.1"
 DEFENSES = {"aeva", "mmbd", "strip"}
@@ -50,24 +48,6 @@ def _write_json(obj: dict, out_path: str, force: bool) -> None:
 
     with path.open("w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2)
-
-
-def dummy_report(model_path: str, defense: str, out_path: str, force: bool) -> None:
-    """
-    Nothing runs yet, just a dummy report.
-    """
-    
-    # dummy report:
-    report = {
-        "mithridatium_version": VERSION,
-        "model_path": model_path,
-        "defense": defense,
-        "status": "Not yet implemented", 
-    }
-
-    _write_json(report, out_path, force)
-    where = "stdout" if out_path == "-" else out_path
-    typer.echo(f"Report written to {where}")
 
 
 @app.callback(invoke_without_command=True)
@@ -185,14 +165,19 @@ def detect(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
+    cfg = utils.get_preprocess_config(data)
+    num_classes = cfg.get_num_classes()
+
     print(f"[cli] loading model from provider={provider}…")
 
     if provider == "torchvision":
-        mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=10)
+        mdl, _ = loader.detect_and_build(
+            str(p),
+            arch_hint=arch,
+            num_classes=num_classes,
+        )
     else:
-        mdl, feature_module = loader.build_huggingface_model(hf_model_id)
-
-    cfg = utils.get_preprocess_config(data)
+        mdl, _ = loader_hf.build_huggingface_model(hf_model_id)
 
     try:
         print("[cli] validating model (architecture + dry forward)…")
@@ -207,7 +192,7 @@ def detect(
         raise typer.Exit(code=EXIT_IO_ERROR)
 
     print("[cli] building dataloader…")
-    test_loader, config = utils.dataloader_for(data, "test", 256)
+    _, config = utils.dataloader_for(data, "test", 256)
 
     model_ref = str(p) if provider == "torchvision" else hf_model_id
 

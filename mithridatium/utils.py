@@ -22,6 +22,7 @@ class PreprocessConfig:
         value_range: Tuple[float, float] = (0.0, 1.0),
         mean: Tuple[float, float, float] = (0.4914, 0.4822, 0.4465),  # (R, G, B)
         std: Tuple[float, float, float] = (0.2023, 0.1994, 0.2010),   # (R, G, B)
+        num_classes: int = 10,
         normalize: bool = True,
         ops: List[str] = None,                     # e.g., ["resize:32"]
         dataset: str = "Unlisted"
@@ -31,6 +32,7 @@ class PreprocessConfig:
         self.value_range = value_range
         self.mean = mean
         self.std = std
+        self.num_classes = num_classes
         self.normalize = normalize
         self.ops = ops if ops is not None else []
         self.dataset = dataset
@@ -50,6 +52,9 @@ class PreprocessConfig:
 
     def get_std(self):
         return self.std
+
+    def get_num_classes(self):
+        return self.num_classes
 
     def get_normalize(self):
         return self.normalize
@@ -76,6 +81,9 @@ class PreprocessConfig:
     def set_std(self, std: Tuple[float, float, float]):
         self.std = std
 
+    def set_num_classes(self, num_classes: int):
+        self.num_classes = num_classes
+
     def set_normalize(self, normalize: bool):
         self.normalize = normalize
 
@@ -92,30 +100,35 @@ DATASET_CONFIGS = {
         "input_size": (3, 32, 32),
         "mean": (0.4914, 0.4822, 0.4465),
         "std": (0.2023, 0.1994, 0.2010),
+        "num_classes": 10,
         "normalize": True,
     },
     "cifar100": {
         "input_size": (3, 32, 32),
         "mean": (0.5071, 0.4867, 0.4408),  # CIFAR-100 canonical stats
         "std": (0.2675, 0.2565, 0.2761),
+        "num_classes": 100,
         "normalize": True,
     },
     "imagenet": {
         "input_size": (3, 224, 224),
         "mean": (0.485, 0.456, 0.406),     # ImageNet canonical stats
         "std": (0.229, 0.224, 0.225),
+        "num_classes": 1000,
         "normalize": True,
     },
     "cifar10_for_imagenet": {
         "input_size": (3, 224, 224),
         "mean": (0.485, 0.456, 0.406),
         "std": (0.229, 0.224, 0.225),
+        "num_classes": 10,
         "normalize": True,
     },
     "fake_imagenet": {
         "input_size": (3, 224, 224),
         "mean": (0.485, 0.456, 0.406),
         "std": (0.229, 0.224, 0.225),
+        "num_classes": 1000,
         "normalize": True,
     },
 
@@ -149,6 +162,7 @@ def get_preprocess_config(dataset: str) -> PreprocessConfig:
         value_range=(0.0, 1.0),
         mean=config["mean"],
         std=config["std"],
+        num_classes=config["num_classes"],
         normalize=config["normalize"],
         ops=[],
         dataset=dataset_lower
@@ -188,6 +202,7 @@ def load_preprocess_config(model_path: str) -> PreprocessConfig:
         value_range=tuple(pp.get("value_range", (0.0, 1.0))),
         mean=tuple(pp["mean"]),
         std=tuple(pp["std"]),
+        num_classes=pp.get("num_classes", 10),
         normalize=pp.get("normalize", True),
         ops=list(pp.get("ops", [])),
     )

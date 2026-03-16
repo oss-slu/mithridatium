@@ -2,9 +2,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from dataclasses import dataclass, field
-from typing import Tuple, List
-import json
 from mithridatium.loader_hf import HFImageClassifier
 
 def load_resnet18(model_path: str | None):
@@ -18,26 +15,17 @@ def load_resnet18(model_path: str | None):
         Tuple of (model, feature_module).
     """
     model = models.resnet18(weights=None)
-
-    # expose the penultimate layer (avgpool -> flatten) for features
+    model.fc = nn.Linear(model.fc.in_features, 10)
     feature_module = model.avgpool
 
     # try to load a checkpoint if provided
     if model_path and Path(model_path).exists():
-        model = load_weights(model, model_path)
+        model, feature_module = detect_and_build(model_path, arch_hint="resnet18", num_classes=10)
     else:
         print(f"[loader] checkpoint not found at '{model_path}'. Using randomly initialized model (ok for pipeline tests).")
 
     model.eval()
     return model, feature_module
-
-def build_huggingface_model(model_id: str):
-    """
-    Build a Hugging Face image classification model by model ID.
-    Example model_id: 'microsoft/resnet-50'
-    """
-    m = HFImageClassifier(model_id)
-    return m, None
 
 def get_feature_module(model):
     """
@@ -212,53 +200,6 @@ def _unwrap_state_dict(ckpt: dict) -> dict:
                 print(f"[loader] found weights under '{key}' key, unwrapping")
                 return ckpt[key]
     return ckpt
-
-def load_weights(model, ckpt_path: str):
-    """
-    Load model weights from a checkpoint file.
-
-    Handles two common checkpoint formats:
-      1. Raw state dict  — keys are layer names directly
-         e.g. {'conv1.weight': ..., 'bn1.weight': ..., 'fc.bias': ...}
-      2. Training checkpoint dict — weights nested under a key like
-         'model_state_dict', 'state_dict', 'model', or 'net'
-         e.g. {'epoch': 50, 'model_state_dict': {...}, 'args': ...}
-
-    Raises:
-        RuntimeError: If no weights were successfully loaded (all keys missing),
-                      or if there are shape mismatches between checkpoint and model.
-
-    Args:
-        model: PyTorch model instance.
-        ckpt_path: Path to checkpoint file.
-
-    Returns:
-        Model with loaded weights.
-    """
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    sd = _unwrap_state_dict(ckpt)
-
-    missing, unexpected = model.load_state_dict(sd, strict=False)
-
-    # Fail loudly if nothing actually loaded
-    total_params = len(list(model.state_dict().keys()))
-    loaded_params = total_params - len(missing)
-    if loaded_params == 0:
-        raise RuntimeError(
-            f"No weights were loaded from '{ckpt_path}'. "
-            f"All {total_params} expected keys are missing. "
-            f"Unexpected keys in file: {unexpected[:5]}{'...' if len(unexpected) > 5 else ''}. "
-            f"The checkpoint format may be incompatible."
-        )
-
-    if missing:
-        print(f"[warn] load_weights: {len(missing)} missing keys (partial load)")
-    if unexpected:
-        print(f"[warn] load_weights: {len(unexpected)} unexpected keys ignored")
-    print(f"[loader] loaded {loaded_params}/{total_params} parameter tensors from '{ckpt_path}'")
-
-    return model
-
 
 def validate_model(model: torch.nn.Module, arch: str, input_size):
     """
