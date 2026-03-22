@@ -7,6 +7,7 @@ from mithridatium import report as rpt
 from mithridatium import loader as loader
 from mithridatium import utils
 from mithridatium.defenses.mmbd import run_mmbd
+from mithridatium.defenses.freeeagle import run_freeeagle
 from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
@@ -14,7 +15,7 @@ from mithridatium.loader import validate_model
 
 
 VERSION = "0.1.1"
-DEFENSES = {"mmbd", "strip"}
+DEFENSES = {"freeeagle", "mmbd", "strip"}
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
@@ -111,7 +112,7 @@ def detect(
         "mmbd",
         "--defense",
         "-D",
-        help="The defense you want to run. E.g. 'mmbd' or 'strip'.",
+        help="The defense you want to run. E.g. 'mmbd', 'strip', or 'freeeagle'.",
     ),
     arch: str = typer.Option(
         "resnet18",
@@ -202,6 +203,8 @@ def detect(
             results = run_mmbd(mdl, config)
         elif d == "strip":
             results = strip_scores(mdl, config)
+        elif d == "freeeagle":
+            results = run_freeeagle(mdl, config)
         else:
             results = {"suspected_backdoor": False, "num_flagged": 0, "top_eigenvalue": 0.0}
 

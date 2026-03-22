@@ -110,6 +110,31 @@ def render_summary(report: Dict[str, Any]) -> str:
                 lines.append(f"  #{idx}: {e}\n")
 
         return "".join(lines).rstrip()
+
+    if defense == "freeeagle":
+        lines = [head]
+
+        verdict = r.get("verdict")
+        if verdict is not None:
+            lines.append(f"- verdict:           {verdict}\n")
+
+        metric = r.get("anomaly_metric")
+        if isinstance(metric, (int, float)):
+            lines.append(f"- anomaly_metric:    {metric:.6f}\n")
+
+        threshold = r.get("thresholds", {}).get("anomaly_metric_threshold")
+        if threshold is not None:
+            lines.append(f"- anomaly_thr:       {threshold}\n")
+
+        tendency = r.get("tendency_per_target")
+        if isinstance(tendency, list):
+            lines.append(f"- targets_scored:    {len(tendency)}\n")
+
+        params = r.get("parameters", {})
+        lines.append(f"- inspect_layer:     {params.get('inspect_layer_position')}\n")
+        lines.append(f"- optimize_steps:    {params.get('optimize_steps')}\n")
+
+        return "".join(lines).rstrip()
     
     # Fallback for legacy/ reports
     return (
