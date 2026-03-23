@@ -1,20 +1,8 @@
 # mithridatium/report.py
 
-import json
 import datetime as dt
 from pathlib import Path
 from typing import Dict, Any
-
-def render_summary(report: Dict[str, Any]) -> str:
-    r = report["results"]
-    return (
-        f"Mithridatium {report['mithridatium_version']} | "
-        f"defense={report['defense']} | dataset={report['dataset']}\n"
-        f"- model_path:        {report['model_path']}\n"
-        f"- suspected_backdoor:{r.get('suspected_backdoor')}\n"
-        f"- num_flagged:       {r.get('num_flagged')}\n"
-        f"- top_eigenvalue:    {r.get('top_eigenvalue')}"
-    )
 
 def build_report(
     model_path: str,
@@ -24,19 +12,19 @@ def build_report(
     results: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Single source of truth for a report payload."""
-    return {
+    payload =  {
         "mithridatium_version": version,
         "timestamp_utc": dt.datetime.utcnow().isoformat() + "Z",
         "model_path": model_path,
         "defense": defense,
         "dataset": dataset,
-        "results": results or {
-            # legacy/spectral fallback
-            "suspected_backdoor": False,
-            "num_flagged": 0,
-            "top_eigenvalue": 0.0,
+        "results": results if results is not None else {
+            "status": "no_results",
+            "message": "No defense results were provided.",
+            "verdict": None,
         },
     }
+    return to_json_safe(payload)
 
 # def mmbd_defense(model, preprocess_config) -> Dict[str, Any]:
 #     return run_mmbd(model, preprocess_config)
@@ -77,9 +65,9 @@ def render_summary(report: Dict[str, Any]) -> str:
         lines = [head]
 
         # Verdict
-        verdict1 = r.get("verdict")
-        if verdict1 is not None:
-            lines.append(f"- verdict:           {verdict1}\n")
+        verdict = r.get("verdict")
+        if verdict is not None:
+            lines.append(f"- verdict:           {verdict}\n")
 
         # Thresholds
         thr = r.get("thresholds", {}).get("entropy_mean_threshold")
@@ -144,12 +132,12 @@ def render_summary(report: Dict[str, Any]) -> str:
         + f"- top_eigenvalue:    {r.get('top_eigenvalue')}"
     )
 
-def _json_safe(obj):
+def to_json_safe(obj):
     import numpy as np
     if isinstance(obj, dict):
-        return {k: _json_safe(v) for k, v in obj.items()}
+        return {k: to_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [_json_safe(v) for v in obj]
+        return [to_json_safe(v) for v in obj]
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, (np.floating,)):

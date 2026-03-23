@@ -2,9 +2,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from dataclasses import dataclass, field
-from typing import Tuple, List
-import json
+from mithridatium.loader_hf import HFImageClassifier
 
 def load_resnet18(model_path: str | None):
     """
@@ -17,13 +15,12 @@ def load_resnet18(model_path: str | None):
         Tuple of (model, feature_module).
     """
     model = models.resnet18(weights=None)
-
-    # expose the penultimate layer (avgpool -> flatten) for features
+    model.fc = nn.Linear(model.fc.in_features, 10)
     feature_module = model.avgpool
 
     # try to load a checkpoint if provided
     if model_path and Path(model_path).exists():
-        model = load_weights(model, model_path)
+        model, feature_module = detect_and_build(model_path, arch_hint="resnet18", num_classes=10)
     else:
         print(f"[loader] checkpoint not found at '{model_path}'. Using randomly initialized model (ok for pipeline tests).")
 
@@ -152,30 +149,37 @@ def _detect_resnet_variant(state_dict: dict) -> str:
 def build_model(arch: str = "resnet18", num_classes: int = 10):
     """
     Build a model with the specified architecture.
-    
-    Args:
-        arch: Architecture name (currently only "resnet18" supported).
-        num_classes: Number of output classes.
-        
-    Returns:
-        Tuple of (model, feature_module).
+
+    Supported:
+      - resnet18
+      - resnet18_cifar
+      - resnet34
+      - hf_resnet50
     """
     arch_lower = arch.lower()
-
 
     if arch_lower == "resnet18":
         from torchvision.models import resnet18
         m = resnet18(weights=None)
+        m.fc = torch.nn.Linear(m.fc.in_features, num_classes)
+        return m, get_feature_module(m)
+
     elif arch_lower == "resnet18_cifar":
         m = _build_resnet18_cifar(num_classes)
-    elif arch == "resnet34":
+        return m, get_feature_module(m)
+
+    elif arch_lower == "resnet34":
         from torchvision.models import resnet34
         m = resnet34(weights=None)
+        m.fc = torch.nn.Linear(m.fc.in_features, num_classes)
+        return m, get_feature_module(m)
+
+    elif arch_lower == "hf_resnet50":
+        m = HFImageClassifier("microsoft/resnet-50")
+        return m, None
+
     else:
         raise NotImplementedError(f"Architecture '{arch}' not yet supported")
-        
-    m.fc = torch.nn.Linear(m.fc.in_features, num_classes)
-    return m, get_feature_module(m)
  
 def _unwrap_state_dict(ckpt: dict) -> dict:
     """
@@ -197,91 +201,42 @@ def _unwrap_state_dict(ckpt: dict) -> dict:
                 return ckpt[key]
     return ckpt
 
-def load_weights(model, ckpt_path: str):
-    """
-    Load model weights from a checkpoint file.
-
-    Handles two common checkpoint formats:
-      1. Raw state dict  — keys are layer names directly
-         e.g. {'conv1.weight': ..., 'bn1.weight': ..., 'fc.bias': ...}
-      2. Training checkpoint dict — weights nested under a key like
-         'model_state_dict', 'state_dict', 'model', or 'net'
-         e.g. {'epoch': 50, 'model_state_dict': {...}, 'args': ...}
-
-    Raises:
-        RuntimeError: If no weights were successfully loaded (all keys missing),
-                      or if there are shape mismatches between checkpoint and model.
-
-    Args:
-        model: PyTorch model instance.
-        ckpt_path: Path to checkpoint file.
-
-    Returns:
-        Model with loaded weights.
-    """
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    sd = _unwrap_state_dict(ckpt)
-
-    missing, unexpected = model.load_state_dict(sd, strict=False)
-
-    # Fail loudly if nothing actually loaded
-    total_params = len(list(model.state_dict().keys()))
-    loaded_params = total_params - len(missing)
-    if loaded_params == 0:
-        raise RuntimeError(
-            f"No weights were loaded from '{ckpt_path}'. "
-            f"All {total_params} expected keys are missing. "
-            f"Unexpected keys in file: {unexpected[:5]}{'...' if len(unexpected) > 5 else ''}. "
-            f"The checkpoint format may be incompatible."
-        )
-
-    if missing:
-        print(f"[warn] load_weights: {len(missing)} missing keys (partial load)")
-    if unexpected:
-        print(f"[warn] load_weights: {len(unexpected)} unexpected keys ignored")
-    print(f"[loader] loaded {loaded_params}/{total_params} parameter tensors from '{ckpt_path}'")
-
-    return model
-
-
 def validate_model(model: torch.nn.Module, arch: str, input_size):
     """
     Basic model validation:
-    - Check that the model type roughly matches the requested arch
-    - Run a dry forward pass with dummy data to confirm shape compatibility
-
-    Raises:
-        ValueError: for obvious architecture / input_size mismatches
-        RuntimeError: when the forward pass fails (bad layers, shapes, etc.)
+    - Verify input_size looks correct
+    - Run a dry forward pass
+    - Verify output is [batch, num_classes]
     """
-    # --- sanity check input_size ---
     if not isinstance(input_size, (tuple, list)) or len(input_size) != 3:
         raise ValueError(f"Invalid input_size for validation: {input_size} (expected (C, H, W))")
 
     C, H, W = input_size
-
-    # --- rough architecture check ---
-    arch = arch.lower()
-    model_name = model.__class__.__name__.lower()
-
-    if "resnet" in arch and "resnet" not in model_name:
-        raise ValueError(
-            f"Model incompatible with chosen architecture '{arch}'. "
-            f"Loaded model type: '{model.__class__.__name__}'."
-        )
-
-    # --- dry forward pass on CPU ---
     model_cpu = model.cpu().eval()
     dummy = torch.randn(1, C, H, W)
 
     with torch.no_grad():
         try:
-            _ = model_cpu(dummy)
+            out = model_cpu(dummy)
         except Exception as ex:
             raise RuntimeError(
                 "Dry forward pass failed — model architecture or weights "
                 f"are incompatible with input size {input_size}.\nReason: {ex}"
             )
 
-    # if we get here, validation passed
+    if not isinstance(out, torch.Tensor):
+        raise RuntimeError(
+            f"Model forward must return a torch.Tensor of logits, got {type(out)}"
+        )
+
+    if out.ndim != 2:
+        raise RuntimeError(
+            f"Model forward must return logits of shape [batch, num_classes], got shape {tuple(out.shape)}"
+        )
+
+    if out.shape[0] != 1:
+        raise RuntimeError(
+            f"Validation forward pass expected batch dimension 1, got output shape {tuple(out.shape)}"
+        )
+
     return True

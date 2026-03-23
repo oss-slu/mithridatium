@@ -5,6 +5,7 @@ mithridatium/__init__.py
 mithridatium/cli.py
 mithridatium/evaluator.py
 mithridatium/loader.py
+mithridatium/loader_hf.py
 mithridatium/report.py
 mithridatium/utils.py
 mithridatium.egg-info/PKG-INFO
@@ -13,11 +14,17 @@ mithridatium.egg-info/dependency_links.txt
 mithridatium.egg-info/entry_points.txt
 mithridatium.egg-info/requires.txt
 mithridatium.egg-info/top_level.txt
+mithridatium/attacks/__init__.py
+mithridatium/attacks/invisible.py
+mithridatium/attacks/semantic.py
 mithridatium/defenses/__init__.py
+mithridatium/defenses/aeva.py
 mithridatium/defenses/mmbd.py
 mithridatium/defenses/strip.py
 tests/test_dataloader_normalization.py
+tests/test_demo_invisible.py
 tests/test_evaluator.py
+tests/test_invisible_trigger.py
 tests/test_preprocess_config.py
 tests/test_strip_entropy.py
 tests/test_strip_scores.py
