@@ -9,11 +9,12 @@ from mithridatium import loader_hf as loader_hf
 from mithridatium import utils
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defenses.mmbd import run_mmbd
+from mithridatium.defenses.freeeagle import run_freeeagle
 from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
 
 VERSION = "0.1.1"
-DEFENSES = {"aeva", "mmbd", "strip"}
+DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
@@ -92,7 +93,7 @@ def detect(
         "mmbd",
         "--defense",
         "-D",
-        help="The defense you want to run. E.g. 'aeva', 'mmbd', or 'strip'.",
+        help="The defense you want to run. E.g. 'mmbd', 'strip', 'aeva', or 'freeeagle'.",
     ),
     arch: str = typer.Option(
         "resnet18",
@@ -122,6 +123,61 @@ def detect(
         "--force",
         "-f",
         help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
+    ),
+    freeeagle_num_classes: int = typer.Option(
+        0,
+        "--freeeagle-num-classes",
+        help="FreeEagle override for number of classes. Use 0 to auto-infer from model head.",
+    ),
+    freeeagle_num_dummy: int = typer.Option(
+        1,
+        "--freeeagle-num-dummy",
+        help="FreeEagle number of dummy optimization vectors.",
+    ),
+    freeeagle_num_important_neurons: int = typer.Option(
+        5,
+        "--freeeagle-num-important-neurons",
+        help="FreeEagle top neurons used when computing tendency.",
+    ),
+    freeeagle_metric: str = typer.Option(
+        "softmax_score",
+        "--freeeagle-metric",
+        help="FreeEagle anomaly metric (e.g. 'softmax_score').",
+    ),
+    freeeagle_use_transpose_correction: bool = typer.Option(
+        False,
+        "--freeeagle-use-transpose-correction",
+        help="Enable transpose correction inside FreeEagle.",
+    ),
+    freeeagle_bound_on: bool = typer.Option(
+        True,
+        "--freeeagle-bound-on/--freeeagle-no-bound-on",
+        help="Enable or disable bounded optimization in FreeEagle.",
+    ),
+    freeeagle_optimize_steps: int = typer.Option(
+        300,
+        "--freeeagle-optimize-steps",
+        help="FreeEagle optimization steps.",
+    ),
+    freeeagle_learning_rate: float = typer.Option(
+        1e-2,
+        "--freeeagle-learning-rate",
+        help="FreeEagle optimization learning rate.",
+    ),
+    freeeagle_weight_decay: float = typer.Option(
+        5e-3,
+        "--freeeagle-weight-decay",
+        help="FreeEagle optimization weight decay.",
+    ),
+    freeeagle_anomaly_threshold: float = typer.Option(
+        2.0,
+        "--freeeagle-anomaly-threshold",
+        help="Threshold for FreeEagle anomaly_metric verdict.",
+    ),
+    freeeagle_inspect_layer_position: int = typer.Option(
+        2,
+        "--freeeagle-inspect-layer-position",
+        help="ResNet stage index inspected by FreeEagle (0..4).",
     ),
 ):
     """
@@ -194,6 +250,20 @@ def detect(
     print("[cli] building dataloader…")
     _, config = utils.dataloader_for(data, "test", 256)
 
+    if d == "freeeagle":
+        if freeeagle_num_classes > 0:
+            setattr(config, "freeeagle_num_classes", freeeagle_num_classes)
+        setattr(config, "freeeagle_num_dummy", freeeagle_num_dummy)
+        setattr(config, "freeeagle_num_important_neurons", freeeagle_num_important_neurons)
+        setattr(config, "freeeagle_metric", freeeagle_metric)
+        setattr(config, "freeeagle_use_transpose_correction", freeeagle_use_transpose_correction)
+        setattr(config, "freeeagle_bound_on", freeeagle_bound_on)
+        setattr(config, "freeeagle_optimize_steps", freeeagle_optimize_steps)
+        setattr(config, "freeeagle_learning_rate", freeeagle_learning_rate)
+        setattr(config, "freeeagle_weight_decay", freeeagle_weight_decay)
+        setattr(config, "freeeagle_anomaly_threshold", freeeagle_anomaly_threshold)
+        setattr(config, "freeeagle_inspect_layer_position", freeeagle_inspect_layer_position)
+
     model_ref = str(p) if provider == "torchvision" else hf_model_id
 
     print(f"[cli] running defense={d}…")
@@ -207,6 +277,8 @@ def detect(
             results = run_aeva(mdl, config, task=data, device=device, model_path=p)
         elif d == "strip":
             results = strip_scores(mdl, config)
+        elif d == "freeeagle":
+            results = run_freeeagle(mdl, config)
         else:
             results = {
                 "suspected_backdoor": False,
@@ -228,6 +300,16 @@ def detect(
         version=VERSION,
         results=results,
     )
+
+    try:
+        rpt.validate_report_data(rep)
+    except Exception as ex:
+        typer.secho(
+            f"Error: generated report failed schema validation.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
     _write_json(rep, out, force)
     print(rpt.render_summary(rep))
 
