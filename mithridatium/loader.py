@@ -2,7 +2,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from mithridatium.loader_hf import HFImageClassifier
 
 def load_resnet18(model_path: str | None):
     """
@@ -175,6 +174,7 @@ def build_model(arch: str = "resnet18", num_classes: int = 10):
         return m, get_feature_module(m)
 
     elif arch_lower == "hf_resnet50":
+        from mithridatium.loader_hf import HFImageClassifier
         m = HFImageClassifier("microsoft/resnet-50")
         return m, None
 
