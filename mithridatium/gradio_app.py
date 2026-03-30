@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import tempfile
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import Any
 from typing import Optional
@@ -15,11 +17,31 @@ except ImportError as ex:
 
 from mithridatium import report as rpt
 from mithridatium import utils
-from mithridatium.constants import VERSION
 from mithridatium.service import DEFENSES
 from mithridatium.service import run_detection
 
+try:
+    VERSION = package_version("mithridatium")
+except PackageNotFoundError:
+    VERSION = "0.1.1"
+
 DATASET_CHOICES = sorted(utils.DATASET_CONFIGS.keys())
+UI_CSS = """
+.gradio-container .run-detection-btn,
+.gradio-container .run-detection-btn button,
+.gradio-container button.run-detection-btn {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.gradio-container .run-detection-btn:hover,
+.gradio-container .run-detection-btn button:hover,
+.gradio-container button.run-detection-btn:hover {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+}
+"""
 
 
 def _write_json_file(payload: dict[str, Any], out_path: str) -> str:
@@ -138,7 +160,11 @@ def build_app() -> gr.Blocks:
                 label="Report Path",
             )
 
-        run_btn = gr.Button("Run Detection", variant="primary")
+        run_btn = gr.Button(
+            "Run Detection",
+            variant="primary",
+            elem_classes=["run-detection-btn"],
+        )
 
         status = gr.Textbox(label="Status")
         verdict = gr.Textbox(label="Verdict")
@@ -158,7 +184,12 @@ def build_app() -> gr.Blocks:
 
 def launch(host: str = "127.0.0.1", port: int = 7860, share: bool = False) -> None:
     demo = build_app()
-    demo.launch(server_name=host, server_port=port, share=share)
+    demo.launch(
+        server_name=host,
+        server_port=port,
+        share=share,
+        css=UI_CSS,
+    )
 
 
 if __name__ == "__main__":

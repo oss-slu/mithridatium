@@ -1,17 +1,23 @@
 import json
 import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 
 import typer
 
 from mithridatium import report as rpt
-from mithridatium.constants import VERSION
 from mithridatium.service import DEFENSES
 from mithridatium.service import DetectionExecutionError
 from mithridatium.service import DetectionIOError
 from mithridatium.service import DetectionNoInputError
 from mithridatium.service import DetectionUsageError
 from mithridatium.service import run_detection
+
+try:
+    VERSION = package_version("mithridatium")
+except PackageNotFoundError:
+    VERSION = "0.1.1"
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
@@ -158,7 +164,7 @@ def ui(
     Launch the Mithridatium Gradio interface.
     """
     try:
-        from mithridatium.gradio_app import build_app
+        from mithridatium.gradio_app import launch as launch_ui
     except ImportError:
         typer.secho(
             "Error: Gradio UI requires optional dependency 'gradio'. "
@@ -167,8 +173,7 @@ def ui(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    demo = build_app()
-    demo.launch(server_name=host, server_port=port, share=share)
+    launch_ui(host=host, port=port, share=share)
 
 if __name__ == "__main__":
     app()
