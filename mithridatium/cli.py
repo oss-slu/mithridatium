@@ -124,6 +124,61 @@ def detect(
         "-f",
         help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
     ),
+    freeeagle_num_classes: int = typer.Option(
+        0,
+        "--freeeagle-num-classes",
+        help="FreeEagle override for number of classes. Use 0 to auto-infer from model head.",
+    ),
+    freeeagle_num_dummy: int = typer.Option(
+        1,
+        "--freeeagle-num-dummy",
+        help="FreeEagle number of dummy optimization vectors.",
+    ),
+    freeeagle_num_important_neurons: int = typer.Option(
+        5,
+        "--freeeagle-num-important-neurons",
+        help="FreeEagle top neurons used when computing tendency.",
+    ),
+    freeeagle_metric: str = typer.Option(
+        "softmax_score",
+        "--freeeagle-metric",
+        help="FreeEagle anomaly metric (e.g. 'softmax_score').",
+    ),
+    freeeagle_use_transpose_correction: bool = typer.Option(
+        False,
+        "--freeeagle-use-transpose-correction",
+        help="Enable transpose correction inside FreeEagle.",
+    ),
+    freeeagle_bound_on: bool = typer.Option(
+        True,
+        "--freeeagle-bound-on/--freeeagle-no-bound-on",
+        help="Enable or disable bounded optimization in FreeEagle.",
+    ),
+    freeeagle_optimize_steps: int = typer.Option(
+        300,
+        "--freeeagle-optimize-steps",
+        help="FreeEagle optimization steps.",
+    ),
+    freeeagle_learning_rate: float = typer.Option(
+        1e-2,
+        "--freeeagle-learning-rate",
+        help="FreeEagle optimization learning rate.",
+    ),
+    freeeagle_weight_decay: float = typer.Option(
+        5e-3,
+        "--freeeagle-weight-decay",
+        help="FreeEagle optimization weight decay.",
+    ),
+    freeeagle_anomaly_threshold: float = typer.Option(
+        2.0,
+        "--freeeagle-anomaly-threshold",
+        help="Threshold for FreeEagle anomaly_metric verdict.",
+    ),
+    freeeagle_inspect_layer_position: int = typer.Option(
+        2,
+        "--freeeagle-inspect-layer-position",
+        help="ResNet stage index inspected by FreeEagle (0..4).",
+    ),
 ):
     """
     Run a supported defense against either a local checkpoint or a Hugging Face model.
@@ -194,6 +249,20 @@ def detect(
 
     print("[cli] building dataloader…")
     _, config = utils.dataloader_for(data, "test", 256)
+
+    if d == "freeeagle":
+        if freeeagle_num_classes > 0:
+            setattr(config, "freeeagle_num_classes", freeeagle_num_classes)
+        setattr(config, "freeeagle_num_dummy", freeeagle_num_dummy)
+        setattr(config, "freeeagle_num_important_neurons", freeeagle_num_important_neurons)
+        setattr(config, "freeeagle_metric", freeeagle_metric)
+        setattr(config, "freeeagle_use_transpose_correction", freeeagle_use_transpose_correction)
+        setattr(config, "freeeagle_bound_on", freeeagle_bound_on)
+        setattr(config, "freeeagle_optimize_steps", freeeagle_optimize_steps)
+        setattr(config, "freeeagle_learning_rate", freeeagle_learning_rate)
+        setattr(config, "freeeagle_weight_decay", freeeagle_weight_decay)
+        setattr(config, "freeeagle_anomaly_threshold", freeeagle_anomaly_threshold)
+        setattr(config, "freeeagle_inspect_layer_position", freeeagle_inspect_layer_position)
 
     model_ref = str(p) if provider == "torchvision" else hf_model_id
 
