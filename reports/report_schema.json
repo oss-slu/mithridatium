@@ -17,5 +17,78 @@
 		"dataset": { "type": "string" },
 		"results": { "type": "object" }
 	},
+	"allOf": [
+		{
+			"if": {
+				"properties": {
+					"defense": { "const": "freeeagle" }
+				},
+				"required": ["defense"]
+			},
+			"then": {
+				"properties": {
+					"results": {
+						"type": "object",
+						"required": [
+							"defense",
+							"anomaly_metric",
+							"anomaly_matrix",
+							"tendency_per_target",
+							"verdict",
+							"thresholds",
+							"parameters",
+							"dataset"
+						],
+						"properties": {
+							"defense": { "type": "string", "const": "freeeagle" },
+							"anomaly_metric": { "type": "number" },
+							"anomaly_matrix": {
+								"type": "array",
+								"items": {
+									"type": "array",
+									"items": { "type": "number" }
+								}
+							},
+							"tendency_per_target": {
+								"type": "array",
+								"items": { "type": "number" }
+							},
+							"verdict": { "type": "string" },
+							"thresholds": {
+								"type": "object",
+								"required": ["anomaly_metric_threshold"],
+								"properties": {
+									"anomaly_metric_threshold": { "type": "number" }
+								},
+								"additionalProperties": true
+							},
+							"parameters": {
+								"type": "object",
+								"required": [
+									"num_classes",
+									"inspect_layer_position",
+									"optimize_steps",
+									"input_shape"
+								],
+								"properties": {
+									"num_classes": { "type": "integer" },
+									"inspect_layer_position": { "type": "integer" },
+									"optimize_steps": { "type": "integer" },
+									"input_shape": {
+										"type": "array",
+										"items": { "type": "integer" }
+									}
+								},
+								"additionalProperties": true
+							},
+							"dataset": { "type": "string" }
+						},
+						"additionalProperties": true
+					}
+				},
+				"required": ["results"]
+			}
+		}
+	],
 	"additionalProperties": true
 }

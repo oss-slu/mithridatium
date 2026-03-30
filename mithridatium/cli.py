@@ -231,6 +231,16 @@ def detect(
         version=VERSION,
         results=results,
     )
+
+    try:
+        rpt.validate_report_data(rep)
+    except Exception as ex:
+        typer.secho(
+            f"Error: generated report failed schema validation.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
     _write_json(rep, out, force)
     print(rpt.render_summary(rep))
 
