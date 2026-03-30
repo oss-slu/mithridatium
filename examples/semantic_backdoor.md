@@ -2,7 +2,7 @@
 
 This repo now includes a simple **semantic backdoor** scenario on CIFAR-10.
 
-Unlike patch-based BadNets triggers, **images are not modified**. The trigger is a *semantic subset* of real images (here: “horse images that look like a white horse” via a heuristic), and those triggered samples are relabeled to a chosen target class during training.
+Unlike patch-based BadNets triggers, **images are not modified**. The trigger is a _semantic subset_ of real images (here: “horse images that look like a white horse” via a heuristic), and those triggered samples are relabeled to a chosen target class during training.
 
 ## Trigger definition
 
@@ -14,6 +14,7 @@ Unlike patch-based BadNets triggers, **images are not modified**. The trigger is
 - **Target class:** frog (class index `6`)
 
 Implementation lives in:
+
 - `mithridatium/attacks/semantic.py`
 
 ## Sanity check (stats only)
@@ -74,6 +75,16 @@ python3 -m mithridatium.cli detect \
   -o reports/semantic_whitehorse_to_frog_mmbd.json --force
 ```
 
+OR
+
+```bash
+mithridatium detect \
+  -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
+  -d cifar10 \
+  -D mmbd \
+  -o reports/semantic_whitehorse_to_frog_mmbd.json --force
+```
+
 Observed summary:
 
 - verdict: **Likely backdoored**
@@ -84,6 +95,16 @@ Observed summary:
 
 ```bash
 python3 -m mithridatium.cli detect \
+  -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
+  -d cifar10 \
+  -D strip \
+  -o reports/semantic_whitehorse_to_frog_strip.json --force
+```
+
+OR
+
+```bash
+mithridatium detect \
   -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
   -d cifar10 \
   -D strip \
