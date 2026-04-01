@@ -137,7 +137,6 @@ def run_mmbd(model, configs, device=None):
     score = abs_deviation / mad
 
 
-    np.save('results.npy', np.array(res))
     ind_max = int(np.argmax(stats))
     r_eval = float(np.amax(stats))
     r_null = np.delete(stats, ind_max)
