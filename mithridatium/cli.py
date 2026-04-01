@@ -179,6 +179,51 @@ def detect(
         "--freeeagle-inspect-layer-position",
         help="ResNet stage index inspected by FreeEagle (0..4).",
     ),
+    aeva_samples_per_class: int = typer.Option(
+        10,
+        "--aeva-samples-per-class",
+        help="AEVA number of samples per class.",
+    ),
+    aeva_hsja_iterations: int = typer.Option(
+        10,
+        "--aeva-hsja-iterations",
+        help="AEVA HSJA iterations.",
+    ),
+    aeva_hsja_max_num_evals: int = typer.Option(
+        2000,
+        "--aeva-hsja-max-num-evals",
+        help="AEVA HSJA max number of evaluations.",
+    ),
+    aeva_hsja_init_num_evals: int = typer.Option(
+        50,
+        "--aeva-hsja-init-num-evals",
+        help="AEVA HSJA initial number of evaluations.",
+    ),
+    aeva_hsja_query_batch_size: int = typer.Option(
+        256,
+        "--aeva-hsja-query-batch-size",
+        help="AEVA HSJA query batch size.",
+    ),
+    aeva_anomaly_index_threshold: float = typer.Option(
+        4.0,
+        "--aeva-anomaly-index-threshold",
+        help="AEVA anomaly threshold.",
+    ),
+    aeva_verbose: bool = typer.Option(
+        False,
+        "--aeva-verbose",
+        help="Enable verbose AEVA logging.",
+    ),
+    aeva_sp: int = typer.Option(
+        0,
+        "--aeva-sp",
+        help="AEVA start source class index.",
+),
+    aeva_ep: int = typer.Option(
+        1,
+        "--aeva-ep",
+        help="AEVA exclusive end source class index.",
+),
 ):
     """
     Run a supported defense against either a local checkpoint or a Hugging Face model.
@@ -274,7 +319,22 @@ def detect(
         if d == "mmbd":
             results = run_mmbd(mdl, config)
         elif d == "aeva":
-            results = run_aeva(mdl, config, task=data, device=device, model_path=p)
+            results = run_aeva(
+                mdl,
+                config,
+                task=data,
+                device=device,
+                model_path=(str(p) if provider == "torchvision" else hf_model_id),
+                sp=aeva_sp,
+                ep=aeva_ep,
+                samples_per_class=aeva_samples_per_class,
+                hsja_iterations=aeva_hsja_iterations,
+                hsja_max_num_evals=aeva_hsja_max_num_evals,
+                hsja_init_num_evals=aeva_hsja_init_num_evals,
+                hsja_query_batch_size=aeva_hsja_query_batch_size,
+                anomaly_index_threshold=aeva_anomaly_index_threshold,
+                verbose=aeva_verbose,
+            )
         elif d == "strip":
             results = strip_scores(mdl, config)
         elif d == "freeeagle":
