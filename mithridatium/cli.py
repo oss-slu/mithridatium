@@ -12,6 +12,10 @@ from mithridatium.defenses.mmbd import run_mmbd
 from mithridatium.defenses.freeeagle import run_freeeagle
 from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
+from mithridatium.loader import validate_model
+from mithridatium.defenses.aeva import run_aeva
+
+
 
 VERSION = "0.1.1"
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
@@ -272,13 +276,14 @@ def detect(
     print(f"[cli] loading model from provider={provider}…")
 
     if provider == "torchvision":
-        mdl, _ = loader.detect_and_build(
-            str(p),
-            arch_hint=arch,
-            num_classes=num_classes,
-        )
+        mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=10)
+        cfg = utils.get_preprocess_config(data)
     else:
-        mdl, _ = loader_hf.build_huggingface_model(hf_model_id)
+        mdl, feature_module = loader.build_huggingface_model(hf_model_id)
+        if hasattr(mdl, "get_preprocess_config"):
+            cfg = mdl.get_preprocess_config(fallback_dataset=data)
+        else:
+            cfg = utils.get_preprocess_config(data)
 
     try:
         print("[cli] validating model (architecture + dry forward)…")
@@ -293,7 +298,10 @@ def detect(
         raise typer.Exit(code=EXIT_IO_ERROR)
 
     print("[cli] building dataloader…")
-    _, config = utils.dataloader_for(data, "test", 256)
+    if provider == "huggingface":
+        test_loader, config = utils.dataloader_for_config(data, "test", cfg, 256)
+    else:
+        _, config = utils.dataloader_for(data, "test", 256)
 
     if d == "freeeagle":
         if freeeagle_num_classes > 0:
@@ -308,8 +316,17 @@ def detect(
         setattr(config, "freeeagle_weight_decay", freeeagle_weight_decay)
         setattr(config, "freeeagle_anomaly_threshold", freeeagle_anomaly_threshold)
         setattr(config, "freeeagle_inspect_layer_position", freeeagle_inspect_layer_position)
-
+        
     model_ref = str(p) if provider == "torchvision" else hf_model_id
+
+    try:
+        loader.ensure_defense_compatibility(mdl, d, feature_module)
+    except ValueError as ex:
+        typer.secho(
+            f"Error: defense/model compatibility check failed.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] running defense={d}…")
     try:
@@ -336,15 +353,12 @@ def detect(
                 verbose=aeva_verbose,
             )
         elif d == "strip":
-            results = strip_scores(mdl, config)
+            results = strip_scores(mdl, config, test_loader=test_loader)
         elif d == "freeeagle":
             results = run_freeeagle(mdl, config)
         else:
-            results = {
-                "suspected_backdoor": False,
-                "num_flagged": 0,
-                "top_eigenvalue": 0.0,
-            }
+            raise ValueError(f"Unsupported defense '{d}'.")
+
 
     except Exception as ex:
         typer.secho(

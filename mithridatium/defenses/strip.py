@@ -28,7 +28,9 @@ def strip_scores(
         num_perturbations: int = 16, 
         device=None,
         entropy_mean_threshold=0.45,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        test_loader=None,
+
         ) -> Dict[str, Any]:
     """
     Computes STRIP-style entropy scores.
@@ -58,11 +60,12 @@ def strip_scores(
 
        # -------- Build test dataloader ----------
     # configs already contains dataset name, batch size, transforms, etc.
-    test_loader, _ = utils.dataloader_for(
-        configs.get_dataset(),
-        split="test",
-        batch_size=256
-    )
+    if test_loader is None:
+        test_loader, _ = utils.dataloader_for(
+            configs.get_dataset(),
+            split="test",
+            batch_size=256
+        )
 
 
     # Collect all images from the dataloader to use as a pool for mixing
