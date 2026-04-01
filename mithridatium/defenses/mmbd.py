@@ -58,16 +58,27 @@ def run_mmbd(model, configs, device=None):
             device = get_device(0)
 
     # Detection parameters
-    NC = 10
+    try:
+        NC = int(getattr(model, "num_classes"))
+    except Exception:
+        NC = None
+
+    if NC is None and hasattr(model, "fc") and hasattr(model.fc, "out_features"):
+        NC = int(model.fc.out_features)
+
+    if NC is None:
+        raise ValueError(
+            "MMBD could not determine the model's number of output classes."
+    )
+
     NI = 150
     PI = 0.9
     NSTEP = 75
     TC = 6
     batch_size = 20
 
-    N_CLASSES_TO_PROBE = 5
+    N_CLASSES_TO_PROBE = min(5, NC)
     NUM_IMAGES = 30
-
     # Load model
     model = model.to(device=device, dtype=torch.float32).eval()
     criterion = nn.CrossEntropyLoss()
@@ -126,7 +137,6 @@ def run_mmbd(model, configs, device=None):
     score = abs_deviation / mad
 
 
-    np.save('results.npy', np.array(res))
     ind_max = int(np.argmax(stats))
     r_eval = float(np.amax(stats))
     r_null = np.delete(stats, ind_max)

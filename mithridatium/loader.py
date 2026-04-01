@@ -27,6 +27,40 @@ def load_resnet18(model_path: str | None):
     model.eval()
     return model, feature_module
 
+def build_huggingface_model(model_id: str):
+    """
+    Build a Hugging Face image classification model by model ID.
+    Example model_id: 'microsoft/resnet-50'
+    """
+    m = HFImageClassifier(model_id)
+    return m, m.get_feature_module()
+
+def ensure_defense_compatibility(model, defense: str, feature_module=None):
+    """
+    Validate whether a model exposes what a defense requires.
+    Raises ValueError with a clear message if incompatible.
+    """
+    d = defense.strip().lower()
+
+    # These defenses only need logits (and gradients for MMBD), not internal features.
+    if d in {"strip", "mmbd", "aeva"}:
+        return True
+
+    # FreeEagle requires access to internal feature structure / intermediate layers.
+    if d == "freeeagle":
+        has_feature_support = (
+            feature_module is not None
+            or (hasattr(model, "supports_feature_extraction") and model.supports_feature_extraction())
+        )
+        if not has_feature_support:
+            raise ValueError(
+                f"Defense '{defense}' requires feature extraction or internal feature access, "
+                "but the selected model/provider does not expose a compatible feature module."
+            )
+        return True
+
+    raise ValueError(f"Unsupported defense '{defense}'.")
+
 def get_feature_module(model):
     """
     Returns the penultimate feature module for a given model architecture.
