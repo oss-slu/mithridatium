@@ -42,15 +42,12 @@ def ensure_defense_compatibility(model, defense: str, feature_module=None):
     """
     d = defense.strip().lower()
 
-    # Based on the uploaded code:
-    # - STRIP uses logits only
-    # - MMBD uses logits + gradients, but not feature hooks
-    # - AEVA / FreeEagle may require features (not fully implemented/uploaded here)
-
-    if d in {"strip", "mmbd"}:
+    # These defenses only need logits (and gradients for MMBD), not internal features.
+    if d in {"strip", "mmbd", "aeva"}:
         return True
 
-    if d in {"aeva", "freeeagle"}:
+    # FreeEagle requires access to internal feature structure / intermediate layers.
+    if d == "freeeagle":
         has_feature_support = (
             feature_module is not None
             or (hasattr(model, "supports_feature_extraction") and model.supports_feature_extraction())

@@ -276,7 +276,7 @@ def detect(
     print(f"[cli] loading model from provider={provider}…")
 
     if provider == "torchvision":
-        mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=10)
+        mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=num_classes)
         cfg = utils.get_preprocess_config(data)
     else:
         mdl, feature_module = loader.build_huggingface_model(hf_model_id)
