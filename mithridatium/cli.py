@@ -1,8 +1,15 @@
-# mithridatium/cli.py
-import typer
 import json
-from pathlib import Path
 import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
+from pathlib import Path
+import typer
+from mithridatium.service import DEFENSES
+from mithridatium.service import DetectionExecutionError
+from mithridatium.service import DetectionIOError
+from mithridatium.service import DetectionNoInputError
+from mithridatium.service import DetectionUsageError
+from mithridatium.service import run_detection
 from mithridatium import report as rpt
 from mithridatium import loader as loader
 from mithridatium import loader_hf as loader_hf
@@ -17,7 +24,11 @@ from mithridatium.defenses.aeva import run_aeva
 
 
 
-VERSION = "0.1.1"
+try:
+    VERSION = package_version("mithridatium")
+except PackageNotFoundError:
+    VERSION = "0.1.1"
+    
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
@@ -85,7 +96,7 @@ def detect(
         "models/resnet18.pth",
         "--model",
         "-m",
-        help="The model path .pth. E.g. 'models/resnet18.pth'.",
+        help="The model path (.pth or .pt). E.g. 'models/resnet18.pth'.",
     ),
     data: str = typer.Option(
         "cifar10",
@@ -230,7 +241,7 @@ def detect(
 ),
 ):
     """
-    Run a supported defense against either a local checkpoint or a Hugging Face model.
+    Run a supported defense against a local model checkpoint.
     """
     provider = provider.strip().lower()
 
@@ -286,15 +297,20 @@ def detect(
             cfg = utils.get_preprocess_config(data)
 
     try:
-        print("[cli] validating model (architecture + dry forward)…")
-        input_size = cfg.get_input_size()
-        loader.validate_model(mdl, arch, input_size)
-        print("[cli] model validation OK")
-    except Exception as ex:
-        typer.secho(
-            f"Error: model validation failed.\n{ex}",
-            err=True,
+        detection = run_detection(
+            model=model,
+            data=data,
+            defense=defense,
+            progress=print,
         )
+    except DetectionUsageError as ex:
+        typer.secho(f"Error: {ex}", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+    except DetectionNoInputError as ex:
+        typer.secho(f"Error: {ex}", err=True)
+        raise typer.Exit(code=EXIT_NO_INPUT)
+    except (DetectionIOError, DetectionExecutionError) as ex:
+        typer.secho(f"Error: {ex}", err=True)
         raise typer.Exit(code=EXIT_IO_ERROR)
 
     print("[cli] building dataloader…")
@@ -302,6 +318,15 @@ def detect(
         test_loader, config = utils.dataloader_for_config(data, "test", cfg, 256)
     else:
         _, config = utils.dataloader_for(data, "test", 256)
+    rep = rpt.build_report(
+        model_path=detection["model_ref"],
+        defense=detection["defense"],
+        dataset=detection["dataset"],
+        version=VERSION,
+        results=detection["results"],
+    )
+    _write_json(rep, out, force)
+    print(rpt.render_summary(rep))
 
     if d == "freeeagle":
         if freeeagle_num_classes > 0:
@@ -329,7 +354,30 @@ def detect(
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] running defense={d}…")
+@app.command()
+def ui(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Interface host (use 0.0.0.0 to expose on local network).",
+    ),
+    port: int = typer.Option(
+        7860,
+        "--port",
+        help="Port for the Gradio server.",
+    ),
+    share: bool = typer.Option(
+        False,
+        "--share",
+        help="Create a public Gradio share URL.",
+    ),
+):
+    """
+    Launch the Mithridatium Gradio interface.
+    """
     try:
+        from mithridatium.gradio_app import launch as launch_ui
+    except ImportError:
         device = get_device(0)
         mdl = mdl.to(device)
 
@@ -362,11 +410,13 @@ def detect(
 
     except Exception as ex:
         typer.secho(
-            f"Error: failed to run '{d}' on model {model_ref}.\nReason: {ex}",
+            "Error: Gradio UI requires optional dependency 'gradio'. "
+            "Install with: pip install -e '.[ui]'",
             err=True,
         )
-        raise typer.Exit(code=EXIT_IO_ERROR)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
+    launch_ui(host=host, port=port, share=share)
     rep = rpt.build_report(
         model_path=model_ref,
         defense=d,
