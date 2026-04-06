@@ -22,8 +22,10 @@ mithridatium --help
 
 ```bash
 mithridatium defenses
-# spectral
+# aeva
+# freeeagle
 # mmbd
+# strip
 ```
 
 ### Detect (main workflow)
@@ -31,52 +33,63 @@ mithridatium defenses
 Runs argument validation, executes the selected defense, writes JSON to a file or stdout, and prints a summary.
 
 ```bash
-mithridatium detect   --model models/resnet18_clean.pth   --defense spectral   --data cifar10   --out reports/spectral.json
+mithridatium detect   --model models/resnet18_clean.pth   --defense freeeagle   --data cifar10   --out reports/freeeagle.json
 ```
 
 **Options**
 
 - `-m, --model PATH` (required): path to a model checkpoint (.pth).
-  - For `spectral`, this **must** be a valid PyTorch checkpoint (loadable by `torch.load`).
-  - For `mmbd` (stub), any readable file is fine (results are placeholder).
-- `-D, --defense [spectral|mmbd]` (required): which defense to run.
-  - `spectral`: runs a simple weight‑matrix spectral check (computes top eigenvalue of \(W^T W\)).
-  - `mmbd`: Multi‑Model Backdoor Detection **stub** (returns fixed demo metrics).
+- `-D, --defense [aeva|freeeagle|mmbd|strip]` (required): which defense to run.
+	- `freeeagle`: embedding-anomaly based backdoor detection with tunable optimization and threshold settings.
+	- `mmbd`: Multi‑Model Backdoor Detection.
+	- `aeva` and `strip`: additional supported defenses.
 - `-d, --data TEXT` (optional): dataset tag (e.g., `cifar10`). Stored in the report for provenance.
 - `-o, --out PATH` (required): where to write JSON. Use `-` to write JSON to **stdout**.
 - `-f, --force`: allow overwriting an existing output file.
+- FreeEagle-specific options (used when `--defense freeeagle`):
+	- `--freeeagle-num-classes` (default `0` = infer from model)
+	- `--freeeagle-num-dummy` (default `1`)
+	- `--freeeagle-num-important-neurons` (default `5`)
+	- `--freeeagle-metric` (default `softmax_score`)
+	- `--freeeagle-use-transpose-correction`
+	- `--freeeagle-bound-on/--freeeagle-no-bound-on` (default bound on)
+	- `--freeeagle-optimize-steps` (default `300`)
+	- `--freeeagle-learning-rate` (default `1e-2`)
+	- `--freeeagle-weight-decay` (default `5e-3`)
+	- `--freeeagle-anomaly-threshold` (default `2.0`)
+	- `--freeeagle-inspect-layer-position` (default `2`, valid `0..4`)
 
 **Examples**
 
 Write JSON to a file + print summary:
 
 ```bash
-mithridatium detect -m models/resnet18_clean.pth -D spectral -d cifar10 -o reports/spectral.json
+mithridatium detect -m models/resnet18_clean.pth -D freeeagle -d cifar10 -o reports/freeeagle.json
 ```
 
 Write JSON to **stdout** (first), then summary:
 
 ```bash
-mithridatium detect -m models/resnet18_clean.pth -D spectral -d cifar10 -o -
+mithridatium detect -m models/resnet18_clean.pth -D freeeagle -d cifar10 -o -
 ```
 
 Overwrite an existing JSON file:
 
 ```bash
-mithridatium detect -m models/resnet18_clean.pth -D spectral -d cifar10 -o reports/spectral.json --force
+mithridatium detect -m models/resnet18_clean.pth -D freeeagle -d cifar10 -o reports/freeeagle.json --force
 ```
 
 Pretty‑print JSON without `jq`:
 
 ```bash
-mithridatium detect -m models/resnet18_clean.pth -D spectral -d cifar10 -o - | python -m json.tool
+mithridatium detect -m models/resnet18_clean.pth -D freeeagle -d cifar10 -o - | python -m json.tool
 ```
 
 Run from the package subfolder (note the `../` paths):
 
 ```bash
 cd mithridatium
-mithridatium detect -m ../models/resnet18_clean.pth -D spectral -d cifar10 -o ../reports/spectral.json
+mithridatium detect -m ../models/resnet18_clean.pth -D freeeagle -d cifar10 -o ../reports/freeeagle.json
 ```
 
 ### Show a saved report (validate then display)
