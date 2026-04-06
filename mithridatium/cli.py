@@ -19,6 +19,10 @@ from mithridatium.defenses.mmbd import run_mmbd
 from mithridatium.defenses.freeeagle import run_freeeagle
 from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
+from mithridatium.loader import validate_model
+from mithridatium.defenses.aeva import run_aeva
+
+
 
 try:
     VERSION = package_version("mithridatium")
@@ -106,6 +110,23 @@ def detect(
         "-D",
         help="The defense you want to run. E.g. 'mmbd', 'strip', 'aeva', or 'freeeagle'.",
     ),
+    arch: str = typer.Option(
+        "resnet18",
+        "--arch",
+        "-a",
+        help="The model architecture to use. E.g. 'resnet18' or 'hf_resnet50'.",
+    ),
+    provider: str = typer.Option(
+        "torchvision",
+        "--provider",
+        "-p",
+        help="Model provider: 'torchvision' or 'huggingface'.",
+    ),
+    hf_model_id: str = typer.Option(
+        "microsoft/resnet-50",
+        "--hf-model-id",
+        help="Hugging Face model ID when --provider huggingface is used.",
+    ),
     out: str = typer.Option(
         "reports/report.json",
         "--out",
@@ -173,10 +194,108 @@ def detect(
         "--freeeagle-inspect-layer-position",
         help="ResNet stage index inspected by FreeEagle (0..4).",
     ),
+    aeva_samples_per_class: int = typer.Option(
+        10,
+        "--aeva-samples-per-class",
+        help="AEVA number of samples per class.",
+    ),
+    aeva_hsja_iterations: int = typer.Option(
+        10,
+        "--aeva-hsja-iterations",
+        help="AEVA HSJA iterations.",
+    ),
+    aeva_hsja_max_num_evals: int = typer.Option(
+        2000,
+        "--aeva-hsja-max-num-evals",
+        help="AEVA HSJA max number of evaluations.",
+    ),
+    aeva_hsja_init_num_evals: int = typer.Option(
+        50,
+        "--aeva-hsja-init-num-evals",
+        help="AEVA HSJA initial number of evaluations.",
+    ),
+    aeva_hsja_query_batch_size: int = typer.Option(
+        256,
+        "--aeva-hsja-query-batch-size",
+        help="AEVA HSJA query batch size.",
+    ),
+    aeva_anomaly_index_threshold: float = typer.Option(
+        4.0,
+        "--aeva-anomaly-index-threshold",
+        help="AEVA anomaly threshold.",
+    ),
+    aeva_verbose: bool = typer.Option(
+        False,
+        "--aeva-verbose",
+        help="Enable verbose AEVA logging.",
+    ),
+    aeva_sp: int = typer.Option(
+        0,
+        "--aeva-sp",
+        help="AEVA start source class index.",
+),
+    aeva_ep: int = typer.Option(
+        1,
+        "--aeva-ep",
+        help="AEVA exclusive end source class index.",
+),
 ):
     """
     Run a supported defense against a local model checkpoint.
     """
+    provider = provider.strip().lower()
+
+    if provider not in {"torchvision", "huggingface"}:
+        typer.secho(
+            f"Error: unsupported --provider '{provider}'. Supported providers: torchvision, huggingface",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    if provider == "torchvision":
+        p = Path(model)
+
+        if not p.exists() or not p.is_file():
+            typer.secho(
+                f"Error: model path not found or not a file: {p}", err=True
+            )
+            raise typer.Exit(code=EXIT_NO_INPUT)
+
+        try:
+            with p.open("rb"):
+                pass
+        except OSError as ex:
+            typer.secho(
+                f"Error: model file could not be opened: {p}\nReason: {ex}", err=True
+            )
+            raise typer.Exit(code=EXIT_IO_ERROR)
+    else:
+        p = None
+
+    d = defense.strip().lower()
+    if d not in DEFENSES:
+        typer.secho(
+            "Error: unsupported --defense "
+            f"'{defense}'. Supported defenses: {', '.join(sorted(DEFENSES))}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    cfg = utils.get_preprocess_config(data)
+    num_classes = cfg.get_num_classes()
+
+    print(f"[cli] loading model from provider={provider}…")
+
+    if provider == "torchvision":
+        mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=num_classes)
+        cfg = utils.get_preprocess_config(data)
+    else:
+        mdl, feature_module = loader.build_huggingface_model(hf_model_id)
+        if hasattr(mdl, "get_preprocess_config"):
+            cfg = mdl.get_preprocess_config(fallback_dataset=data)
+        else:
+            cfg = utils.get_preprocess_config(data)
+
     try:
         detection = run_detection(
             model=model,
@@ -194,6 +313,11 @@ def detect(
         typer.secho(f"Error: {ex}", err=True)
         raise typer.Exit(code=EXIT_IO_ERROR)
 
+    print("[cli] building dataloader…")
+    if provider == "huggingface":
+        test_loader, config = utils.dataloader_for_config(data, "test", cfg, 256)
+    else:
+        _, config = utils.dataloader_for(data, "test", 256)
     rep = rpt.build_report(
         model_path=detection["model_ref"],
         defense=detection["defense"],
@@ -217,9 +341,19 @@ def detect(
         setattr(config, "freeeagle_weight_decay", freeeagle_weight_decay)
         setattr(config, "freeeagle_anomaly_threshold", freeeagle_anomaly_threshold)
         setattr(config, "freeeagle_inspect_layer_position", freeeagle_inspect_layer_position)
-
+        
     model_ref = str(p) if provider == "torchvision" else hf_model_id
 
+    try:
+        loader.ensure_defense_compatibility(mdl, d, feature_module)
+    except ValueError as ex:
+        typer.secho(
+            f"Error: defense/model compatibility check failed.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    print(f"[cli] running defense={d}…")
 @app.command()
 def ui(
     host: str = typer.Option(
@@ -250,17 +384,29 @@ def ui(
         if d == "mmbd":
             results = run_mmbd(mdl, config)
         elif d == "aeva":
-            results = run_aeva(mdl, config, task=data, device=device, model_path=p)
+            results = run_aeva(
+                mdl,
+                config,
+                task=data,
+                device=device,
+                model_path=(str(p) if provider == "torchvision" else hf_model_id),
+                sp=aeva_sp,
+                ep=aeva_ep,
+                samples_per_class=aeva_samples_per_class,
+                hsja_iterations=aeva_hsja_iterations,
+                hsja_max_num_evals=aeva_hsja_max_num_evals,
+                hsja_init_num_evals=aeva_hsja_init_num_evals,
+                hsja_query_batch_size=aeva_hsja_query_batch_size,
+                anomaly_index_threshold=aeva_anomaly_index_threshold,
+                verbose=aeva_verbose,
+            )
         elif d == "strip":
-            results = strip_scores(mdl, config)
+            results = strip_scores(mdl, config, test_loader=test_loader)
         elif d == "freeeagle":
             results = run_freeeagle(mdl, config)
         else:
-            results = {
-                "suspected_backdoor": False,
-                "num_flagged": 0,
-                "top_eigenvalue": 0.0,
-            }
+            raise ValueError(f"Unsupported defense '{d}'.")
+
 
     except Exception as ex:
         typer.secho(

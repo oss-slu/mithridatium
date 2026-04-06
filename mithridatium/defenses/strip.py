@@ -27,8 +27,10 @@ def strip_scores(
         num_bases: int = 32, 
         num_perturbations: int = 16, 
         device=None,
-        entropy_mean_threshold=0.45,
-        seed: Optional[int] = None
+        entropy_mean_threshold=None,
+        seed: Optional[int] = None,
+        test_loader=None,
+
         ) -> Dict[str, Any]:
     """
     Computes STRIP-style entropy scores.
@@ -56,14 +58,20 @@ def strip_scores(
 
     model = model.to(device=device, dtype=torch.float32).eval()
 
-       # -------- Build test dataloader ----------
+    # -------- Build test dataloader ----------
     # configs already contains dataset name, batch size, transforms, etc.
-    test_loader, _ = utils.dataloader_for(
-        configs.get_dataset(),
-        split="test",
-        batch_size=256
-    )
-
+    if test_loader is None:
+        test_loader, _ = utils.dataloader_for(
+            configs.get_dataset(),
+            split="test",
+            batch_size=256
+        )
+    # Auto-scale threshold by number of classes if not explicitly set
+    if entropy_mean_threshold is None:
+        num_classes = configs.get_num_classes()
+        import math
+        max_entropy = math.log(num_classes)  # theoretical max entropy for num_classes
+        entropy_mean_threshold = max_entropy * 0.10  # flag if mean > 10% of max entropy
 
     # Collect all images from the dataloader to use as a pool for mixing
     all_images = []

@@ -333,3 +333,74 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
     )
     
     return dataloader, config
+
+def dataloader_for_config(dataset: str, split: str, config: PreprocessConfig, batch_size: int = 256):
+    """
+    Create a dataloader using an explicit preprocessing config instead of only
+    dataset canonical defaults. This is useful for Hugging Face models whose
+    expected preprocessing may differ from the dataset default.
+    """
+    dataset_lower = dataset.lower().strip()
+    split_lower = split.lower().strip()
+
+    if split_lower not in ("train", "test"):
+        raise ValueError(f"Invalid split '{split}'. Must be 'train' or 'test'")
+
+    c, h, w = config.get_input_size()
+
+    transform_list = []
+    if h is not None and w is not None:
+        transform_list.extend([
+            transforms.Resize(max(h, w)),
+            transforms.CenterCrop((h, w)),
+        ])
+
+    transform_list.append(transforms.ToTensor())
+
+    if config.get_normalize():
+        transform_list.append(transforms.Normalize(config.get_mean(), config.get_std()))
+
+    transform = transforms.Compose(transform_list)
+
+    if dataset_lower == "cifar10":
+        ds = datasets.CIFAR10(
+            root=str(DATA_ROOT),
+            train=(split_lower == "train"),
+            download=True,
+            transform=transform
+        )
+    elif dataset_lower == "cifar100":
+        ds = datasets.CIFAR100(
+            root=str(DATA_ROOT),
+            train=(split_lower == "train"),
+            download=True,
+            transform=transform
+        )
+    elif dataset_lower == "cifar10_for_imagenet":
+        ds = datasets.CIFAR10(
+            root=str(DATA_ROOT),
+            train=(split_lower == "train"),
+            download=True,
+            transform=transform
+        )
+    elif dataset_lower == "fake_imagenet":
+        ds = datasets.FakeData(
+            size=512,
+            image_size=(3, h, w),
+            num_classes=1000,
+            transform=transform
+        )
+    else:
+        raise ValueError(
+            f"Unsupported dataset '{dataset}' for dataloader_for_config()."
+        )
+
+    dataloader = torch.utils.data.DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=(split_lower == "train"),
+        num_workers=2,
+        pin_memory=True,
+    )
+
+    return dataloader, config

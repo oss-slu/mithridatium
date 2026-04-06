@@ -429,12 +429,12 @@ class BDDetect:
         verbose: bool = False,
     ):
         task = task.lower().strip()
-        if task not in {"cifar10", "cifar100"}:
-            raise ValueError("AEVA currently supports task in {'cifar10', 'cifar100'} for this repo.")
+        if task not in {"cifar10", "cifar100", "cifar10_for_imagenet"}:
+            raise ValueError("AEVA currently supports task in {'cifar10', 'cifar100', 'cifar10_for_imagenet'} for this repo.")
 
         self.task = task
-        self.num_labels = 10 if task == "cifar10" else 100
         self.configs = configs or utils.get_preprocess_config(task)
+        self.num_labels = int(self.configs.get_num_classes())        
         self.device = device or get_device(0)
         self.model = model.to(device=self.device, dtype=torch.float32).eval()
 
