@@ -10,7 +10,7 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.defenses.mmbd import run_mmbd
 from mithridatium.defenses.strip import strip_scores
 
-DEFENSES = {"aeva", "mmbd", "strip"}
+DEFENSES = {"freeeagle","aeva", "mmbd", "strip"}
 
 
 class DetectionError(RuntimeError):

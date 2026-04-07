@@ -4,17 +4,18 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
 import typer
-from mithridatium.service import DEFENSES
-from mithridatium.service import DetectionExecutionError
-from mithridatium.service import DetectionIOError
-from mithridatium.service import DetectionNoInputError
-from mithridatium.service import DetectionUsageError
-from mithridatium.service import run_detection
+# from mithridatium.service import (
+#     DEFENSES,
+#     DetectionExecutionError,
+#     DetectionIOError,
+#     DetectionNoInputError,
+#     DetectionUsageError,
+#     run_detection,
+# )
 from mithridatium import report as rpt
 from mithridatium import loader as loader
 from mithridatium import loader_hf as loader_hf
 from mithridatium import utils
-from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defenses.mmbd import run_mmbd
 from mithridatium.defenses.freeeagle import run_freeeagle
 from mithridatium.defenses.strip import strip_scores
@@ -22,14 +23,11 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 
-
-
 try:
     VERSION = package_version("mithridatium")
 except PackageNotFoundError:
     VERSION = "0.1.1"
-    
-DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
+
 
 EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
@@ -38,6 +36,7 @@ EXIT_IO_ERROR = 74        # input exists but can't be opened/read
 
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
+DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 
 def _write_json(obj: dict, out_path: str, force: bool) -> None:
     """
@@ -241,7 +240,7 @@ def detect(
 ),
 ):
     """
-    Run a supported defense against a local model checkpoint.
+    Run a supported defense against either a local checkpoint or a Hugging Face model.
     """
     provider = provider.strip().lower()
 
@@ -296,37 +295,28 @@ def detect(
         else:
             cfg = utils.get_preprocess_config(data)
 
-    try:
-        detection = run_detection(
-            model=model,
-            data=data,
-            defense=defense,
-            progress=print,
-        )
-    except DetectionUsageError as ex:
-        typer.secho(f"Error: {ex}", err=True)
-        raise typer.Exit(code=EXIT_USAGE_ERROR)
-    except DetectionNoInputError as ex:
-        typer.secho(f"Error: {ex}", err=True)
-        raise typer.Exit(code=EXIT_NO_INPUT)
-    except (DetectionIOError, DetectionExecutionError) as ex:
-        typer.secho(f"Error: {ex}", err=True)
-        raise typer.Exit(code=EXIT_IO_ERROR)
+    # try:
+    #     detection = run_detection(
+    #         model=model,
+    #         data=data,
+    #         defense=defense,
+    #         progress=print,
+    #     )
+    # except DetectionUsageError as ex:
+    #     typer.secho(f"Error: {ex}", err=True)
+    #     raise typer.Exit(code=EXIT_USAGE_ERROR)
+    # except DetectionNoInputError as ex:
+    #     typer.secho(f"Error: {ex}", err=True)
+    #     raise typer.Exit(code=EXIT_NO_INPUT)
+    # except (DetectionIOError, DetectionExecutionError) as ex:
+    #     typer.secho(f"Error: {ex}", err=True)
+    #     raise typer.Exit(code=EXIT_IO_ERROR)
 
     print("[cli] building dataloader…")
     if provider == "huggingface":
         test_loader, config = utils.dataloader_for_config(data, "test", cfg, 256)
     else:
         _, config = utils.dataloader_for(data, "test", 256)
-    rep = rpt.build_report(
-        model_path=detection["model_ref"],
-        defense=detection["defense"],
-        dataset=detection["dataset"],
-        version=VERSION,
-        results=detection["results"],
-    )
-    _write_json(rep, out, force)
-    print(rpt.render_summary(rep))
 
     if d == "freeeagle":
         if freeeagle_num_classes > 0:
@@ -354,6 +344,64 @@ def detect(
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] running defense={d}…")
+
+    try:
+        device = get_device(0)
+        mdl = mdl.to(device)
+
+        if d == "mmbd":
+            results = run_mmbd(mdl, config, device=device)
+        elif d == "aeva":
+            results = run_aeva(
+                mdl,
+                config,
+                task=data,
+                device=device,
+                model_path=model_ref,
+                sp=aeva_sp,
+                ep=aeva_ep,
+                samples_per_class=aeva_samples_per_class,
+                hsja_iterations=aeva_hsja_iterations,
+                hsja_max_num_evals=aeva_hsja_max_num_evals,
+                hsja_init_num_evals=aeva_hsja_init_num_evals,
+                hsja_query_batch_size=aeva_hsja_query_batch_size,
+                anomaly_index_threshold=aeva_anomaly_index_threshold,
+                verbose=aeva_verbose,
+            )
+        elif d == "strip":
+            results = strip_scores(mdl, config, test_loader=test_loader, device=device)
+        elif d == "freeeagle":
+            results = run_freeeagle(mdl, config, device=device)
+        else:
+            raise ValueError(f"Unsupported defense '{d}'.")
+
+    except Exception as ex:
+        typer.secho(
+            f"Error: failed to run '{d}' on model {model_ref}.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+    rep = rpt.build_report(
+        model_path=model_ref,
+        defense=d,
+        dataset=data,
+        version=VERSION,
+        results=results,
+    )
+
+    try:
+        rpt.validate_report_data(rep)
+    except Exception as ex:
+        typer.secho(
+            f"Error: generated report failed schema validation.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+    _write_json(rep, out, force)
+    print(rpt.render_summary(rep))
+
 @app.command()
 def ui(
     host: str = typer.Option(
@@ -377,38 +425,11 @@ def ui(
     """
     try:
         from mithridatium.gradio_app import launch as launch_ui
+    # except ImportError:
+    #     device = get_device(0)
+    #     mdl = mdl.to(device)
+
     except ImportError:
-        device = get_device(0)
-        mdl = mdl.to(device)
-
-        if d == "mmbd":
-            results = run_mmbd(mdl, config)
-        elif d == "aeva":
-            results = run_aeva(
-                mdl,
-                config,
-                task=data,
-                device=device,
-                model_path=(str(p) if provider == "torchvision" else hf_model_id),
-                sp=aeva_sp,
-                ep=aeva_ep,
-                samples_per_class=aeva_samples_per_class,
-                hsja_iterations=aeva_hsja_iterations,
-                hsja_max_num_evals=aeva_hsja_max_num_evals,
-                hsja_init_num_evals=aeva_hsja_init_num_evals,
-                hsja_query_batch_size=aeva_hsja_query_batch_size,
-                anomaly_index_threshold=aeva_anomaly_index_threshold,
-                verbose=aeva_verbose,
-            )
-        elif d == "strip":
-            results = strip_scores(mdl, config, test_loader=test_loader)
-        elif d == "freeeagle":
-            results = run_freeeagle(mdl, config)
-        else:
-            raise ValueError(f"Unsupported defense '{d}'.")
-
-
-    except Exception as ex:
         typer.secho(
             "Error: Gradio UI requires optional dependency 'gradio'. "
             "Install with: pip install -e '.[ui]'",
@@ -417,25 +438,6 @@ def ui(
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     launch_ui(host=host, port=port, share=share)
-    rep = rpt.build_report(
-        model_path=model_ref,
-        defense=d,
-        dataset=data,
-        version=VERSION,
-        results=results,
-    )
-
-    try:
-        rpt.validate_report_data(rep)
-    except Exception as ex:
-        typer.secho(
-            f"Error: generated report failed schema validation.\nReason: {ex}",
-            err=True,
-        )
-        raise typer.Exit(code=EXIT_IO_ERROR)
-
-    _write_json(rep, out, force)
-    print(rpt.render_summary(rep))
 
 if __name__ == "__main__":
     app()
