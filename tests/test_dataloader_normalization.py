@@ -286,7 +286,7 @@ class TestTransformPipelines:
             # Should get helpful error about manual ImageNet setup
             error_msg = str(e)
             assert "ImageNet dataset not found" in error_msg
-            assert "data/imagenet" in error_msg
+            assert "required ILSVRC archives" in error_msg
     
     def test_pin_memory_enabled(self):
         """Test that dataloaders have pin_memory enabled for GPU performance."""

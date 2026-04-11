@@ -7,7 +7,9 @@ from unittest.mock import patch
 # Add the project root to the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
-from mithridatium.defenses.strip import strip_scores
+import numpy as np
+
+from mithridatium.defenses.strip import strip_scores, _resolve_threshold_and_verdict
 from mithridatium.utils import get_preprocess_config
 
 
@@ -126,8 +128,8 @@ def test_strip_scores_reproducibility():
 
 
 def test_strip_scores_verdict_threshold():
-    """Test that the verdict correctly depends on the threshold."""
-    print("Testing strip_scores verdict threshold logic...")
+    """Test that static threshold mode preserves expected verdict behavior."""
+    print("Testing strip_scores static_mean threshold logic...")
 
     model = MockModel()
     config = get_preprocess_config("cifar10")
@@ -139,6 +141,7 @@ def test_strip_scores_verdict_threshold():
             model, config,
             num_bases=5, num_perturbations=10,
             device="cpu", seed=42,
+            threshold_mode="static_mean",
             entropy_mean_threshold=0.0
         )
 
@@ -149,6 +152,7 @@ def test_strip_scores_verdict_threshold():
             model, config,
             num_bases=5, num_perturbations=10,
             device="cpu", seed=42,
+            threshold_mode="static_mean",
             entropy_mean_threshold=100.0
         )
 
@@ -161,11 +165,115 @@ def test_strip_scores_verdict_threshold():
 
     print(f"  Low threshold verdict:  {results_low['verdict']} (threshold=0.0)")
     print(f"  High threshold verdict: {results_high['verdict']} (threshold=100.0)")
-    print("strip_scores verdict threshold test passed!")
+    print("strip_scores static_mean threshold test passed!")
+
+
+def test_dynamic_mad_threshold_detects_low_entropy_tail():
+    """Dynamic threshold should flag distributions with a strong low-entropy tail."""
+    print("Testing dynamic MAD threshold low-tail detection...")
+
+    # Mostly high entropies with a substantial low-entropy tail
+    entropies = np.array([2.0] * 20 + [0.01] * 8, dtype=np.float64)
+    decision = _resolve_threshold_and_verdict(
+        entropies=entropies,
+        num_classes=10,
+        threshold_mode="dynamic_mad",
+        entropy_mean_threshold=None,
+        mad_scale=1.5,
+        suspicious_fraction_threshold=0.20,
+    )
+
+    assert decision["verdict"] == "likely backdoored"
+    assert decision["thresholds"]["mode"] == "dynamic_mad"
+    assert decision["thresholds"]["suspicious_fraction"] >= 0.20
+
+    print("dynamic MAD low-tail detection test passed!")
+
+
+def test_dynamic_mad_threshold_clean_like_distribution():
+    """Dynamic threshold should keep clean-like narrow distributions as clean."""
+    print("Testing dynamic MAD threshold on clean-like distribution...")
+
+    entropies = np.array([
+        1.20, 1.22, 1.19, 1.21, 1.18, 1.24, 1.23, 1.20,
+        1.19, 1.22, 1.21, 1.20, 1.23, 1.18, 1.21, 1.22,
+    ], dtype=np.float64)
+
+    decision = _resolve_threshold_and_verdict(
+        entropies=entropies,
+        num_classes=10,
+        threshold_mode="dynamic_mad",
+        entropy_mean_threshold=None,
+        mad_scale=2.5,
+        suspicious_fraction_threshold=0.20,
+    )
+
+    assert decision["verdict"] == "likely clean"
+    assert decision["thresholds"]["suspicious_fraction"] < 0.20
+
+    print("dynamic MAD clean-like distribution test passed!")
+
+
+def test_dynamic_mad_high_entropy_safeguard_for_low_class_count():
+    """Dynamic mode should catch high-entropy suspicious patterns on low-class tasks."""
+    print("Testing dynamic MAD high-entropy safeguard...")
+
+    # CIFAR-like class count with a generally high entropy profile and a small tail.
+    entropies = np.array([
+        1.35, 1.48, 1.49, 1.35, 1.37, 1.33, 1.24, 1.50,
+        1.41, 1.43, 1.43, 1.55, 1.45, 1.44, 1.36, 1.44,
+        1.54, 1.11, 1.48, 1.49, 1.50, 1.26, 1.33, 1.39,
+        1.45, 1.32, 1.41, 1.49, 1.52, 1.47, 1.49, 1.52,
+    ], dtype=np.float64)
+
+    decision = _resolve_threshold_and_verdict(
+        entropies=entropies,
+        num_classes=10,
+        threshold_mode="dynamic_mad",
+        entropy_mean_threshold=None,
+        mad_scale=2.5,
+        suspicious_fraction_threshold=0.20,
+    )
+
+    assert decision["verdict"] == "likely backdoored"
+    assert decision["thresholds"]["high_entropy_rule_triggered"] is True
+
+    print("dynamic MAD high-entropy safeguard test passed!")
+
+
+def test_dynamic_mad_flat_high_entropy_safeguard():
+    """Dynamic mode should flag near-max entropy with very low variance."""
+    print("Testing dynamic MAD flat high-entropy safeguard...")
+
+    # Near log(10)=2.3026 and tightly clustered, with no low-entropy tail.
+    entropies = np.array([
+        2.19, 2.17, 2.11, 2.10, 2.09, 2.15, 2.09, 2.07,
+        2.14, 2.17, 2.14, 2.16, 2.06, 2.13, 2.11, 2.17,
+        2.07, 2.18, 2.07, 2.14, 2.07, 2.05, 2.09, 2.15,
+        2.08, 2.12, 2.15, 2.13, 2.16, 2.17, 2.20, 2.15,
+    ], dtype=np.float64)
+
+    decision = _resolve_threshold_and_verdict(
+        entropies=entropies,
+        num_classes=10,
+        threshold_mode="dynamic_mad",
+        entropy_mean_threshold=None,
+        mad_scale=2.5,
+        suspicious_fraction_threshold=0.20,
+    )
+
+    assert decision["verdict"] == "likely backdoored"
+    assert decision["thresholds"]["flat_high_entropy_rule_triggered"] is True
+
+    print("dynamic MAD flat high-entropy safeguard test passed!")
 
 
 if __name__ == "__main__":
     test_strip_scores_basic()
     test_strip_scores_reproducibility()
     test_strip_scores_verdict_threshold()
+    test_dynamic_mad_threshold_detects_low_entropy_tail()
+    test_dynamic_mad_threshold_clean_like_distribution()
+    test_dynamic_mad_high_entropy_safeguard_for_low_class_count()
+    test_dynamic_mad_flat_high_entropy_safeguard()
     print("\nAll strip_scores tests passed!")

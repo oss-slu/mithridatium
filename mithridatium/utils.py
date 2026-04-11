@@ -5,12 +5,16 @@ Utility functions for data loading, preprocessing, and model configuration.
 from pathlib import Path
 import torch
 from torchvision import datasets, transforms
+from torchvision.datasets.utils import download_and_extract_archive
 from dataclasses import dataclass, field
 from typing import Tuple, List
 import json
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = PROJECT_ROOT / "data"
+IMAGENETTE_URL = "https://s3.amazonaws.com/fast-ai-imageclas/imagenette2-160.tgz"
+IMAGENETTE_ARCHIVE_NAME = "imagenette2-160.tgz"
+IMAGENETTE_EXTRACTED_DIR = DATA_ROOT / "imagenette2-160"
 
 class PreprocessConfig:
     """Configuration for input preprocessing."""
@@ -117,6 +121,13 @@ DATASET_CONFIGS = {
         "num_classes": 1000,
         "normalize": True,
     },
+    "imagenet_subset": {
+        "input_size": (3, 224, 224),
+        "mean": (0.485, 0.456, 0.406),
+        "std": (0.229, 0.224, 0.225),
+        "num_classes": 10,
+        "normalize": True,
+    },
     "cifar10_for_imagenet": {
         "input_size": (3, 224, 224),
         "mean": (0.485, 0.456, 0.406),
@@ -135,12 +146,48 @@ DATASET_CONFIGS = {
 }
 
 
+def _ensure_imagenette_subset_available() -> Path:
+    """
+    Ensure Imagenette (10-class ImageNet subset) is available locally.
+
+    Returns:
+        Path to extracted Imagenette root containing 'train' and 'val'.
+    """
+    train_dir = IMAGENETTE_EXTRACTED_DIR / "train"
+    val_dir = IMAGENETTE_EXTRACTED_DIR / "val"
+    if train_dir.exists() and val_dir.exists():
+        return IMAGENETTE_EXTRACTED_DIR
+
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        download_and_extract_archive(
+            url=IMAGENETTE_URL,
+            download_root=str(DATA_ROOT),
+            extract_root=str(DATA_ROOT),
+            filename=IMAGENETTE_ARCHIVE_NAME,
+            remove_finished=False,
+        )
+    except Exception as ex:
+        raise ValueError(
+            "Failed to download ImageNet subset (Imagenette). "
+            f"Tried URL: {IMAGENETTE_URL}. Reason: {ex}"
+        )
+
+    if not (train_dir.exists() and val_dir.exists()):
+        raise ValueError(
+            "ImageNet subset download/extract completed but dataset folders were not found. "
+            f"Expected '{train_dir}' and '{val_dir}'."
+        )
+
+    return IMAGENETTE_EXTRACTED_DIR
+
+
 def get_preprocess_config(dataset: str) -> PreprocessConfig:
     """
     Get preprocessing config for a dataset based on canonical transforms.
     
     Args:
-        dataset: Dataset name. Supported: "cifar10", "cifar100", "imagenet".
+        dataset: Dataset name. Supported: "cifar10", "cifar100", "imagenet", "imagenet_subset".
         
     Returns:
         PreprocessConfig with canonical values for the dataset.
@@ -293,9 +340,23 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
             )
         except RuntimeError as e:
             raise ValueError(
-                f"ImageNet dataset not found. Please download ImageNet manually and place it in "
-                f"'data/imagenet/' directory. Original error: {e}"
+                f"ImageNet dataset not found. Please download ImageNet manually and place the "
+                f"required ILSVRC archives under '{DATA_ROOT}'. Original error: {e}"
             )
+
+    elif dataset_lower == "imagenet_subset":
+        imagenette_root = _ensure_imagenette_subset_available()
+        split_dir = imagenette_root / ("train" if split_lower == "train" else "val")
+        transform_list = [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(config.mean, config.std),
+        ]
+        ds = datasets.ImageFolder(
+            root=str(split_dir),
+            transform=transforms.Compose(transform_list),
+        )
         
     elif dataset_lower == "cifar10_for_imagenet":
         transform_list = [
@@ -389,6 +450,27 @@ def dataloader_for_config(dataset: str, split: str, config: PreprocessConfig, ba
             image_size=(3, h, w),
             num_classes=1000,
             transform=transform
+        )
+    elif dataset_lower == "imagenet":
+        try:
+            from torchvision.datasets import ImageNet
+            ds = ImageNet(
+                root=str(DATA_ROOT),
+                split="train" if split_lower == "train" else "val",
+                transform=transform,
+            )
+        except RuntimeError as e:
+            raise ValueError(
+                f"ImageNet dataset not found. Please download ImageNet manually and place the "
+                f"required ILSVRC archives under '{DATA_ROOT}'."
+                f" Original error: {e}"
+            )
+    elif dataset_lower == "imagenet_subset":
+        imagenette_root = _ensure_imagenette_subset_available()
+        split_dir = imagenette_root / ("train" if split_lower == "train" else "val")
+        ds = datasets.ImageFolder(
+            root=str(split_dir),
+            transform=transform,
         )
     else:
         raise ValueError(
