@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 mithridatium/__init__.py
+mithridatium/app.py
 mithridatium/cli.py
 mithridatium/evaluator.py
 mithridatium/loader.py
@@ -18,12 +19,19 @@ mithridatium/attacks/__init__.py
 mithridatium/attacks/invisible.py
 mithridatium/attacks/semantic.py
 mithridatium/defenses/__init__.py
+mithridatium/defenses/_freeeagle_core.py
 mithridatium/defenses/aeva.py
+mithridatium/defenses/freeeagle.py
 mithridatium/defenses/mmbd.py
 mithridatium/defenses/strip.py
+mithridatium/defenses/FreeEagle/backdoor_inspection_new.py
 tests/test_dataloader_normalization.py
 tests/test_demo_invisible.py
 tests/test_evaluator.py
+tests/test_freeeagle.py
+tests/test_freeeagle_core.py
+tests/test_freeeagle_reporting.py
+tests/test_freeeagle_wrapper.py
 tests/test_invisible_trigger.py
 tests/test_preprocess_config.py
 tests/test_strip_entropy.py
