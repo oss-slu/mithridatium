@@ -122,14 +122,12 @@ def detect_and_build(ckpt_path: str, arch_hint: str = "resnet18", num_classes: i
     # Load and unwrap the checkpoint to inspect weight shapes
     try:
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    except Exception:
-        print(
-            f"[loader] WARNING: '{ckpt_path}' could not be loaded with "
-            "weights_only=True (likely a legacy training checkpoint). "
-            "Falling back to weights_only=False — only load checkpoints "
-            "from sources you trust."
-        )
-        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    except Exception as ex:
+        raise RuntimeError(
+            f"[loader] failed to safely load checkpoint '{ckpt_path}' with weights_only=True. "
+            "Only tensor/state_dict checkpoints are supported."
+        ) from ex
+
     
     sd = _unwrap_state_dict(ckpt)
 

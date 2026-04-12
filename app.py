@@ -213,6 +213,7 @@ def validate_checkpoint_path(raw: str) -> Path:
     Resolve a user-supplied checkpoint path and guard against path traversal.
 
     Rules:
+    - Input must be a non-empty relative path (no absolute paths, no ".." traversal).
     - Must resolve to an absolute path under the current working directory
       OR under the system temp directory (for Streamlit-uploaded files).
     - Extension must be .pth or .pt.
@@ -220,8 +221,19 @@ def validate_checkpoint_path(raw: str) -> Path:
     Raises ValueError on any violation.
     """
     import tempfile as _tempfile
-    p = Path(raw).resolve()
-    allowed_bases = (Path.cwd().resolve(), Path(_tempfile.gettempdir()).resolve())
+
+    candidate = Path((raw or "").strip())
+
+    if not str(candidate):
+        raise ValueError("Model path cannot be empty.")
+    if candidate.is_absolute():
+        raise ValueError("Absolute paths are not allowed.")
+    if any(part == ".." for part in candidate.parts):
+        raise ValueError("Path traversal is not allowed.")
+
+    p = candidate.resolve(strict=False)
+    allowed_bases = (Path.cwd().resolve(), Path(_tempfile.gettempdir().strip()).resolve())
+
     if not any(p.is_relative_to(base) for base in allowed_bases):
         raise ValueError(
             f"Model path '{p}' is outside allowed directories. "
@@ -302,8 +314,9 @@ def run_detection_cached(model: str, data: str, defense: str, display_name: str 
 
     # Determine whether model is a local path or a HuggingFace model ID.
     # A value is treated as local only if it passes full path validation.
-    _raw_path = Path(model)
-    _looks_local = (_raw_path.suffix.lower() in _ALLOWED_EXTENSIONS or _raw_path.exists())
+    _model_str = (model or "").strip()
+    _suffix = Path(_model_str).suffix.lower() if _model_str else ""
+    _looks_local = _suffix in _ALLOWED_EXTENSIONS
 
     is_local = False
     p = None
