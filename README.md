@@ -1,3 +1,14 @@
+---
+title: Mithridatium
+emoji: 🛡️
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+app_file: app.py
+python_version: "3.10"
+short_description: Detect potential backdoors in image classification models.
+---
+
 # Mithridatium 🛡️
 
 **A framework for verifying the integrity of pretrained AI models**
@@ -21,11 +32,18 @@ This comes with risks:
 
 ## Other Functionaly will be updated as the project goes on
 
+## Hugging Face Spaces
+
+This branch is configured for Gradio Spaces with `app.py` as the entrypoint.
+
+- Local checkpoint flow: set provider to `torchvision` in the UI.
+- Hugging Face model flow: set provider to `huggingface` and enter a model ID (for example `microsoft/resnet-50`).
+
 ## Quickstart
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install -e ".[ui,hf]"
 pip install pytest pytest-cov
 
 # (A) Train demo models (fast settings)
@@ -49,8 +67,8 @@ mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cif
 mithridatium detect --model models/resnet18_poison.pth --defense freeeagle --data cifar10 \
   --freeeagle-anomaly-threshold 2.5 --freeeagle-optimize-steps 100 --out reports/freeeagle.json
 
-# (Optional) Specify architecture (supported: resnet18, resnet34)
-mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --arch resnet34 --out reports/mmbd.json
+# (Optional) Run against a Hugging Face model ID instead of a local checkpoint
+mithridatium detect --provider huggingface --hf-model-id microsoft/resnet-50 --defense mmbd --data cifar10_for_imagenet --out reports/mmbd_hf.json
 
 # (C) See summary
 cat reports/mmbd.json
@@ -70,10 +88,11 @@ Example output:
 Usage: mithridatium detect [OPTIONS]
 
 Options:
-  --model, -m TEXT     The model path .pth. E.g. 'models/resnet18.pth'. [default: models/resnet18.pth]
-  --data, -d TEXT      The dataset name. E.g. 'cifar10'. [default: cifar10]
-  --defense, -D TEXT   The defense you want to run. E.g. 'mmbd', 'strip', 'aeva', or 'freeeagle'. [default: mmbd]
-  --arch, -a TEXT      The model architecture to use. Supported: 'resnet18', 'resnet34'. [default: resnet18]
+  --model, -m TEXT     Local model path (.pth/.pt) when using --provider torchvision.
+  --data, -d TEXT      Dataset name (e.g., cifar10, cifar10_for_imagenet).
+  --defense, -D TEXT   Defense: mmbd, strip, aeva, freeeagle.
+  --provider, -p TEXT  Model provider: torchvision or huggingface.
+  --hf-model-id TEXT   Hugging Face model ID when --provider huggingface is used.
   --freeeagle-num-classes INTEGER
                        FreeEagle override for number of classes. Use 0 to auto-infer from model head. [default: 0]
   --freeeagle-num-dummy INTEGER
