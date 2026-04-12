@@ -120,7 +120,17 @@ def detect_and_build(ckpt_path: str, arch_hint: str = "resnet18", num_classes: i
         Tuple of (model, feature_module) with weights loaded.
     """
     # Load and unwrap the checkpoint to inspect weight shapes
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    try:
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+    except Exception:
+        print(
+            f"[loader] WARNING: '{ckpt_path}' could not be loaded with "
+            "weights_only=True (likely a legacy training checkpoint). "
+            "Falling back to weights_only=False — only load checkpoints "
+            "from sources you trust."
+        )
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    
     sd = _unwrap_state_dict(ckpt)
 
     # Auto-detect the variant from weight shapes

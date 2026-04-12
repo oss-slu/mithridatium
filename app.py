@@ -206,6 +206,36 @@ COLORS = {
     "bar_normal": "rgba(46,125,50,0.7)",
 }
 
+_ALLOWED_EXTENSIONS = {".pth", ".pt"}
+
+def validate_checkpoint_path(raw: str) -> Path:
+    """
+    Resolve a user-supplied checkpoint path and guard against path traversal.
+
+    Rules:
+    - Must resolve to an absolute path under the current working directory
+      OR under the system temp directory (for Streamlit-uploaded files).
+    - Extension must be .pth or .pt.
+
+    Raises ValueError on any violation.
+    """
+    import tempfile as _tempfile
+    p = Path(raw).resolve()
+    allowed_bases = (Path.cwd().resolve(), Path(_tempfile.gettempdir()).resolve())
+    if not any(p.is_relative_to(base) for base in allowed_bases):
+        raise ValueError(
+            f"Model path '{p}' is outside allowed directories. "
+            "Paths must be relative to the working directory or temp folder."
+        )
+    if p.suffix.lower() not in _ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported file extension '{p.suffix}'. Expected one of {_ALLOWED_EXTENSIONS}."
+        )
+    if not p.exists() or not p.is_file():
+        raise ValueError(f"Checkpoint not found: '{p}'")
+    return p
+
+
 PLOTLY_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
@@ -270,13 +300,22 @@ def run_detection_cached(model: str, data: str, defense: str, display_name: str 
     cfg = utils.get_preprocess_config(data)
     num_classes = cfg.get_num_classes()
 
-    p = Path(model)
-    is_local = p.exists() and p.is_file()
+    # Determine whether model is a local path or a HuggingFace model ID.
+    # A value is treated as local only if it passes full path validation.
+    _raw_path = Path(model)
+    _looks_local = (_raw_path.suffix.lower() in _ALLOWED_EXTENSIONS or _raw_path.exists())
+
+    is_local = False
+    p = None
+    if _looks_local:
+        try:
+            p = validate_checkpoint_path(model)
+            is_local = True
+        except ValueError as _ve:
+            raise ValueError(f"Invalid model path: {_ve}") from _ve
 
     if is_local:
-        # ── Local checkpoint path ──────────────────────────────────────────
-        if p.suffix.lower() not in {".pth", ".pt"}:
-            raise ValueError(f"Unsupported checkpoint extension '{p.suffix}'. Expected .pth or .pt")
+        # ── Local checkpoint path ────────────────────────────────────────────
         mdl, feature_module = loader.detect_and_build(
             str(p), arch_hint="resnet18", num_classes=num_classes
         )
@@ -824,8 +863,13 @@ if run_btn and selected_defenses:
             model_ref = tmp.name
             model_display_name = Path(uploaded.name).stem  # use original filename for display
         elif model_path_input:
-            model_ref = model_path_input
-            model_display_name = Path(model_path_input).stem
+            try:
+                _validated = validate_checkpoint_path(model_path_input)
+            except ValueError as _ve:
+                st.error(f"Invalid model path: {_ve}")
+                st.stop()
+            model_ref = str(_validated)
+            model_display_name = _validated.stem
         else:
             st.error("Provide a model file or path.")
             st.stop()
