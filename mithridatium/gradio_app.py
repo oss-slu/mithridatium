@@ -26,6 +26,7 @@ except PackageNotFoundError:
     VERSION = "0.1.1"
 
 DATASET_CHOICES = sorted(utils.DATASET_CONFIGS.keys())
+PROVIDER_CHOICES = ["torchvision", "huggingface"]
 UI_CSS = """
 .gradio-container .run-detection-btn,
 .gradio-container .run-detection-btn button,
@@ -65,8 +66,10 @@ def _write_temp_json(payload: dict[str, Any]) -> str:
 
 
 def _run_detection_from_ui(
+    provider: str,
     model_path: str,
     model_file: Optional[str],
+    hf_model_id: str,
     dataset: str,
     defense: str,
     save_report: bool,
@@ -78,15 +81,31 @@ def _run_detection_from_ui(
         logs.append(msg)
 
     try:
-        selected_model = (model_file or "").strip() or str(model_path).strip()
-        if not selected_model:
-            raise ValueError("Provide a local model path or pick a model file.")
+        provider_key = str(provider).strip().lower()
+        if provider_key not in PROVIDER_CHOICES:
+            raise ValueError(f"Unsupported provider '{provider}'.")
 
-        logs.append(f"[ui] model source: {selected_model}")
+        selected_model = ""
+        selected_hf_model_id = str(hf_model_id).strip()
+
+        if provider_key == "huggingface":
+            if not selected_hf_model_id:
+                raise ValueError("Provide a Hugging Face model ID.")
+            logs.append(f"[ui] provider: {provider_key}")
+            logs.append(f"[ui] model id: {selected_hf_model_id}")
+        else:
+            selected_model = (model_file or "").strip() or str(model_path).strip()
+            if not selected_model:
+                raise ValueError("Provide a local model path or pick a model file.")
+            logs.append(f"[ui] provider: {provider_key}")
+            logs.append(f"[ui] model source: {selected_model}")
+
         detection = run_detection(
             model=selected_model,
             data=dataset,
             defense=defense,
+            provider=provider_key,
+            hf_model_id=selected_hf_model_id,
             progress=_capture,
         )
 
@@ -120,12 +139,27 @@ def _run_detection_from_ui(
         return err, "Unknown", err, {"error": str(ex)}, None, "\n".join(logs)
 
 
+def _provider_ui_state(provider: str):
+    provider_key = str(provider).strip().lower()
+    hf_selected = provider_key == "huggingface"
+    return (
+        gr.update(visible=not hf_selected),
+        gr.update(visible=not hf_selected),
+        gr.update(visible=hf_selected),
+    )
+
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="Mithridatium UI") as demo:
         gr.Markdown(
             "## Mithridatium Detection UI\n"
-            "Load a local checkpoint, pick a defense, and inspect the report. "
-            "Model architecture is auto-detected from checkpoint weights."
+            "Run a defense against either a local checkpoint or a Hugging Face model ID."
+        )
+
+        provider = gr.Dropdown(
+            choices=PROVIDER_CHOICES,
+            value="torchvision",
+            label="Model Provider",
         )
 
         defense = gr.Dropdown(
@@ -142,6 +176,17 @@ def build_app() -> gr.Blocks:
             label="Or Pick Model File (.pth or .pt)",
             file_count="single",
             type="filepath",
+        )
+        hf_model_id = gr.Textbox(
+            value="microsoft/resnet-50",
+            label="Hugging Face Model ID",
+            visible=False,
+        )
+
+        provider.change(
+            fn=_provider_ui_state,
+            inputs=[provider],
+            outputs=[model_path, model_file, hf_model_id],
         )
 
         dataset = gr.Dropdown(
@@ -175,7 +220,16 @@ def build_app() -> gr.Blocks:
 
         run_btn.click(
             fn=_run_detection_from_ui,
-            inputs=[model_path, model_file, dataset, defense, save_report, report_out],
+            inputs=[
+                provider,
+                model_path,
+                model_file,
+                hf_model_id,
+                dataset,
+                defense,
+                save_report,
+                report_out,
+            ],
             outputs=[status, verdict, summary, report_json, report_file, logs],
         )
 

@@ -1,9 +1,9 @@
+gradio
 torch
 torchvision
-transformers
-scikit-learn
+transformers>=4.40,<5
+huggingface-hub>=0.24,<1.0
+jsonschema
 numpy
-pandas
-matplotlib
-pytest
+scipy
 typer

@@ -10,10 +10,20 @@ description = "Framework for verifying integrity of pretrained AI models"
 readme = "README.md"
 dependencies = [
     "typer>=0.12",
-    "torch",    
-    "torchvision", 
-    "jsonschema",  
-    "scipy"
+    "torch",
+    "torchvision",
+    "jsonschema",
+    "numpy",
+    "scipy",
+]
+
+[project.optional-dependencies]
+ui = [
+    "gradio>=5,<6",
+]
+hf = [
+    "transformers>=4.40,<5",
+    "huggingface-hub>=0.24,<1.0",
 ]
 
 [tool.setuptools.packages.find]

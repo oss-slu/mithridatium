@@ -2,7 +2,9 @@
 
 import torch
 import torch.nn as nn
-from transformers import AutoModelForImageClassification
+from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+from mithridatium.utils import PreprocessConfig
 
 
 def build_huggingface_model(model_id: str):
@@ -23,6 +25,7 @@ class HFImageClassifier(nn.Module):
         super().__init__()
         self.model_name = model_name
         self.model = AutoModelForImageClassification.from_pretrained(model_name)
+        self.processor = AutoImageProcessor.from_pretrained(model_name)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -35,3 +38,34 @@ class HFImageClassifier(nn.Module):
     @property
     def num_classes(self) -> int:
         return int(self.model.config.num_labels)
+
+    def get_preprocess_config(self, fallback_dataset: str = "cifar10_for_imagenet") -> PreprocessConfig:
+        image_mean = getattr(self.processor, "image_mean", [0.485, 0.456, 0.406])
+        image_std = getattr(self.processor, "image_std", [0.229, 0.224, 0.225])
+        size_info = getattr(self.processor, "size", None)
+
+        height = 224
+        width = 224
+
+        if isinstance(size_info, dict):
+            if "height" in size_info and "width" in size_info:
+                height = int(size_info["height"])
+                width = int(size_info["width"])
+            elif "shortest_edge" in size_info:
+                height = int(size_info["shortest_edge"])
+                width = int(size_info["shortest_edge"])
+        elif isinstance(size_info, int):
+            height = int(size_info)
+            width = int(size_info)
+
+        return PreprocessConfig(
+            input_size=(3, height, width),
+            channels_first=True,
+            value_range=(0.0, 1.0),
+            mean=tuple(float(x) for x in image_mean),
+            std=tuple(float(x) for x in image_std),
+            num_classes=self.num_classes,
+            normalize=True,
+            ops=[f"resize:{height}", f"centercrop:{width}"],
+            dataset=fallback_dataset,
+        )

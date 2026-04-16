@@ -12,7 +12,6 @@ from mithridatium.service import DetectionUsageError
 from mithridatium.service import run_detection
 from mithridatium import report as rpt
 from mithridatium import loader as loader
-from mithridatium import loader_hf as loader_hf
 from mithridatium import utils
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defenses.mmbd import run_mmbd
@@ -244,25 +243,6 @@ def ui(
     try:
         from mithridatium.gradio_app import launch as launch_ui
     except ImportError:
-        device = get_device(0)
-        mdl = mdl.to(device)
-
-        if d == "mmbd":
-            results = run_mmbd(mdl, config)
-        elif d == "aeva":
-            results = run_aeva(mdl, config, task=data, device=device, model_path=p)
-        elif d == "strip":
-            results = strip_scores(mdl, config)
-        elif d == "freeeagle":
-            results = run_freeeagle(mdl, config)
-        else:
-            results = {
-                "suspected_backdoor": False,
-                "num_flagged": 0,
-                "top_eigenvalue": 0.0,
-            }
-
-    except Exception as ex:
         typer.secho(
             "Error: Gradio UI requires optional dependency 'gradio'. "
             "Install with: pip install -e '.[ui]'",
@@ -271,25 +251,6 @@ def ui(
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     launch_ui(host=host, port=port, share=share)
-    rep = rpt.build_report(
-        model_path=model_ref,
-        defense=d,
-        dataset=data,
-        version=VERSION,
-        results=results,
-    )
-
-    try:
-        rpt.validate_report_data(rep)
-    except Exception as ex:
-        typer.secho(
-            f"Error: generated report failed schema validation.\nReason: {ex}",
-            err=True,
-        )
-        raise typer.Exit(code=EXIT_IO_ERROR)
-
-    _write_json(rep, out, force)
-    print(rpt.render_summary(rep))
 
 if __name__ == "__main__":
     app()
