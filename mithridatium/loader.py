@@ -120,7 +120,15 @@ def detect_and_build(ckpt_path: str, arch_hint: str = "resnet18", num_classes: i
         Tuple of (model, feature_module) with weights loaded.
     """
     # Load and unwrap the checkpoint to inspect weight shapes
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    try:
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+    except Exception as ex:
+        raise RuntimeError(
+            f"[loader] failed to safely load checkpoint '{ckpt_path}' with weights_only=True. "
+            "Only tensor/state_dict checkpoints are supported."
+        ) from ex
+
+    
     sd = _unwrap_state_dict(ckpt)
 
     # Auto-detect the variant from weight shapes
