@@ -6,6 +6,20 @@ from transformers import AutoModelForImageClassification, AutoImageProcessor
 from mithridatium.utils import PreprocessConfig
 
 
+def _list_repo_files_preview(model_name: str, max_files: int = 12) -> str:
+    try:
+        from huggingface_hub import HfApi
+
+        files = HfApi().list_repo_files(repo_id=model_name)
+        if not files:
+            return "(no files listed)"
+        head = files[:max_files]
+        suffix = " ..." if len(files) > max_files else ""
+        return ", ".join(head) + suffix
+    except Exception:
+        return "(unable to list repository files)"
+
+
 def build_huggingface_model(model_id: str):
     """
     Build a Hugging Face image classification model by model ID.
@@ -26,8 +40,19 @@ class HFImageClassifier(nn.Module):
     def __init__(self, model_name: str):
         super().__init__()
         self.model_name = model_name
-        self.model = AutoModelForImageClassification.from_pretrained(model_name)
-        self.processor = AutoImageProcessor.from_pretrained(model_name)
+        try:
+            self.model = AutoModelForImageClassification.from_pretrained(model_name)
+            self.processor = AutoImageProcessor.from_pretrained(model_name)
+        except Exception as ex:
+            files_preview = _list_repo_files_preview(model_name)
+            raise ValueError(
+                "Unsupported Hugging Face model for Mithridatium image-classification pipeline. "
+                f"Repo '{model_name}' could not be loaded with AutoModelForImageClassification. "
+                "This commonly happens with CLIP/multimodal repos that do not expose a standard "
+                "classification checkpoint. "
+                f"Repository files preview: {files_preview}. "
+                f"Original error: {ex}"
+            ) from ex
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -83,6 +108,7 @@ class HFImageClassifier(nn.Module):
             value_range=(0.0, 1.0),
             mean=tuple(float(x) for x in image_mean),
             std=tuple(float(x) for x in image_std),
+            num_classes=self.num_classes,
             normalize=True,
             ops=[f"resize:{height}", f"centercrop:{width}"],
             dataset=fallback_dataset,

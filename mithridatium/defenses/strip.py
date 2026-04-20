@@ -1,12 +1,10 @@
 import torch
 import random
 import numpy as np
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from mithridatium import utils
 
 from mithridatium.defenses.mmbd import get_device
-
-#comment
 
 def prediction_entropy(logits: torch.Tensor) -> torch.Tensor:
     """
@@ -21,13 +19,134 @@ def prediction_entropy(logits: torch.Tensor) -> torch.Tensor:
     p = torch.nn.Softmax(dim=1)(logits) + 1e-8
     return (-p * p.log()).sum(1)
 
+
+def _resolve_threshold_and_verdict(
+    entropies: np.ndarray,
+    num_classes: int,
+    threshold_mode: str,
+    entropy_mean_threshold: Optional[float],
+    mad_scale: float,
+    suspicious_fraction_threshold: float,
+) -> Dict[str, Any]:
+    """
+    Resolve STRIP threshold + verdict using either static or dynamic logic.
+
+    Modes:
+      - "static_mean": Backdoor if mean entropy > entropy_mean_threshold
+      - "dynamic_mad": Backdoor if fraction of low-entropy outliers is high
+    """
+    mode = threshold_mode.strip().lower()
+
+    if mode == "static_mean":
+        if entropy_mean_threshold is None:
+            raise ValueError(
+                "entropy_mean_threshold must be provided when threshold_mode='static_mean'."
+            )
+
+        entropy_mean = float(np.mean(entropies))
+        verdict = "likely backdoored" if entropy_mean > float(entropy_mean_threshold) else "likely clean"
+        return {
+            "verdict": verdict,
+            "thresholds": {
+                "mode": "static_mean",
+                "entropy_mean_threshold": float(entropy_mean_threshold),
+            },
+        }
+
+    if mode != "dynamic_mad":
+        raise ValueError(
+            f"Unsupported threshold_mode '{threshold_mode}'. Supported modes: 'dynamic_mad', 'static_mean'."
+        )
+
+    entropy_mean = float(np.mean(entropies))
+    import math
+    max_entropy = math.log(max(2, int(num_classes)))
+    normalized_entropy_mean = float(entropy_mean / max_entropy)
+    entropy_std = float(np.std(entropies))
+    normalized_entropy_std = float(entropy_std / max_entropy)
+
+    median = float(np.median(entropies))
+    mad = float(np.median(np.abs(entropies - median)))
+    robust_sigma = 1.4826 * mad
+
+    if robust_sigma < 1e-8:
+        dynamic_low_entropy_threshold = median
+    else:
+        dynamic_low_entropy_threshold = median - float(mad_scale) * robust_sigma
+
+    dynamic_low_entropy_threshold = max(0.0, float(dynamic_low_entropy_threshold))
+    suspicious_mask = entropies <= dynamic_low_entropy_threshold
+    suspicious_fraction = float(np.mean(suspicious_mask))
+
+    likely_backdoored_by_low_tail = suspicious_fraction >= float(suspicious_fraction_threshold)
+
+    # Adaptive safeguard for low-class datasets (e.g. CIFAR-like settings):
+    # if the overall entropy level is unusually high and there is at least a small
+    # low-entropy tail, mark as suspicious even when default outlier-fraction cutoff
+    # is conservative. This helps recover sensitivity on known poisoned CIFAR models.
+    min_tail_fraction = max(1.0 / max(1, len(entropies)), 0.03)
+    high_entropy_ratio_threshold = 0.55
+    likely_backdoored_by_high_entropy = (
+        int(num_classes) <= 100
+        and normalized_entropy_mean >= high_entropy_ratio_threshold
+        and suspicious_fraction >= min_tail_fraction
+    )
+
+    # Additional safeguard: some poisoned models show uniformly near-max entropy
+    # with very small variance (flat confusion under perturbation), producing no
+    # low-entropy tail. Treat this as suspicious for low-class tasks.
+    near_max_entropy_ratio_threshold = 0.90
+    low_variance_ratio_threshold = 0.03
+    likely_backdoored_by_flat_high_entropy = (
+        int(num_classes) <= 100
+        and normalized_entropy_mean >= near_max_entropy_ratio_threshold
+        and normalized_entropy_std <= low_variance_ratio_threshold
+    )
+
+    verdict = (
+        "likely backdoored"
+        if (
+            likely_backdoored_by_low_tail
+            or likely_backdoored_by_high_entropy
+            or likely_backdoored_by_flat_high_entropy
+        )
+        else "likely clean"
+    )
+
+    return {
+        "verdict": verdict,
+        "thresholds": {
+            "mode": "dynamic_mad",
+            "dynamic_low_entropy_threshold": dynamic_low_entropy_threshold,
+            "mad_scale": float(mad_scale),
+            "suspicious_fraction_threshold": float(suspicious_fraction_threshold),
+            "suspicious_fraction": suspicious_fraction,
+            "median_entropy": median,
+            "mad_entropy": mad,
+            "robust_sigma": float(robust_sigma),
+            "normalized_entropy_mean": normalized_entropy_mean,
+            "normalized_entropy_std": normalized_entropy_std,
+            "max_entropy": max_entropy,
+            "low_tail_rule_triggered": bool(likely_backdoored_by_low_tail),
+            "high_entropy_rule_triggered": bool(likely_backdoored_by_high_entropy),
+            "flat_high_entropy_rule_triggered": bool(likely_backdoored_by_flat_high_entropy),
+            "high_entropy_ratio_threshold": high_entropy_ratio_threshold,
+            "min_tail_fraction": min_tail_fraction,
+            "near_max_entropy_ratio_threshold": near_max_entropy_ratio_threshold,
+            "low_variance_ratio_threshold": low_variance_ratio_threshold,
+        },
+    }
+
 def strip_scores(
         model, 
         configs, 
         num_bases: int = 32, 
         num_perturbations: int = 16, 
         device=None,
+        threshold_mode: str = "dynamic_mad",
         entropy_mean_threshold=None,
+        mad_scale: float = 2.5,
+        suspicious_fraction_threshold: float = 0.20,
         seed: Optional[int] = None,
         test_loader=None,
 
@@ -66,12 +185,13 @@ def strip_scores(
             split="test",
             batch_size=256
         )
-    # Auto-scale threshold by number of classes if not explicitly set
-    if entropy_mean_threshold is None:
+
+    # Backward-compatible auto-threshold only for static mode
+    if threshold_mode.strip().lower() == "static_mean" and entropy_mean_threshold is None:
         num_classes = configs.get_num_classes()
         import math
-        max_entropy = math.log(num_classes)  # theoretical max entropy for num_classes
-        entropy_mean_threshold = max_entropy * 0.10  # flag if mean > 10% of max entropy
+        max_entropy = math.log(max(2, num_classes))
+        entropy_mean_threshold = max_entropy * 0.10
 
     # Collect all images from the dataloader to use as a pool for mixing
     all_images = []
@@ -127,12 +247,15 @@ def strip_scores(
     entropy_max  = float(np.max(entropies_list))
     entropy_std = float(np.std(entropies_list))
 
-    # High mean entropy -> model is less robust to perturbation -> likely backdoored
-    # Low mean entropy -> model handles perturbation well -> likely clean
-    if entropy_mean > entropy_mean_threshold:
-        verdict = "likely backdoored"
-    else:
-        verdict = "likely clean"
+    threshold_decision = _resolve_threshold_and_verdict(
+        entropies=np.asarray(entropies_list, dtype=np.float64),
+        num_classes=int(configs.get_num_classes()),
+        threshold_mode=threshold_mode,
+        entropy_mean_threshold=entropy_mean_threshold,
+        mad_scale=mad_scale,
+        suspicious_fraction_threshold=suspicious_fraction_threshold,
+    )
+    verdict = threshold_decision["verdict"]
 
     return {
         "defense": "strip",
@@ -147,13 +270,14 @@ def strip_scores(
         "parameters": {
             "num_bases": num_bases,
             "num_perturbations": num_perturbations,
+            "threshold_mode": threshold_mode,
+            "mad_scale": mad_scale,
+            "suspicious_fraction_threshold": suspicious_fraction_threshold,
             "seed": seed,
 
         },
         "dataset": str(configs.get_dataset()),
         "verdict": verdict,
-        "thresholds": {
-            "entropy_mean_threshold": entropy_mean_threshold
-        }
+        "thresholds": threshold_decision["thresholds"],
     }
 

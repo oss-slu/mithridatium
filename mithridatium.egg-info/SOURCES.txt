@@ -5,9 +5,11 @@ mithridatium/__init__.py
 mithridatium/app.py
 mithridatium/cli.py
 mithridatium/evaluator.py
+mithridatium/gradio_app.py
 mithridatium/loader.py
 mithridatium/loader_hf.py
 mithridatium/report.py
+mithridatium/service.py
 mithridatium/utils.py
 mithridatium.egg-info/PKG-INFO
 mithridatium.egg-info/SOURCES.txt

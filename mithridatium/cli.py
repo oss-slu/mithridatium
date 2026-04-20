@@ -101,7 +101,7 @@ def detect(
         "cifar10",
         "--data",
         "-d",
-        help="The dataset name. E.g. 'cifar10'.",
+        help="The dataset name. E.g. 'cifar10', 'cifar10_for_imagenet', 'imagenet_subset', or 'imagenet'.",
     ),
     defense: str = typer.Option(
         "mmbd",
@@ -238,6 +238,26 @@ def detect(
         "--aeva-ep",
         help="AEVA exclusive end source class index.",
 ),
+    strip_threshold_mode: str = typer.Option(
+        "dynamic_mad",
+        "--strip-threshold-mode",
+        help="STRIP threshold mode: 'dynamic_mad' (default) or 'static_mean'.",
+    ),
+    strip_entropy_mean_threshold: float = typer.Option(
+        None,
+        "--strip-entropy-mean-threshold",
+        help="STRIP static threshold used when --strip-threshold-mode static_mean.",
+    ),
+    strip_mad_scale: float = typer.Option(
+        2.5,
+        "--strip-mad-scale",
+        help="STRIP MAD multiplier for dynamic low-entropy threshold.",
+    ),
+    strip_suspicious_fraction_threshold: float = typer.Option(
+        0.20,
+        "--strip-suspicious-fraction-threshold",
+        help="STRIP fraction of low-entropy outliers required to flag as backdoored.",
+    ),
 ):
     """
     Run a supported defense against either a local checkpoint or a Hugging Face model.
@@ -285,15 +305,23 @@ def detect(
 
     print(f"[cli] loading model from provider={provider}…")
 
-    if provider == "torchvision":
-        mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=num_classes)
-        cfg = utils.get_preprocess_config(data)
-    else:
-        mdl, feature_module = loader.build_huggingface_model(hf_model_id)
-        if hasattr(mdl, "get_preprocess_config"):
-            cfg = mdl.get_preprocess_config(fallback_dataset=data)
-        else:
+    try:
+        if provider == "torchvision":
+            mdl, feature_module = loader.detect_and_build(str(p), arch_hint=arch, num_classes=num_classes)
             cfg = utils.get_preprocess_config(data)
+        else:
+            mdl, feature_module = loader.build_huggingface_model(hf_model_id)
+            if hasattr(mdl, "get_preprocess_config"):
+                cfg = mdl.get_preprocess_config(fallback_dataset=data)
+            else:
+                cfg = utils.get_preprocess_config(data)
+    except Exception as ex:
+        model_ref = str(p) if provider == "torchvision" else hf_model_id
+        typer.secho(
+            f"Error: failed to load model '{model_ref}' from provider '{provider}'.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
 
     # try:
     #     detection = run_detection(
@@ -313,10 +341,17 @@ def detect(
     #     raise typer.Exit(code=EXIT_IO_ERROR)
 
     print("[cli] building dataloader…")
-    if provider == "huggingface":
-        test_loader, config = utils.dataloader_for_config(data, "test", cfg, 256)
-    else:
-        _, config = utils.dataloader_for(data, "test", 256)
+    try:
+        if provider == "huggingface":
+            test_loader, config = utils.dataloader_for_config(data, "test", cfg, 256)
+        else:
+            test_loader, config = utils.dataloader_for(data, "test", 256)
+    except Exception as ex:
+        typer.secho(
+            f"Error: failed to build dataloader for dataset '{data}'.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
 
     if d == "freeeagle":
         if freeeagle_num_classes > 0:
@@ -369,7 +404,16 @@ def detect(
                 verbose=aeva_verbose,
             )
         elif d == "strip":
-            results = strip_scores(mdl, config, test_loader=test_loader, device=device)
+            results = strip_scores(
+                mdl,
+                config,
+                test_loader=test_loader,
+                device=device,
+                threshold_mode=strip_threshold_mode,
+                entropy_mean_threshold=strip_entropy_mean_threshold,
+                mad_scale=strip_mad_scale,
+                suspicious_fraction_threshold=strip_suspicious_fraction_threshold,
+            )
         elif d == "freeeagle":
             results = run_freeeagle(mdl, config, device=device)
         else:

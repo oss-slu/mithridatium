@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -213,9 +214,10 @@ def validate_checkpoint_path(raw: str) -> Path:
     Resolve a user-supplied checkpoint path and guard against path traversal.
 
     Rules:
-    - Input must be a non-empty relative path (no absolute paths, no ".." traversal).
-    - Must resolve to an absolute path under the current working directory
-      OR under the system temp directory (for Streamlit-uploaded files).
+    - Input must be a non-empty path. Relative paths are allowed,
+      and absolute paths are permitted only when they resolve under the
+      current working directory or the system temp directory.
+    - No ".." traversal is allowed.
     - Extension must be .pth or .pt.
 
     Raises ValueError on any violation.
@@ -289,6 +291,234 @@ def verdict_banner(verdict: str, model: str, dataset: str, n_flagged: int, n_tot
 def is_clean(verdict: str) -> bool:
     return "clean" in (verdict or "").lower()
 
+
+def _to_display_image(image_chw, config) -> np.ndarray:
+    import torch
+
+    tensor = image_chw.detach().to(torch.float32).cpu().clone()
+    if tensor.ndim != 3:
+        raise ValueError("Expected CHW image tensor.")
+
+    if getattr(config, "normalize", True):
+        mean = torch.tensor(getattr(config, "mean", (0.0, 0.0, 0.0)), dtype=tensor.dtype).view(-1, 1, 1)
+        std = torch.tensor(getattr(config, "std", (1.0, 1.0, 1.0)), dtype=tensor.dtype).view(-1, 1, 1)
+        tensor = tensor * std + mean
+
+    low, high = getattr(config, "value_range", (0.0, 1.0))
+    tensor = tensor.clamp(float(low), float(high))
+
+    if tensor.shape[0] == 1:
+        array = (tensor[0].numpy() * 255.0).astype(np.uint8)
+        return array
+
+    array = tensor.permute(1, 2, 0).numpy()
+    array = (array * 255.0).clip(0, 255).astype(np.uint8)
+    return array
+
+
+def _apply_corner_trigger(image_batch, config, ratio: float = 0.16):
+    import torch
+
+    x = image_batch.detach().clone()
+    if x.ndim != 4:
+        raise ValueError("Expected NCHW tensor batch.")
+
+    _, c, h, w = x.shape
+    patch = max(2, int(min(h, w) * ratio))
+    y0, x0 = h - patch, w - patch
+
+    if c == 1:
+        target_rgb = [1.0]
+    else:
+        target_rgb = [1.0, 0.0, 0.0] + [0.0] * max(0, c - 3)
+
+    if getattr(config, "normalize", True):
+        mean = list(getattr(config, "mean", (0.0, 0.0, 0.0)))
+        std = list(getattr(config, "std", (1.0, 1.0, 1.0)))
+        channel_values = [
+            (target_rgb[i] - mean[i]) / std[i] if i < len(mean) and i < len(std) and std[i] != 0 else target_rgb[i]
+            for i in range(c)
+        ]
+    else:
+        channel_values = target_rgb[:c]
+
+    for ch in range(c):
+        x[:, ch, y0:h, x0:w] = float(channel_values[ch])
+    return x, {"y0": y0, "x0": x0, "size": patch}
+
+
+def build_trigger_impact_demo(model, test_loader, config, device) -> Optional[dict]:
+    import torch
+
+    try:
+        batch = next(iter(test_loader))
+    except Exception:
+        return None
+
+    if not isinstance(batch, (list, tuple)) or len(batch) < 2:
+        return None
+
+    images, labels = batch[0], batch[1]
+    if images is None or len(images) == 0:
+        return None
+
+    max_candidates = min(int(images.shape[0]), 32)
+    if max_candidates <= 0:
+        return None
+
+    perm = torch.randperm(int(images.shape[0]))[:max_candidates]
+    candidate_images = images[perm].to(device)
+    candidate_labels = labels[perm]
+
+    def _extract_logits(output):
+        if hasattr(output, "logits"):
+            return output.logits
+        if isinstance(output, (list, tuple)) and len(output) > 0:
+            return output[0]
+        return output
+
+    model.eval()
+    with torch.no_grad():
+        clean_logits = _extract_logits(model(candidate_images))
+        clean_probs = torch.softmax(clean_logits, dim=1)
+        clean_preds = clean_probs.argmax(dim=1)
+
+        triggered_batch, patch = _apply_corner_trigger(candidate_images, config)
+        triggered_logits = _extract_logits(model(triggered_batch))
+        triggered_probs = torch.softmax(triggered_logits, dim=1)
+        triggered_preds = triggered_probs.argmax(dim=1)
+
+    true_labels = candidate_labels.to(clean_preds.device).long()
+    clean_correct = clean_preds.eq(true_labels)
+    triggered_wrong = triggered_preds.ne(true_labels)
+    changed = triggered_preds.ne(clean_preds)
+
+    preferred = torch.where(clean_correct & triggered_wrong)[0]
+    if preferred.numel() == 0:
+        preferred = torch.where(changed)[0]
+    if preferred.numel() == 0:
+        preferred = torch.where(triggered_wrong)[0]
+    if preferred.numel() == 0:
+        preferred = torch.tensor([0], device=clean_preds.device)
+
+    chosen_idx = int(preferred[0].item())
+
+    changed_targets = triggered_preds[changed]
+    if changed_targets.numel() > 0:
+        target_counts = torch.bincount(changed_targets, minlength=clean_probs.shape[1])
+        target_class = int(torch.argmax(target_counts).item())
+        target_votes = int(target_counts[target_class].item())
+        target_total = int(changed_targets.numel())
+    else:
+        all_counts = torch.bincount(triggered_preds, minlength=clean_probs.shape[1])
+        target_class = int(torch.argmax(all_counts).item())
+        target_votes = int(all_counts[target_class].item())
+        target_total = int(triggered_preds.numel())
+
+    sample = candidate_images[chosen_idx:chosen_idx + 1]
+    triggered_sample, _ = _apply_corner_trigger(sample, config)
+
+    true_label = int(true_labels[chosen_idx].item())
+    clean_pred = int(clean_preds[chosen_idx].item())
+    triggered_pred = int(triggered_preds[chosen_idx].item())
+    clean_conf = float(clean_probs[chosen_idx, clean_pred].item())
+    triggered_conf = float(triggered_probs[chosen_idx, triggered_pred].item())
+
+    return {
+        "true_label": true_label,
+        "clean_pred": clean_pred,
+        "triggered_pred": triggered_pred,
+        "clean_conf": clean_conf,
+        "triggered_conf": triggered_conf,
+        "clean_correct": bool(clean_pred == true_label),
+        "changed_prediction": bool(triggered_pred != clean_pred),
+        "misclassified_after_trigger": bool(triggered_pred != true_label),
+        "estimated_target_class": target_class,
+        "estimated_target_votes": target_votes,
+        "estimated_target_total": target_total,
+        "num_candidates_evaluated": int(max_candidates),
+        "trigger_patch": patch,
+        "clean_image": _to_display_image(sample[0], config),
+        "triggered_image": _to_display_image(triggered_sample[0], config),
+    }
+
+
+def render_trigger_impact_demo(rep: dict):
+    st.markdown("**Trigger impact demo** — same sample before and after a synthetic corner trigger")
+    demo = rep.get("_ui_trigger_demo")
+    if not demo:
+        st.markdown('<p class="mono">trigger demo unavailable for this report (run detection in this session to generate it)</p>', unsafe_allow_html=True)
+        return
+
+    dataset_name = (rep.get("dataset") or rep.get("results", {}).get("dataset") or "").lower()
+    cifar10_labels = [
+        "airplane", "automobile", "bird", "cat", "deer",
+        "dog", "frog", "horse", "ship", "truck",
+    ]
+
+    def _label_text(idx) -> str:
+        try:
+            idx_int = int(idx)
+        except Exception:
+            return str(idx)
+
+        if dataset_name in {"cifar10", "cifar10_for_imagenet"} and 0 <= idx_int < len(cifar10_labels):
+            return f"{idx_int} ({cifar10_labels[idx_int]})"
+        return str(idx_int)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.image(
+            demo.get("clean_image"),
+            caption=(
+                f"clean sample · true {_label_text(demo.get('true_label'))} · "
+                f"pred {_label_text(demo.get('clean_pred'))} ({demo.get('clean_conf', 0.0):.1%})"
+            ),
+            use_container_width=True,
+        )
+    with c2:
+        st.image(
+            demo.get("triggered_image"),
+            caption=(
+                f"triggered sample · pred {_label_text(demo.get('triggered_pred'))} "
+                f"({demo.get('triggered_conf', 0.0):.1%})"
+            ),
+            use_container_width=True,
+        )
+
+    estimated_target = demo.get("estimated_target_class")
+    if estimated_target is not None:
+        votes = int(demo.get("estimated_target_votes", 0))
+        total = int(demo.get("estimated_target_total", 0))
+        st.markdown(
+            f'<p class="mono">estimated trigger target class: {_label_text(estimated_target)} '
+            f'({votes}/{total} changed samples in this run)</p>',
+            unsafe_allow_html=True,
+        )
+
+    clean_correct = bool(demo.get("clean_correct", False))
+    changed_prediction = bool(demo.get("changed_prediction", False))
+    misclassified_after = bool(demo.get("misclassified_after_trigger", False))
+
+    if clean_correct and misclassified_after:
+        st.error("Clean sample was correct, and trigger caused a misclassification.", icon=None)
+    elif (not clean_correct) and changed_prediction and misclassified_after:
+        st.warning("Clean sample was already misclassified; trigger changed it to a different wrong class.", icon=None)
+    elif (not clean_correct) and (not changed_prediction):
+        st.info("Clean sample was already misclassified, and trigger did not change the predicted class.", icon=None)
+    elif changed_prediction:
+        st.info("Trigger changed the predicted class, but this sample was not misclassified after trigger.", icon=None)
+    else:
+        st.info("Trigger did not change this sample’s predicted class.", icon=None)
+
+    patch = demo.get("trigger_patch") or {}
+    if patch:
+        st.markdown(
+            f'<p class="mono">trigger patch: bottom-right square, size={patch.get("size", "?")} px, '
+            f'x0={patch.get("x0", "?")}, y0={patch.get("y0", "?")}</p>',
+            unsafe_allow_html=True,
+        )
+
 def run_detection_cached(model: str, data: str, defense: str, display_name: str = None) -> dict:
     """Run a single defense and return the report dict."""
     import platform
@@ -346,6 +576,12 @@ def run_detection_cached(model: str, data: str, defense: str, display_name: str 
     device = get_device(0)
     mdl = mdl.to(device)
 
+    trigger_demo = None
+    try:
+        trigger_demo = build_trigger_impact_demo(mdl, test_loader, config, device)
+    except Exception:
+        trigger_demo = None
+
     if defense == "mmbd":
         from mithridatium.defenses.mmbd import run_mmbd
         results = run_mmbd(mdl, config, device=device)
@@ -368,6 +604,8 @@ def run_detection_cached(model: str, data: str, defense: str, display_name: str 
         version=VERSION,
         results=results,
     )
+    if trigger_demo:
+        rep["_ui_trigger_demo"] = trigger_demo
     return rep
 
 
@@ -959,6 +1197,22 @@ for k, rep in reports.items():
 # ── Dataset-level tabs ─────────────────────────────────────────────────────
 dataset_keys = list(dataset_groups.keys())
 
+if not dataset_keys:
+    st.markdown(
+        """
+        <div style="text-align:center; padding: 80px 0; color:#aaa;">
+            <p style="font-family:'IBM Plex Mono',monospace; font-size:14px; letter-spacing:0.1em;">
+                No valid reports available.
+            </p>
+            <p style="font-size:13px; margin-top:8px; color:#bbb;">
+                Remove errored reports or upload a new report JSON.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
 if len(dataset_keys) == 1:
     dataset_tabs = [st.container()]
 else:
@@ -1037,12 +1291,22 @@ for dataset_tab, dataset_key in zip(dataset_tabs, dataset_keys):
                     else:
                         st.json(rep.get("results", {}))
 
+                    st.markdown("---")
+                    render_trigger_impact_demo(rep)
+
                     with st.expander("raw report JSON"):
                         st.json(rep)
 
                     st.download_button(
                         label=f"download {report_key} report",
-                        data=json.dumps({k: v for k, v in rep.items() if k != "_tab_label"}, indent=2),
+                        data=json.dumps(
+                            {
+                                k: v
+                                for k, v in rep.items()
+                                if k != "_tab_label" and not str(k).startswith("_ui_")
+                            },
+                            indent=2,
+                        ),
                         file_name=f"mithridatium_{report_key}.json",
                         mime="application/json",
                     )

@@ -429,8 +429,10 @@ class BDDetect:
         verbose: bool = False,
     ):
         task = task.lower().strip()
-        if task not in {"cifar10", "cifar100", "cifar10_for_imagenet"}:
-            raise ValueError("AEVA currently supports task in {'cifar10', 'cifar100', 'cifar10_for_imagenet'} for this repo.")
+        if task not in {"cifar10", "cifar100", "cifar10_for_imagenet", "imagenet", "imagenet_subset"}:
+            raise ValueError(
+                "AEVA currently supports task in {'cifar10', 'cifar100', 'cifar10_for_imagenet', 'imagenet', 'imagenet_subset'} for this repo."
+            )
 
         self.task = task
         self.configs = configs or utils.get_preprocess_config(task)

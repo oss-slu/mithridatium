@@ -31,8 +31,9 @@ def build_huggingface_model(model_id: str):
     Build a Hugging Face image classification model by model ID.
     Example model_id: 'microsoft/resnet-50'
     """
-    m = HFImageClassifier(model_id)
-    return m, m.get_feature_module()
+    from mithridatium.loader_hf import build_huggingface_model as _build_hf_model
+
+    return _build_hf_model(model_id)
 
 def ensure_defense_compatibility(model, defense: str, feature_module=None):
     """
