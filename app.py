@@ -191,7 +191,7 @@ section[data-testid="stSidebar"] p {
 
 # ── Constants ──────────────────────────────────────────────────────────────
 DEFENSES = ["mmbd", "strip", "aeva", "freeeagle"]
-DATASETS = ["cifar10", "cifar10_for_imagenet", "cifar100", "fake_imagenet"]
+DATASETS = ["cifar10", "cifar10_for_imagenet", "cifar100", "fake_imagenet", "imagenet_subset"]
 PROVIDERS = ["torchvision", "huggingface"]
 
 COLORS = {
@@ -209,16 +209,17 @@ COLORS = {
 
 _ALLOWED_EXTENSIONS = {".pth", ".pt"}
 
-def validate_checkpoint_path(raw: str) -> Path:
+def validate_checkpoint_path(raw: str, *, allow_absolute: bool = False) -> Path:
     """
     Resolve a user-supplied checkpoint path and guard against path traversal.
 
     Rules:
-    - Input must be a non-empty path. Relative paths are allowed,
-      and absolute paths are permitted only when they resolve under the
-      current working directory or the system temp directory.
+    - Input must be a non-empty path.
+    - Absolute paths are not allowed unless `allow_absolute=True`.
     - No ".." traversal is allowed.
     - Extension must be .pth or .pt.
+    - The resolved path must stay under the current working directory or the
+      system temp directory.
 
     Raises ValueError on any violation.
     """
@@ -228,7 +229,7 @@ def validate_checkpoint_path(raw: str) -> Path:
 
     if not str(candidate):
         raise ValueError("Model path cannot be empty.")
-    if candidate.is_absolute():
+    if candidate.is_absolute() and not allow_absolute:
         raise ValueError("Absolute paths are not allowed.")
     if any(part == ".." for part in candidate.parts):
         raise ValueError("Path traversal is not allowed.")
@@ -552,7 +553,7 @@ def run_detection_cached(model: str, data: str, defense: str, display_name: str 
     p = None
     if _looks_local:
         try:
-            p = validate_checkpoint_path(model)
+            p = validate_checkpoint_path(model, allow_absolute=True)
             is_local = True
         except ValueError as _ve:
             raise ValueError(f"Invalid model path: {_ve}") from _ve
@@ -612,7 +613,18 @@ def run_detection_cached(model: str, data: str, defense: str, display_name: str 
 # ── Chart builders ─────────────────────────────────────────────────────────
 def chart_strip(results: dict) -> go.Figure:
     entropies = results.get("entropies", [])
-    threshold = results.get("thresholds", {}).get("entropy_mean_threshold", 0.45)
+    threshold = results.get("thresholds", {})
+    
+    threshold_mode = threshold.get("mode", "static_mean")
+
+    if threshold_mode == "dynamic_mad":
+        threshold = threshold.get("dynamic_low_entropy_threshold")
+    else:
+        threshold = threshold.get("entropy_mean_threshold")
+
+    if threshold is None:
+        threshold = 0.45
+
     colors = [COLORS["bar_bad"] if e < threshold else COLORS["bar_clean"] for e in entropies]
 
     fig = go.Figure()
@@ -638,8 +650,18 @@ def chart_strip(results: dict) -> go.Figure:
 
 def chart_strip_dist(results: dict) -> go.Figure:
     entropies = results.get("entropies", [])
-    threshold = results.get("thresholds", {}).get("entropy_mean_threshold", 0.45)
+    threshold = results.get("thresholds", {})
+    
+    threshold_mode = threshold.get("mode", "static_mean")
 
+    if threshold_mode == "dynamic_mad":
+        threshold = threshold.get("dynamic_low_entropy_threshold")
+    else:
+        threshold = threshold.get("entropy_mean_threshold")
+
+    if threshold is None:
+        threshold = 0.45
+        
     fig = go.Figure()
     fig.add_trace(go.Histogram(
         x=entropies,
@@ -788,11 +810,6 @@ def chart_aeva_heatmap(results: dict) -> go.Figure:
     return fig
 
 
-def chart_aeva(results: dict) -> go.Figure:
-    """Kept for backward compatibility — delegates to anomaly chart."""
-    return chart_aeva_anomaly(results)
-
-
 def chart_freeeagle(results: dict) -> go.Figure:
     tendency = results.get("tendency_per_target") or []
     if not tendency:
@@ -884,6 +901,8 @@ def chart_comparison(reports: dict) -> go.Figure:
 def panel_strip(rep: dict):
     r = rep.get("results", {})
     stats = r.get("statistics", {})
+    thresholds = r.get("thresholds", {})
+    dataset = r.get("dataset", "")
     verdict = r.get("verdict", "unknown")
 
     c1, c2, c3, c4 = st.columns(4)
@@ -900,16 +919,35 @@ def panel_strip(rep: dict):
     c3.metric("lowest score",  f"{stats.get('entropy_min', 0):.3f}")
     c4.metric("highest score", f"{stats.get('entropy_max', 0):.3f}")
 
+    mode = thresholds.get("mode", "static_mean")
+
     # Warn if threshold was auto-scaled (num_classes > 10 suggests non-CIFAR model)
-    thr = r.get("thresholds", {}).get("entropy_mean_threshold", 0.45)
-    params = r.get("parameters", {})
-    dataset = r.get("dataset", "")
-    if "imagenet" in dataset.lower() or "hf" in dataset.lower():
+
+    if mode == "dynamic_mad":
+        thr = thresholds.get("dynamic_low_entropy_threshold", 0.45)
+        suspicious_fraction = thresholds.get("suspicious_fraction", 0.0)
         st.info(
-            f"Threshold auto-scaled to {thr:.3f} based on number of output classes. "
-            "STRIP entropy scales with class count — results on large-vocabulary models should be interpreted carefully.",
+            f"Dynamic STRIP threshold: {thr:.3f}. "
+            f"Low-entropy suspicious fraction: {suspicious_fraction:.2%}.",
             icon=None,
         )
+    else:
+        thr = thresholds.get("entropy_mean_threshold", 0.45)
+        if "imagenet" in dataset.lower() or "hf" in dataset.lower():
+            st.info(
+                f"Threshold auto-scaled to {thr:.3f} based on number of output classes. "
+                "STRIP entropy scales with class count — results on large-vocabulary models should be interpreted carefully.",
+                icon=None,
+            )
+
+    # params = r.get("parameters", {})
+    # dataset = r.get("dataset", "")
+    # if "imagenet" in dataset.lower() or "hf" in dataset.lower():
+    #     st.info(
+    #         f"Threshold auto-scaled to {thr:.3f} based on number of output classes. "
+    #         "STRIP entropy scales with class count — results on large-vocabulary models should be interpreted carefully.",
+    #         icon=None,
+    #     )
 
     st.markdown("**Randomness score per sample** — low scores (red) indicate abnormally consistent model behavior, a backdoor signal")
     st.plotly_chart(chart_strip(r), use_container_width=True, config={"displayModeBar": False})
