@@ -228,6 +228,8 @@ def validate_checkpoint_path(raw: str) -> Path:
 
     if not str(candidate):
         raise ValueError("Model path cannot be empty.")
+    if candidate.is_absolute():
+        raise ValueError("Absolute paths are not allowed.")
     if any(part == ".." for part in candidate.parts):
         raise ValueError("Path traversal is not allowed.")
 

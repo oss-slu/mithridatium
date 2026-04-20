@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 mithridatium/__init__.py
+mithridatium/app.py
 mithridatium/cli.py
 mithridatium/evaluator.py
 mithridatium/gradio_app.py
