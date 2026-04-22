@@ -22,6 +22,7 @@ from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
+from mithridatium.defense_config import apply_freeeagle_cli_options
 
 try:
     VERSION = package_version("mithridatium")
@@ -354,18 +355,20 @@ def detect(
         raise typer.Exit(code=EXIT_IO_ERROR)
 
     if d == "freeeagle":
-        if freeeagle_num_classes > 0:
-            setattr(config, "freeeagle_num_classes", freeeagle_num_classes)
-        setattr(config, "freeeagle_num_dummy", freeeagle_num_dummy)
-        setattr(config, "freeeagle_num_important_neurons", freeeagle_num_important_neurons)
-        setattr(config, "freeeagle_metric", freeeagle_metric)
-        setattr(config, "freeeagle_use_transpose_correction", freeeagle_use_transpose_correction)
-        setattr(config, "freeeagle_bound_on", freeeagle_bound_on)
-        setattr(config, "freeeagle_optimize_steps", freeeagle_optimize_steps)
-        setattr(config, "freeeagle_learning_rate", freeeagle_learning_rate)
-        setattr(config, "freeeagle_weight_decay", freeeagle_weight_decay)
-        setattr(config, "freeeagle_anomaly_threshold", freeeagle_anomaly_threshold)
-        setattr(config, "freeeagle_inspect_layer_position", freeeagle_inspect_layer_position)
+        apply_freeeagle_cli_options(
+            config,
+            num_classes=freeeagle_num_classes,
+            num_dummy=freeeagle_num_dummy,
+            num_important_neurons=freeeagle_num_important_neurons,
+            metric=freeeagle_metric,
+            use_transpose_correction=freeeagle_use_transpose_correction,
+            bound_on=freeeagle_bound_on,
+            optimize_steps=freeeagle_optimize_steps,
+            learning_rate=freeeagle_learning_rate,
+            weight_decay=freeeagle_weight_decay,
+            anomaly_threshold=freeeagle_anomaly_threshold,
+            inspect_layer_position=freeeagle_inspect_layer_position,
+        )
         
     model_ref = str(p) if provider == "torchvision" else hf_model_id
 
