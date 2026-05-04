@@ -16,6 +16,12 @@ dependencies = [
     "scipy"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["mithridatium*"]
@@ -24,6 +30,13 @@ include = ["mithridatium*"]
 mithridatium = "mithridatium.cli:app"
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
-    "slow: end-to-end tests that may take longer to run",
+    "unit: fast tests for isolated functions/classes",
+    "integration: tests that exercise multiple modules together",
+    "smoke: quick end-to-end sanity tests",
+    "slow: tests that take longer to run",
+    "requires_data: tests that require downloaded or local datasets",
+    "requires_model: tests that require local checkpoint files",
+    "requires_hf: tests that require Hugging Face model downloads or cached HF models",
 ]

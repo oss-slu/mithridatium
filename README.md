@@ -2,101 +2,242 @@
 
 **A framework for verifying the integrity of pretrained AI models**
 
-Mithridatium is a research-driven project aimed at detecting **backdoors** and **data poisoning** in downloaded pretrained models or pipelines (e.g., from Hugging Face).  
-Our goal is to provide a **modular, command-line tool** that helps researchers and engineers trust the models they use.
+Mithridatium is a research-driven project for detecting potential backdoors and data poisoning behavior in pretrained models. The project provides a modular command-line workflow for loading models, running defenses, and generating structured JSON reports.
 
 ---
 
-## 🚀 Project Overview
+## Project Overview
 
-Modern ML pipelines often reuse pretrained weights from online repositories.  
-This comes with risks:
+Modern ML pipelines often reuse pretrained weights from online repositories. This creates trust and safety risks when models are downloaded, shared, or reused without validation.
 
-- ❌ Backdoors — models behave normally until triggered by a specific pattern.
-- ❌ Data poisoning — compromised training data leading to biased or malicious models.
+Mithridatium helps analyze pretrained models using multiple research-inspired defenses, including:
 
-**Mithridatium** analyzes pretrained models to flag potential compromises using multiple defenses from academic research.
+- MMBD
+- STRIP
+- AEVA
+- FreeEagle
+
+The goal is not to prove that a model is perfectly safe, but to provide reproducible integrity checks that can help researchers and engineers identify suspicious model behavior.
 
 ---
 
-## Other Functionaly will be updated as the project goes on
+## Installation
 
-## Quickstart
+Create and activate a virtual environment:
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
-pip install pytest pytest-cov
+`bash
+python -m venv .venv
+source .venv/bin/activate
+`
 
-# (A) Train demo models (fast settings)
+On Windows PowerShell:
 
-# Clean model on 5 epochs (Increase epochs for better accuracy, but it will take longer)
-python -m scripts.train_resnet18 --dataset clean --epochs 5 --output_path models/resnet18_clean.pth
+`bash
+.venv\Scripts\activate
+`
 
-# Poisoned model on 5 epochs (increase epochs for better accuracy)
-python -m scripts.train_resnet18 --dataset poison --train_poison_rate 0.1 --target_class 0 \
-  --epochs 5 --output_path models/resnet18_poison.pth
+Install dependencies and the package:
 
-# Invisible-trigger model using a small universal perturbation
-python -m scripts.train_resnet18 --dataset invisible --train_poison_rate 0.1 --target_class 0 \
-  --uap-norm 2 --uap-xi 0.05 --poison_loss_weight 2.0 \
-  --epochs 5 --output_path models/resnet18_invisible.pth
+`bash
+python -m pip install -r requirements.txt
+python -m pip install -e ".[dev]"
+`
 
-# (B) Run detection (default: resnet18)
-mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
+---
 
-# (B2) Run FreeEagle detection with optional overrides
-mithridatium detect --model models/resnet18_poison.pth --defense freeeagle --data cifar10 \
-  --freeeagle-anomaly-threshold 2.5 --freeeagle-optimize-steps 100 --out reports/freeeagle.json
+## Dataset Setup
 
-# (Optional) Specify architecture (supported: resnet18, resnet34)
-mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --arch resnet34 --out reports/mmbd.json
+Download CIFAR-10 into the project data directory:
 
-# (C) See summary
-cat reports/mmbd.json
-```
+`bash
+python -m scripts.download_cifar10
+`
 
-## CLI Help
+Expected location: `data/cifar-10-batches-py/`
 
-To see all available options and arguments:
+---
 
-```bash
+## Quick Test Check
+
+Run smoke and unit tests:
+
+`bash
+python -m pytest tests/smoke tests/unit -q
+`
+
+Run integration tests:
+
+`bash
+python -m pytest tests/integration -q
+`
+
+Run everything except slow tests:
+
+`bash
+python -m pytest -m "not slow" -q
+`
+
+---
+
+## Train Demo Models
+
+Train a clean CIFAR-10 ResNet-18 checkpoint:
+
+`bash
+python -m scripts.train_resnet18 \
+  --dataset clean \
+  --epochs 5 \
+  --output_path models/resnet18_clean.pth
+`
+
+Train a patch-poisoned checkpoint:
+
+`bash
+python -m scripts.train_resnet18 \
+  --dataset poison \
+  --train_poison_rate 0.1 \
+  --target_class 0 \
+  --epochs 5 \
+  --output_path models/resnet18_poison.pth
+`
+
+Train an invisible-trigger checkpoint:
+
+`bash
+python -m scripts.train_resnet18 \
+  --dataset invisible \
+  --train_poison_rate 0.1 \
+  --target_class 0 \
+  --uap-norm 2 \
+  --uap-xi 0.05 \
+  --poison_loss_weight 2.0 \
+  --epochs 5 \
+  --output_path models/resnet18_invisible.pth
+`
+
+---
+
+## Run Detection
+
+List supported defenses:
+
+`bash
+mithridatium defenses
+`
+
+Run MMBD:
+
+`bash
+mithridatium detect \
+  --provider torchvision \
+  --model models/resnet18_poison.pth \
+  --defense mmbd \
+  --data cifar10 \
+  --out reports/mmbd.json \
+  --force
+`
+
+Run STRIP:
+
+`bash
+mithridatium detect \
+  --provider torchvision \
+  --model models/resnet18_poison.pth \
+  --defense strip \
+  --data cifar10 \
+  --out reports/strip.json \
+  --force
+`
+
+Run AEVA with a small smoke-test configuration:
+
+`bash
+mithridatium detect \
+  --provider torchvision \
+  --model models/resnet18_poison.pth \
+  --defense aeva \
+  --data cifar10 \
+  --aeva-samples-per-class 1 \
+  --aeva-hsja-iterations 1 \
+  --aeva-hsja-max-num-evals 10 \
+  --aeva-hsja-init-num-evals 5 \
+  --aeva-hsja-query-batch-size 16 \
+  --aeva-sp 0 \
+  --aeva-ep 1 \
+  --out reports/aeva.json \
+  --force
+`
+
+Run FreeEagle:
+
+`bash
+mithridatium detect \
+  --provider torchvision \
+  --model models/resnet18_poison.pth \
+  --defense freeeagle \
+  --data cifar10 \
+  --out reports/freeeagle.json \
+  --force
+`
+
+For all available options:
+
+`bash
 mithridatium detect --help
-```
+`
 
-Example output:
+---
 
-```
-Usage: mithridatium detect [OPTIONS]
+## Hugging Face Models
 
-Options:
-  --model, -m TEXT     The model path .pth. E.g. 'models/resnet18.pth'. [default: models/resnet18.pth]
-  --data, -d TEXT      The dataset name. E.g. 'cifar10'. [default: cifar10]
-  --defense, -D TEXT   The defense you want to run. E.g. 'mmbd', 'strip', 'aeva', or 'freeeagle'. [default: mmbd]
-  --arch, -a TEXT      The model architecture to use. Supported: 'resnet18', 'resnet34'. [default: resnet18]
-  --freeeagle-num-classes INTEGER
-                       FreeEagle override for number of classes. Use 0 to auto-infer from model head. [default: 0]
-  --freeeagle-num-dummy INTEGER
-                       FreeEagle number of dummy optimization vectors. [default: 1]
-  --freeeagle-num-important-neurons INTEGER
-                       FreeEagle top neurons used when computing tendency. [default: 5]
-  --freeeagle-metric TEXT
-                       FreeEagle anomaly metric (e.g. 'softmax_score'). [default: softmax_score]
-  --freeeagle-use-transpose-correction
-                       Enable transpose correction inside FreeEagle.
-  --freeeagle-bound-on / --freeeagle-no-bound-on
-                       Enable or disable bounded optimization in FreeEagle. [default: freeeagle-bound-on]
-  --freeeagle-optimize-steps INTEGER
-                       FreeEagle optimization steps. [default: 300]
-  --freeeagle-learning-rate FLOAT
-                       FreeEagle optimization learning rate. [default: 0.01]
-  --freeeagle-weight-decay FLOAT
-                       FreeEagle optimization weight decay. [default: 0.005]
-  --freeeagle-anomaly-threshold FLOAT
-                       Threshold for FreeEagle anomaly_metric verdict. [default: 2.0]
-  --freeeagle-inspect-layer-position INTEGER
-                       ResNet stage index inspected by FreeEagle (0..4). [default: 2]
-  --out, -o TEXT       The output path for the JSON report. Use "-" for stdout or a file path (e.g. "reports/report.json"). [default: reports/report.json]
-  --force, -f          This allows overwriting. E.g. if the output file already exists --force will overwrite it.
-  --help               Show this message and exit.
-```
+Mithridatium can also run supported defenses against Hugging Face image-classification models.
+
+Example:
+
+`bash
+mithridatium detect \
+  --provider huggingface \
+  --hf-model-id microsoft/resnet-50 \
+  --defense strip \
+  --data cifar10_for_imagenet \
+  --out reports/hf_strip.json \
+  --force
+`
+
+Use `cifar10_for_imagenet` when evaluating ImageNet-style Hugging Face models on CIFAR-10 images. This mode resizes CIFAR-10 images to ImageNet-style input size and uses ImageNet normalization.
+
+---
+
+## Reports
+
+Detection outputs are written as JSON reports.
+
+Example:
+
+`bash
+cat reports/mmbd.json
+`
+
+Use `--out -` to print a report to stdout instead of writing a file:
+
+`bash
+mithridatium detect \
+  --model models/resnet18_poison.pth \
+  --defense mmbd \
+  --data cifar10 \
+  --out -
+`
+
+---
+
+## Documentation
+
+Defense-specific documentation is available under:
+
+`mithridatium/documentation/`
+
+Testing documentation is available under:
+
+`tests/README.md`
+
+---

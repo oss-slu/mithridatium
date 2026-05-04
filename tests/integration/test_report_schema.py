@@ -8,6 +8,7 @@ from mithridatium.cli import EXIT_IO_ERROR, app
 
 runner = CliRunner()
 
+pytestmark = pytest.mark.unit
 
 def _valid_freeeagle_results() -> dict:
     return {
