@@ -1,4 +1,4 @@
-# Mithridatium 🛡️
+# Mithridatium
 
 **A framework for verifying the integrity of pretrained AI models**
 
@@ -7,19 +7,25 @@ Our goal is to provide a **modular, command-line tool** that helps researchers a
 
 ---
 
-## 🚀 Project Overview
+## Project Overview
 
 Modern ML pipelines often reuse pretrained weights from online repositories.  
 This comes with risks:
 
-- ❌ Backdoors — models behave normally until triggered by a specific pattern.
-- ❌ Data poisoning — compromised training data leading to biased or malicious models.
+- Backdoors: models behave normally until triggered by a specific pattern.
+- Data poisoning: compromised training data leading to biased or malicious models.
 
 **Mithridatium** analyzes pretrained models to flag potential compromises using multiple defenses from academic research.
 
 ---
 
-## Other Functionaly will be updated as the project goes on
+## Documentation
+
+The project documentation has been reorganized under [`docs/`](docs/README.md).
+
+- New contributors should start with the [docs index](docs/README.md), [architecture overview](docs/architecture/overview.md), and [glossary](docs/glossary.md).
+- Users running detections should see the [defenses overview](docs/defenses/overview.md) and [testing guide](docs/testing/overview.md).
+- Future maintainers should read the [tech lead handoff](docs/handoff/tech-lead-handoff.md), [known issues](docs/handoff/known-issues.md), and [future work](docs/handoff/future-work.md).
 
 ## Quickstart
 
@@ -42,7 +48,7 @@ python -m scripts.train_resnet18 --dataset invisible --train_poison_rate 0.1 --t
   --uap-norm 2 --uap-xi 0.05 --poison_loss_weight 2.0 \
   --epochs 5 --output_path models/resnet18_invisible.pth
 
-# (B) Run detection (default: resnet18)
+# (B) Run one supported defense (default architecture hint: resnet18)
 mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
 
 # (B2) Run FreeEagle detection with optional overrides
@@ -52,9 +58,11 @@ mithridatium detect --model models/resnet18_poison.pth --defense freeeagle --dat
 # (Optional) Specify architecture (supported: resnet18, resnet34)
 mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --arch resnet34 --out reports/mmbd.json
 
-# (C) See summary
+# (C) See report JSON
 cat reports/mmbd.json
 ```
+
+For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-commands.md).
 
 ## CLI Help
 
@@ -64,39 +72,4 @@ To see all available options and arguments:
 mithridatium detect --help
 ```
 
-Example output:
-
-```
-Usage: mithridatium detect [OPTIONS]
-
-Options:
-  --model, -m TEXT     The model path .pth. E.g. 'models/resnet18.pth'. [default: models/resnet18.pth]
-  --data, -d TEXT      The dataset name. E.g. 'cifar10'. [default: cifar10]
-  --defense, -D TEXT   The defense you want to run. E.g. 'mmbd', 'strip', 'aeva', or 'freeeagle'. [default: mmbd]
-  --arch, -a TEXT      The model architecture to use. Supported: 'resnet18', 'resnet34'. [default: resnet18]
-  --freeeagle-num-classes INTEGER
-                       FreeEagle override for number of classes. Use 0 to auto-infer from model head. [default: 0]
-  --freeeagle-num-dummy INTEGER
-                       FreeEagle number of dummy optimization vectors. [default: 1]
-  --freeeagle-num-important-neurons INTEGER
-                       FreeEagle top neurons used when computing tendency. [default: 5]
-  --freeeagle-metric TEXT
-                       FreeEagle anomaly metric (e.g. 'softmax_score'). [default: softmax_score]
-  --freeeagle-use-transpose-correction
-                       Enable transpose correction inside FreeEagle.
-  --freeeagle-bound-on / --freeeagle-no-bound-on
-                       Enable or disable bounded optimization in FreeEagle. [default: freeeagle-bound-on]
-  --freeeagle-optimize-steps INTEGER
-                       FreeEagle optimization steps. [default: 300]
-  --freeeagle-learning-rate FLOAT
-                       FreeEagle optimization learning rate. [default: 0.01]
-  --freeeagle-weight-decay FLOAT
-                       FreeEagle optimization weight decay. [default: 0.005]
-  --freeeagle-anomaly-threshold FLOAT
-                       Threshold for FreeEagle anomaly_metric verdict. [default: 2.0]
-  --freeeagle-inspect-layer-position INTEGER
-                       ResNet stage index inspected by FreeEagle (0..4). [default: 2]
-  --out, -o TEXT       The output path for the JSON report. Use "-" for stdout or a file path (e.g. "reports/report.json"). [default: reports/report.json]
-  --force, -f          This allows overwriting. E.g. if the output file already exists --force will overwrite it.
-  --help               Show this message and exit.
-```
+Defense-specific options are documented in [`docs/defenses/`](docs/defenses/overview.md). Keeping the full CLI help in the command output avoids stale duplicated option lists in this README.

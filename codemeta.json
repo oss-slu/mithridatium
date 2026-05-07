@@ -74,7 +74,7 @@
   ],
   "codeRepository": "https://github.com/oss-slu/mithridatium",
   "dateCreated": "2025-08-28",
-  "description": "Mithridatium is a research-driven project aimed at detecting backdoors and data poisoning in downloaded pretrained models or pipelines (e.g., from Hugging Face).   Our goal is to provide a modular, command-line tool that helps researchers and engineers trust the models they use.",
+  "description": "Mithridatium is a research-driven project aimed at detecting backdoors and data poisoning in downloaded ML models or pipelines (e.g., from Hugging Face).   Our goal is to provide a tool that helps researchers and engineers trust the models they use.",
   "developmentStatus": "active",
   "issueTracker": "https://github.com/oss-slu/mithridatium/issues",
   "keywords": [

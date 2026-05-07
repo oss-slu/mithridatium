@@ -15,12 +15,22 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+.eggs/
+pip-wheel-metadata/
+/mithridatium.egg-info/
 
 # Data & models
 data/
 models/
 /reports/*
 !/reports/report_schema.json
+/*_report.json
+/report_*.json
+/test_report.json
+
+# Defense/runtime caches
+*_adv_per/
+cifar10_adv_per/
 
 # Notebooks & logs
 *.ipynb_checkpoints/
@@ -32,6 +42,9 @@ logs/
 
 # OS files
 .DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
 
 # Coverage and test
