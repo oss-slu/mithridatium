@@ -11,6 +11,7 @@ This module tests that:
 import pytest
 from mithridatium.utils import get_preprocess_config, DATASET_CONFIGS, PreprocessConfig
 
+pytestmark = pytest.mark.unit
 
 class TestCanonicalConfigs:
     """Test canonical dataset configuration values."""

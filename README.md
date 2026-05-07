@@ -2,10 +2,11 @@
 
 **A framework for verifying the integrity of pretrained AI models**
 
-Mithridatium is a research-driven project aimed at detecting **backdoors** and **data poisoning** in downloaded pretrained models or pipelines (e.g., from Hugging Face).  
-Our goal is to provide a **modular, command-line tool** that helps researchers and engineers trust the models they use.
+Mithridatium is a research-driven project for detecting potential backdoors and data poisoning behavior in pretrained models. The project provides a modular command-line workflow for loading models, running defenses, and generating structured JSON reports.
 
 ---
+
+## Project Overview
 
 ## Project Overview
 
@@ -68,8 +69,10 @@ For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-c
 
 To see all available options and arguments:
 
-```bash
+`bash
 mithridatium detect --help
+
 ```
 
 Defense-specific options are documented in [`docs/defenses/`](docs/defenses/overview.md). Keeping the full CLI help in the command output avoids stale duplicated option lists in this README.
+```

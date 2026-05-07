@@ -216,89 +216,123 @@ def get_preprocess_config(dataset: str) -> PreprocessConfig:
     )
 
 
+def _build_transform_from_config(config: PreprocessConfig, *, train: bool = False):
+    """
+    Build torchvision transforms from a PreprocessConfig.
+
+    The config is the source of truth for input size, normalization, and
+    preprocessing behavior.
+    """
+    _, h, w = config.get_input_size()
+
+    transform_list = []
+
+    # CIFAR-style 32x32 datasets do not need resizing.
+    # ImageNet-style configs do.
+    if h != 32 or w != 32:
+        if train:
+            transform_list.append(transforms.Resize(max(h, w)))
+            transform_list.append(transforms.CenterCrop((h, w)))
+        else:
+            transform_list.append(transforms.Resize(max(h, w)))
+            transform_list.append(transforms.CenterCrop((h, w)))
+
+    transform_list.append(transforms.ToTensor())
+
+    if config.get_normalize():
+        transform_list.append(
+            transforms.Normalize(config.get_mean(), config.get_std())
+        )
+
+    return transforms.Compose(transform_list)
+
+def _build_transform_from_config(config: PreprocessConfig, *, train: bool = False):
+    """
+    Build torchvision transforms from a PreprocessConfig.
+
+    The config is the source of truth for input size, normalization, and
+    preprocessing behavior.
+    """
+    _, h, w = config.get_input_size()
+
+    transform_list = []
+
+    # CIFAR-style 32x32 datasets do not need resizing.
+    # ImageNet-style configs do.
+    if h != 32 or w != 32:
+        if train:
+            transform_list.append(transforms.Resize(max(h, w)))
+            transform_list.append(transforms.CenterCrop((h, w)))
+        else:
+            transform_list.append(transforms.Resize(max(h, w)))
+            transform_list.append(transforms.CenterCrop((h, w)))
+
+    transform_list.append(transforms.ToTensor())
+
+    if config.get_normalize():
+        transform_list.append(
+            transforms.Normalize(config.get_mean(), config.get_std())
+        )
+
+    return transforms.Compose(transform_list)
+
 def dataloader_for(dataset: str, split: str, batch_size: int = 256):
     """
     Create a dataloader for the specified dataset using canonical transforms.
-    
+
     Args:
-        dataset: Dataset name. Supported: "cifar10", "cifar100", "imagenet".
+        dataset: Dataset/preprocessing mode name.
         split: "train" or "test".
         batch_size: Batch size for the dataloader.
-        
+
     Returns:
-        tuple: (torch.utils.data.DataLoader, PreprocessConfig) for the specified dataset.
-        
+        tuple: (torch.utils.data.DataLoader, PreprocessConfig)
+
     Raises:
         ValueError: If dataset is not supported or split is invalid.
     """
-    # Validate inputs
     dataset_lower = dataset.lower().strip()
     split_lower = split.lower().strip()
-    
+
     if dataset_lower not in DATASET_CONFIGS:
         supported = ", ".join(sorted(DATASET_CONFIGS.keys()))
-        raise ValueError(f"Unsupported dataset '{dataset}'. Supported datasets: {supported}")
-    
+        raise ValueError(
+            f"Unsupported dataset '{dataset}'. Supported datasets: {supported}"
+        )
+
     if split_lower not in ("train", "test"):
         raise ValueError(f"Invalid split '{split}'. Must be 'train' or 'test'")
-    
-    # Get canonical preprocessing config for the dataset
+
     config = get_preprocess_config(dataset_lower)
-    
-    # Build dataset-specific transform pipeline
-    # Standard order: Resize/Crop → ToTensor() → Normalize()
+    transform = _build_transform_from_config(
+        config,
+        train=(split_lower == "train"),
+    )
+
     if dataset_lower == "cifar10":
-        transform_list = [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(config.mean, config.std)
-        ]
         ds = datasets.CIFAR10(
             root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
-            transform=transforms.Compose(transform_list)
+            transform=transform,
         )
-    
+
     elif dataset_lower == "cifar100":
-        # CIFAR-100: 32x32 RGB images (already correct size)
-        transform_list = [
-            # No resize needed - images are already 32x32
-            transforms.ToTensor(),
-            transforms.Normalize(config.mean, config.std)
-        ]
         ds = datasets.CIFAR100(
             root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
-            transform=transforms.Compose(transform_list)
+            transform=transform,
         )
-    
+
     elif dataset_lower == "imagenet":
-        # ImageNet: Standard ImageNet preprocessing pipeline
-        if split_lower == "train":
-            transform_list = [
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(config.mean, config.std)
-            ]
-        else:  # test/val
-            transform_list = [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(config.mean, config.std)
-            ]
-        
-        # ImageNet requires manual dataset setup - provide clear instructions
         try:
             from torchvision.datasets import ImageNet
+
             ds = ImageNet(
                 root=str(DATA_ROOT),
                 split="train" if split_lower == "train" else "val",
-                transform=transforms.Compose(transform_list)
+                transform=transform,
             )
         except RuntimeError as e:
             raise ValueError(
@@ -319,49 +353,51 @@ def dataloader_for(dataset: str, split: str, batch_size: int = 256):
             root=str(split_dir),
             transform=transforms.Compose(transform_list),
         )
-        
+
     elif dataset_lower == "cifar10_for_imagenet":
-        transform_list = [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(config.mean, config.std)
-        ]
         ds = datasets.CIFAR10(
             root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
-            transform=transforms.Compose(transform_list)
+            transform=transform,
         )
 
     elif dataset_lower == "fake_imagenet":
-        transform_list = [
-            transforms.ToTensor(),
-            transforms.Normalize(config.mean, config.std)
-    ]
-
+        _, h, w = config.get_input_size()
         ds = datasets.FakeData(
             size=512,
-            image_size=(3, 224, 224),
-            num_classes=1000,
-            transform=transforms.Compose(transform_list)
-    )
-    
+            image_size=(3, h, w),
+            num_classes=config.get_num_classes(),
+            transform=transform,
+        )
+
+    else:
+        # Defensive fallback. This should be unreachable because DATASET_CONFIGS
+        # was checked above.
+        raise ValueError(f"Unsupported dataset '{dataset}'.")
+
     dataloader = torch.utils.data.DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=(split_lower == "train"),
         num_workers=2,
-        pin_memory=True  # Improve GPU transfer performance
+        pin_memory=True,
     )
-    
+
     return dataloader, config
 
-def dataloader_for_config(dataset: str, split: str, config: PreprocessConfig, batch_size: int = 256):
+def dataloader_for_config(
+    dataset: str,
+    split: str,
+    config: PreprocessConfig,
+    batch_size: int = 256,
+):
     """
     Create a dataloader using an explicit preprocessing config instead of only
-    dataset canonical defaults. This is useful for Hugging Face models whose
-    expected preprocessing may differ from the dataset default.
+    dataset canonical defaults.
+
+    This is useful for Hugging Face models whose expected preprocessing may
+    differ from the dataset default.
     """
     dataset_lower = dataset.lower().strip()
     split_lower = split.lower().strip()
@@ -369,50 +405,44 @@ def dataloader_for_config(dataset: str, split: str, config: PreprocessConfig, ba
     if split_lower not in ("train", "test"):
         raise ValueError(f"Invalid split '{split}'. Must be 'train' or 'test'")
 
-    c, h, w = config.get_input_size()
-
-    transform_list = []
-    if h is not None and w is not None:
-        transform_list.extend([
-            transforms.Resize(max(h, w)),
-            transforms.CenterCrop((h, w)),
-        ])
-
-    transform_list.append(transforms.ToTensor())
-
-    if config.get_normalize():
-        transform_list.append(transforms.Normalize(config.get_mean(), config.get_std()))
-
-    transform = transforms.Compose(transform_list)
+    transform = _build_transform_from_config(
+        config,
+        train=(split_lower == "train"),
+    )
 
     if dataset_lower == "cifar10":
         ds = datasets.CIFAR10(
             root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
-            transform=transform
+            transform=transform,
         )
+
     elif dataset_lower == "cifar100":
         ds = datasets.CIFAR100(
             root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
-            transform=transform
+            transform=transform,
         )
+
     elif dataset_lower == "cifar10_for_imagenet":
         ds = datasets.CIFAR10(
             root=str(DATA_ROOT),
             train=(split_lower == "train"),
             download=True,
-            transform=transform
+            transform=transform,
         )
+
     elif dataset_lower == "fake_imagenet":
+        _, h, w = config.get_input_size()
         ds = datasets.FakeData(
             size=512,
             image_size=(3, h, w),
-            num_classes=1000,
-            transform=transform
+            num_classes=config.get_num_classes(),
+            transform=transform,
         )
+
     elif dataset_lower == "imagenet":
         try:
             from torchvision.datasets import ImageNet
