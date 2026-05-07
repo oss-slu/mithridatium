@@ -3,6 +3,7 @@ README.md
 pyproject.toml
 mithridatium/__init__.py
 mithridatium/cli.py
+mithridatium/defense_config.py
 mithridatium/evaluator.py
 mithridatium/gradio_app.py
 mithridatium/loader.py
@@ -26,16 +27,3 @@ mithridatium/defenses/freeeagle.py
 mithridatium/defenses/mmbd.py
 mithridatium/defenses/strip.py
 mithridatium/defenses/FreeEagle/backdoor_inspection_new.py
-tests/test_dataloader_normalization.py
-tests/test_demo_invisible.py
-tests/test_evaluator.py
-tests/test_freeeagle.py
-tests/test_freeeagle_core.py
-tests/test_freeeagle_reporting.py
-tests/test_freeeagle_wrapper.py
-tests/test_invisible_trigger.py
-tests/test_preprocess_config.py
-tests/test_strip_entropy.py
-tests/test_strip_scores.py
-tests/test_utils_configs.py
-tests/tests_report.py

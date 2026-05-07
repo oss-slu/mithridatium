@@ -2,6 +2,12 @@
 
 Mithridatium supports Hugging Face image-classification models through `mithridatium/loader_hf.py`.
 
+Install the Hugging Face extra before running these commands:
+
+```bash
+pip install -e ".[hf]"
+```
+
 ## Basic Smoke Test
 
 ```bash

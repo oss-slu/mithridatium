@@ -8,8 +8,6 @@ Mithridatium is a research-driven project for detecting potential backdoors and 
 
 ## Project Overview
 
-## Project Overview
-
 Modern ML pipelines often reuse pretrained weights from online repositories.  
 This comes with risks:
 
@@ -19,6 +17,20 @@ This comes with risks:
 **Mithridatium** analyzes pretrained models to flag potential compromises using multiple defenses from academic research.
 
 ---
+
+## Web Demo
+
+Try the hosted Streamlit demo on Hugging Face Spaces:
+
+```text
+https://huggingface.co/spaces/williamphoenix/Mithridatium
+```
+
+The repository also includes a local Streamlit app:
+
+```bash
+streamlit run app.py
+```
 
 ## Documentation
 
@@ -32,8 +44,12 @@ The project documentation has been reorganized under [`docs/`](docs/README.md).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
-pip install pytest pytest-cov
+pip install -e ".[dev]"
+
+# Optional extras:
+# pip install -e ".[hf]"      # Hugging Face model loading
+# pip install -e ".[ui]"      # Streamlit/Gradio UI dependencies
+# pip install -e ".[all]"     # Everything for development/demo work
 
 # (A) Train demo models (fast settings)
 
@@ -69,10 +85,8 @@ For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-c
 
 To see all available options and arguments:
 
-`bash
+```bash
 mithridatium detect --help
-
 ```
 
 Defense-specific options are documented in [`docs/defenses/`](docs/defenses/overview.md). Keeping the full CLI help in the command output avoids stale duplicated option lists in this README.
-```

@@ -1,9 +1,21 @@
+# Core CLI/runtime dependencies
+typer>=0.12
 torch
 torchvision
-transformers
-scikit-learn
 numpy
-pandas
-matplotlib
-pytest
-typer
+scipy
+jsonschema
+
+# Hugging Face model loading
+transformers>=4.40
+huggingface-hub>=0.23
+
+# UI/demo dependencies
+streamlit>=1.32
+plotly>=5
+gradio>=4
+matplotlib>=3.8
+
+# Development/testing
+pytest>=8
+pytest-cov

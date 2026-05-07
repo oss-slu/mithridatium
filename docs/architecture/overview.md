@@ -23,7 +23,7 @@ flowchart TD
 | Preprocessing | `mithridatium/utils.py` | Dataset configs, dataloaders, normalization, image sizes |
 | Defenses | `mithridatium/defenses/` | FreeEagle, STRIP, MMBD, and AEVA implementations |
 | Reporting | `mithridatium/report.py`, `reports/report_schema.json` | Report payloads, summaries, JSON schema validation |
-| UI/service | `mithridatium/gradio_app.py`, `mithridatium/service.py` | Gradio and service-oriented wrappers |
+| UI/service | `app.py`, `mithridatium/gradio_app.py`, `mithridatium/service.py` | Streamlit app, Gradio app, and service-oriented wrappers |
 | Tests | `tests/` | Unit and integration tests for loaders, reports, attacks, and defenses |
 
 ## Current Detection Model
@@ -46,10 +46,13 @@ The current system does not combine all defenses in one command. Users choose on
 - FreeEagle is white-box and currently ResNet-family only.
 - STRIP and AEVA need representative input data.
 - Dataset mismatch can change the behavior of data-dependent defenses.
+- A hosted Streamlit demo is available at `https://huggingface.co/spaces/williamphoenix/Mithridatium`.
+- The local Streamlit entry point is `app.py`; the CLI also exposes a Gradio UI through `mithridatium ui`.
 
 ## Related Docs
 
 - [CLI flow](cli-flow.md)
+- [UI and hosted demo](ui.md)
 - [Model loading](model-loading.md)
 - [Reporting pipeline](reporting-pipeline.md)
 - [Defenses overview](../defenses/overview.md)

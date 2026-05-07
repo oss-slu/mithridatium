@@ -14,7 +14,6 @@ import typer
 # )
 from mithridatium import report as rpt
 from mithridatium import loader as loader
-from mithridatium import loader_hf as loader_hf
 from mithridatium import utils
 from mithridatium.defenses.mmbd import run_mmbd
 from mithridatium.defenses.freeeagle import run_freeeagle

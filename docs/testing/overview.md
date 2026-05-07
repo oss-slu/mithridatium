@@ -10,8 +10,15 @@ Testing in Mithridatium has two layers:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
-pip install pytest pytest-cov
+pip install -e ".[dev]"
+```
+
+Optional extras:
+
+```bash
+pip install -e ".[hf]"      # Hugging Face model loading
+pip install -e ".[ui]"      # Streamlit and Gradio UI dependencies
+pip install -e ".[all]"     # Development, HF, UI, and demo dependencies
 ```
 
 ## Run the Test Suite
