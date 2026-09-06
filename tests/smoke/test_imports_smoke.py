@@ -17,13 +17,22 @@ def test_core_modules_import():
     import mithridatium
     import mithridatium.cli
     import mithridatium.loader
-    import mithridatium.loader_hf
     import mithridatium.utils
     import mithridatium.evaluator
     import mithridatium.report
     import mithridatium.service
 
     assert mithridatium is not None
+
+
+@pytest.mark.requires_hf
+def test_huggingface_loader_imports_when_transformers_installed():
+    # loader_hf depends on the optional `[hf]` extra. CI smoke+unit does not
+    # install it; skip instead of treating Hugging Face as a required import.
+    pytest.importorskip("transformers")
+    import mithridatium.loader_hf
+
+    assert mithridatium.loader_hf is not None
 
 
 def test_defense_modules_import():

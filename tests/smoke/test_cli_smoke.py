@@ -8,6 +8,7 @@ They do not run full defenses or require datasets/checkpoints.
 from __future__ import annotations
 
 import pytest
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from mithridatium.cli import app, VERSION
@@ -55,13 +56,15 @@ def test_cli_detect_help_loads():
 
     assert result.exit_code == 0
 
-    stdout = result.stdout.lower()
 
-    assert "--model" in stdout
-    assert "--data" in stdout
-    assert "--defense" in stdout
-    assert "--provider" in stdout
-    assert "--out" in stdout
+def test_cli_detect_declares_expected_options():
+    # Rich highlights option names per-token, so the rendered help can split
+    # "--model" with escape codes on a color-capable terminal. Assert the
+    # declared options instead of substrings of the rendered panel.
+    detect_command = get_command(app).commands["detect"]
+    declared = {opt for param in detect_command.params for opt in param.opts}
+
+    assert {"--model", "--data", "--defense", "--provider", "--out"} <= declared
 
 
 def test_cli_detect_rejects_unknown_defense_before_running_model(tmp_path):

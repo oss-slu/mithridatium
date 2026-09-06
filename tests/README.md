@@ -165,6 +165,8 @@ Marker meanings:
 | `requires_model` | Tests that require local checkpoint files                     |
 | `requires_hf`    | Tests that require Hugging Face downloads or cached HF models |
 
+GitHub Actions smoke+unit is the merge gate, not a full local pytest.
+
 ---
 
 ## Common Test Commands
