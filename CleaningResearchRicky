@@ -1,0 +1,23 @@
+1. ANP
+https://proceedings.neurips.cc/paper/2021/file/8cbe9ce23f42628c98f80fa0fac8b19a-Paper.pdf
+
+A backdoor model has specific neurons that are important for a backdoor to work so ANP purposefully perturbs the neurons to find out which ones are suspicious, then prunes them from network. Since it doesn't know what neuron is connected to what pattern it basically messes with the neuron's parameters and sees which part of the model becomes problematic.
+ANP learns a mask value for each neuron while also applying the adversarial pertubations to the neurons weight and biases, so the ones with lower values become suspicious. As masks are learned, the neurons are prunedm, modifying the weights. Is a whitebox method, requires small amount of clean data and offical implementations support CIFAR-10 and ResNet-18
+
+2. CLP
+https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136650171.pdf
+
+CLP identifies channels that are unusually sensitive when there is a slight change in the input. Backdoor tends to react stronger when there is a trigger. This method uses channel Lipschitzness as a way to measure this type of sensitivity. Since calculating Channel Lipschitz Constant (CLC) would be difficult to calculate they calculate the upper bound based on the mode's weights (UCLC), so it doesn't need clean data.
+For each layer, CLP calculates a score for each channel then finds the means and standard deviations. 
+threshold = mean + u * standard_deviation
+If channel score is larger than threshold, it is considered outlier and pruned.
+
+3. NAD
+https://arxiv.org/pdf/2101.05930
+
+NAD removes backdoor by retraining the backdoor modeled using a cleaner teacher model. First the model is fine-tuned, using small clean dataset it will produce the teacher model and the original will be the student. Both the teacher and student are given the same clean images. NAD compares their attention maps then the student is trained to make its attention more similar to that of the teacher model while still being able to classify the clean images. 
+
+the training loss used to repair the backdoored student model in NAD
+loss = classification_loss + beta * attention_distillation_loss
+
+The idea is that the teacher focuses on legitimate features of the image, while the student may have learned internal features associated with the trigger. By forcing the student to imitate the teacher's attention, the trigger-related behavior is weakened. 
