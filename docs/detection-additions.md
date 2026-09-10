@@ -1,5 +1,9 @@
 # Research inference-time detection methods
 
+Summary Statement Contributor:   
+Bryan researched SCALE-UP, TeCo, BaDExpert, and TED. Henry researched IBD-PSC, SentiNet, and STRIP. The recommendation and CLI  
+sketch were written together.
+
 Effort: **S** \= fits in one sprint, **M** \= new dependency or slow runtime, **L** \= spans sprints.
 
 # Methods
