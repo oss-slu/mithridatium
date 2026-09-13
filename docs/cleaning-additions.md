@@ -1,38 +1,92 @@
-1. https://openaccess.thecvf.com/content/CVPR2026/papers/Yang_Logit-Margin_Repulsion_for_Backdoor_Defense_CVPR_2026_paper.pdf
+# Research post-training backdoor removal methods
 
-This model gives every class a score that’s in the model then pushes the scores. With the score just being the actual number the model will spit out before it choses whatever answers. Since there’s no way to find a trigger, they push the class's score down on clean inputs. Now when the backdoor triggers and tries to add its boost. The deflect makes it lose meaning the backdoor trigger never wins. Then it looks for whatever weight has the biggest change and singles it out so we know what to get rid of.
+Summary Statement Contributor:
+[Name] researched LMR, Fine-Pruning, and Neural Cleanse. [Fill in the split and who wrote the recommendation.]
 
-To make it we need three pieces
-•	SCE normal training loss but skip images that are class c. Training on real airplanes pushes the airplane score back up and fights us.
-•	DSC For clean images that aren't c, force c's score to sit at least m1 below the top score. If it's already that far down, no penalty.
-•	CM only kicks in on images the model isn't confident about.
+
+# Methods
+
+| Method | Paper / year | Code + license | Box | Extra data needed? | CIFAR/ResNet? | Effort | Recommend |
+| :---- | :---- | :---- | :---- | :---- | :---- | :---- | :---- |
+| LMR (Logit-Margin Repulsion) | Yang et al., CVPR 2026 | [Trusted-LLM/LMR](https://github.com/Trusted-LLM/LMR), no license file | White | Yes — small clean set, ~1% of the data; ablation goes down to 0.02% (10 images) | Yes; CIFAR-10 / ResNet-18 is the main table. Also Tiny-ImageNet and ImageNet / ResNet-34, plus VGG-16, MobileNetV2, ViT | S | Implement |
+| Fine-Pruning (FP) | Liu et al., RAID 2018 ([arXiv 1805.12185](https://arxiv.org/pdf/1805.12185)) | [kangliucn/Fine-pruning-defense](https://github.com/kangliucn/Fine-pruning-defense), no license file; reimplemented in [BackdoorBench](https://github.com/SCLBD/BackdoorBench), CC BY-NC 4.0 | White | Yes — clean set to profile activations, plus clean data for the fine-tune | Not in the paper (face recognition, speech, traffic signs). CIFAR-10 / ResNet-18 runs exist in BackdoorBench, and the LMR paper benchmarks FP on CIFAR-10 / ResNet-18 | S | Later |
+| Neural Cleanse (NC) | Wang et al., IEEE S&P 2019 | [bolunwang/backdoor](https://github.com/bolunwang/backdoor), MIT; also reimplemented in BackdoorBench, CC BY-NC 4.0 | White | Yes — clean images for trigger reversal, plus 10% of the clean training data for unlearning | Not in the paper. Repo ships a GTSRB example on Keras 2.2 / TF 1.10 (Python 2.7 / 3.6); third-party work reproduces it on CIFAR-10 with ResNet-101 off the same code | M/L | No |
+
+## Recommendation
+
+I would recommend using LMR first since it is the easiest method to implement and has the best performance. It can also use the data collected by our detection method, and only needs a small set of clean data to actually fix it.
+
+# How each method works
+
+## 1. LMR — Logit-Margin Repulsion
+
+Every class gets a logit, which is the raw score the model produces before it picks an answer. LMR never tries to find the trigger. Instead it pushes the backdoor class's logit down on clean inputs, so when a trigger fires and adds its boost, the boost is no longer enough to make that class win. Then it checks which weights moved most during that push and singles them out for removal.
+
+Three pieces, all applied to a small clean set:
+
+- **SCE** — normal cross-entropy, but skip images whose label is `c`. Training on real airplanes pushes the airplane logit back up and fights us.
+- **DSC** — for clean images not labeled `c`, force `c`'s logit to sit at least `m1` below the top competing logit. If it's already that far down, no penalty.
+- **CM** — only fires on images the model isn't confident about, meaning the true class isn't leading its closest competitor by `m2`. Keeps DSC from jittering the boundaries of the other classes.
+
+```
 loss = SCE + α·DSC + β·CM
-
 m1 = 3   α = 1.0   m2 = 0.5   β = 0.25
-Save W0 = model.fc.weight.clone() before the loop starts. We stop when the model's accuracy on class c falls to about random, which just means the push worked.
+```
 
-Next, to actually get rid of it, we save W1 and subtract the two snapshots, c's row only
+Save `W0 = model.fc.weight.clone()` before the loop starts. Stop when accuracy on class `c` falls to about random, which just means the push worked.
+
+To actually remove it, save `W1` and subtract the two snapshots, `c`'s row only:
+
+```
 score_j = |W1[c, j] - W0[c, j]|
-Whichever columns moved most are the backdoor's wiring. That's how we know what to get rid of. We zero them out across every row and freeze them with a gradient hook so training can't bring them back, then fine-tune briefly on clean data to fix class c.
+```
 
-2.  https://arxiv.org/pdf/1805.12185
+Whichever columns moved most are the backdoor's wiring. Zero them out across every row, freeze them with a gradient hook so training can't bring them back, then fine-tune briefly on clean data to restore class `c`.
 
-This model looks for Backdoor  neurons which are dead on clean data data and only wake up for the trigger. It looks for those deads ones gets rid of those and does a small retraining to actually fix it. To actually use it we run clean data through and find the channels that barely react to it. Those are our suspects. We zero them out lowest-first, stopping once clean accuracy starts to drop. Then we fine-tune on clean data to get the accuracy back.
+**Gap:** these notes start from a known `c`. The paper finds it first: maximize cross-entropy on a small clean batch (anti-learning), then take the class with the highest mean log-probability. Needs adding before this is implementable. The prune ratio (how many columns count as "moved most") is also a parameter we haven't pinned down.
 
-It uses the formula  a_i = (1/N) Σ_n mean(A_i(x_n)) which is plain enlisgnh is just for every channel i take the clean images and the averge of the grids then add them all up and divide by however many there were
+## 2. Fine-Pruning
 
-3.  https://people.cs.uchicago.edu/~ravenben/publications/pdf/backdoor-sp19.pdf
+Looks for backdoor neurons, meaning channels that are dead on clean data and only wake up for the trigger. Find those, cut them, then do a small retraining to repair the damage.
 
-The model scans every class and sees which one is way too cheap, meaning the trigger needed is a lot smaller than normal thats the backdoor. Then it passes that trigger in clean images then since the model sees that same trigger keep being used without the answer changed it learns the trigger doesn't mean anything, and since our trigger runs through the same pathway as the real trigger, the real one stops working too. Cleaning the model
+Run clean data through and find the channels that barely react to it. Those are the suspects. Zero them out lowest-first, stopping once clean accuracy starts to drop. Then fine-tune on clean data to get the accuracy back.
 
-Formulas
+```
+a_i = (1/N) Σ_n mean(A_i(x_n))
+```
 
-The first is x_adv = (1 - m) * x + m * delta  this determines for every pixel how much ia swap the original data with the trigger m is the slider. At 0 we keep the original pixel, at 1 we take the trigger pixel, and in between we blend them. Most of the image has m at 0 so it passes through untouched, and a small patch has it near 1, and that patch is the trigger. 
+In plain English: for every channel `i`, take the clean images, average the activation grid for each one, add them all up, and divide by however many there were.
 
-The second is loss = cross_entropy(model(x_adv), target_label) + lam * m.abs().sum()  this is how it searches for what the trigger actually is. The first half asks did the stamped image come out as the class we're testing, and the second half adds up the mask to measure how big the trigger got. Those two fight each other, since one wants the trigger to work and would cover the whole image to do it, and the other wants it small. lam decides who wins.
+## 3. Neural Cleanse
 
-Step 2  to unlearn it.
-•	Take 10% of the clean data
-•	Stamp the trigger on 20% of that
-•	Keep the labels correct 
-•	Fine-tune for one epoch
+Scans every class and reverse-engineers the smallest trigger that would flip any input into it. The class whose trigger is way too cheap, meaning much smaller than the rest, is the backdoor. Then stamp that recovered trigger onto clean images while keeping the labels correct. The model sees the same trigger over and over without the answer changing, so it learns the trigger means nothing; because our trigger runs through the same pathway as the real one, the real one stops working too.
+
+### Step 1 — find the trigger
+
+```
+x_adv = (1 - m) * x + m * delta
+```
+
+For every pixel, how much to swap the original out for the trigger. `m` is the slider: at 0 we keep the original pixel, at 1 we take the trigger pixel, and in between we blend them. Most of the image has `m` at 0 and passes through untouched; a small patch has it near 1, and that patch is the trigger.
+
+```
+loss = cross_entropy(model(x_adv), target_label) + lam * m.abs().sum()
+```
+
+This is how it searches for what the trigger actually is. The first half asks whether the stamped image came out as the class we're testing. The second half adds up the mask to measure how big the trigger got. The two fight each other: one wants the trigger to work and would cover the whole image to do it, the other wants it small. `lam` decides who wins.
+
+**Gap:** "way too cheap" needs a rule. The paper runs MAD (median absolute deviation) over the L1 norms of all the reversed triggers and flags a label when the anomaly index goes above 2. Not in these notes, and it's the step that decides whether the model is infected at all.
+
+### Step 2 — unlearn it
+
+- Take 10% of the clean data
+- Stamp the trigger on 20% of that
+- Keep the labels correct
+- Fine-tune for one epoch
+
+# CLI sketch
+
+mithridatium repair --model models/resnet18_poison.pth --method lmr
+--data cifar10 --clean-samples 500 --out models/repaired.pth
+
+Proposed flags: --model, --method, --data, --clean-samples, --seed, --out, --report, plus --lmr-target-class and --lmr-prune-ratio.
