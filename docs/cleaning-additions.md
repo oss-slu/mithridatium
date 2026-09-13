@@ -1,6 +1,6 @@
 1. https://openaccess.thecvf.com/content/CVPR2026/papers/Yang_Logit-Margin_Repulsion_for_Backdoor_Defense_CVPR_2026_paper.pdf
 
-This model gives every class a score that’s in the model then pushes the scores. With the score just being the actual number the model will spit out before it choses whatever answers. Since there’s no way to find a trigger, they push the class's score down on clean inputs. Now when the backdoor triggers and tries to add its boost. The deflect makes it lose meaning the backdoor trigger never wins. Then it looks for whatever weight has the biggest chance gets “singled” out so we know what to get rid of. 
+This model gives every class a score that’s in the model then pushes the scores. With the score just being the actual number the model will spit out before it choses whatever answers. Since there’s no way to find a trigger, they push the class's score down on clean inputs. Now when the backdoor triggers and tries to add its boost. The deflect makes it lose meaning the backdoor trigger never wins. Then it looks for whatever weight has the biggest change and singles it out so we know what to get rid of.
 
 To make it we need three pieces
 •	SCE normal training loss but skip images that are class c. Training on real airplanes pushes the airplane score back up and fights us.
@@ -34,6 +34,5 @@ The second is loss = cross_entropy(model(x_adv), target_label) + lam * m.abs().s
 Step 2  to unlearn it.
 •	Take 10% of the clean data
 •	Stamp the trigger on 20% of that
-•	Keep the labels correct — a dog with the sticker is still labeled dog
+•	Keep the labels correct 
 •	Fine-tune for one epoch
-
