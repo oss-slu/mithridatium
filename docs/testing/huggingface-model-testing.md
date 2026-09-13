@@ -11,7 +11,7 @@ pip install -e ".[hf]"
 ## Basic Smoke Test
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \
@@ -23,7 +23,7 @@ mithridatium detect \
 ## Try MMBD
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \
@@ -37,7 +37,7 @@ mithridatium detect \
 AEVA can be slow because it makes many model queries. Start with small values:
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \

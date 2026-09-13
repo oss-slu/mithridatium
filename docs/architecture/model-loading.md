@@ -43,7 +43,7 @@ The wrapper:
 Example:
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \

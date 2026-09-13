@@ -56,7 +56,7 @@ def test_freeeagle_report_missing_metric_fails_schema():
         rpt.validate_report_data(report)
 
 
-def test_detect_fails_when_freeeagle_results_do_not_match_schema(tmp_path, monkeypatch):
+def test_audit_fails_when_freeeagle_results_do_not_match_schema(tmp_path, monkeypatch):
     model_path = tmp_path / "fake.pth"
     model_path.write_bytes(b"ok")
 
@@ -99,7 +99,7 @@ def test_detect_fails_when_freeeagle_results_do_not_match_schema(tmp_path, monke
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "-m",
             str(model_path),
             "-D",
@@ -116,7 +116,7 @@ def test_detect_fails_when_freeeagle_results_do_not_match_schema(tmp_path, monke
     assert "failed schema validation" in output
 
 
-def test_detect_passes_freeeagle_cli_overrides_to_config(tmp_path, monkeypatch):
+def test_audit_passes_freeeagle_cli_overrides_to_config(tmp_path, monkeypatch):
     model_path = tmp_path / "fake.pth"
     model_path.write_bytes(b"ok")
 
@@ -162,7 +162,7 @@ def test_detect_passes_freeeagle_cli_overrides_to_config(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "-m",
             str(model_path),
             "-D",

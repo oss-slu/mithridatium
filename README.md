@@ -37,7 +37,7 @@ streamlit run app.py
 The project documentation has been reorganized under [`docs/`](docs/README.md).
 
 - New contributors should start with the [docs index](docs/README.md), [architecture overview](docs/architecture/overview.md), and [glossary](docs/glossary.md).
-- Users running detections should see the [defenses overview](docs/defenses/overview.md) and [testing guide](docs/testing/overview.md).
+- Users running audits should see the [defenses overview](docs/defenses/overview.md) and [testing guide](docs/testing/overview.md).
 - Future maintainers should read the [tech lead handoff](docs/handoff/tech-lead-handoff.md), [known issues](docs/handoff/known-issues.md), and [future work](docs/handoff/future-work.md).
 
 ## Quickstart
@@ -66,14 +66,14 @@ python -m scripts.train_resnet18 --dataset invisible --train_poison_rate 0.1 --t
   --epochs 5 --output_path models/resnet18_invisible.pth
 
 # (B) Run one supported defense (default architecture hint: resnet18)
-mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
+mithridatium audit --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
 
 # (B2) Run FreeEagle detection with optional overrides
-mithridatium detect --model models/resnet18_poison.pth --defense freeeagle --data cifar10 \
+mithridatium audit --model models/resnet18_poison.pth --defense freeeagle --data cifar10 \
   --freeeagle-anomaly-threshold 2.5 --freeeagle-optimize-steps 100 --out reports/freeeagle.json
 
 # (Optional) Specify architecture (supported: resnet18, resnet34)
-mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --arch resnet34 --out reports/mmbd.json
+mithridatium audit --model models/resnet18_poison.pth --defense mmbd --data cifar10 --arch resnet34 --out reports/mmbd.json
 
 # (C) See report JSON
 cat reports/mmbd.json
@@ -86,7 +86,7 @@ For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-c
 To see all available options and arguments:
 
 ```bash
-mithridatium detect --help
+mithridatium audit --help
 ```
 
 Defense-specific options are documented in [`docs/defenses/`](docs/defenses/overview.md). Keeping the full CLI help in the command output avoids stale duplicated option lists in this README.

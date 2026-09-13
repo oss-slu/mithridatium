@@ -9,7 +9,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 ## Start Here
 
 - [Architecture overview](architecture/overview.md): high-level project map and data flow.
-- [CLI flow](architecture/cli-flow.md): what happens when `mithridatium detect` runs.
+- [CLI flow](architecture/cli-flow.md): what happens when `mithridatium audit` runs.
 - [UI and hosted demo](architecture/ui.md): Streamlit, Gradio, and the Hugging Face Space.
 - [Defenses overview](defenses/overview.md): compare FreeEagle, STRIP, MMBD, and AEVA.
 - [Testing overview](testing/overview.md): practical testing workflow.

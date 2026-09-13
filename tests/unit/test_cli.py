@@ -106,7 +106,7 @@ def _valid_result(defense: str) -> dict:
 @pytest.fixture
 def cli_mocks(monkeypatch):
     """
-    Patch the expensive pieces used by CLI detect.
+    Patch the expensive pieces used by CLI audit.
 
     The CLI still runs its argument parsing, provider checks, defense selection,
     report building, output writing, and routing logic.
@@ -185,11 +185,11 @@ def test_cli_defenses_lists_current_defenses():
     assert "spectral" not in stdout
 
 
-def test_detect_rejects_unsupported_provider():
+def test_audit_rejects_unsupported_provider():
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "--provider",
             "bad-provider",
             "--defense",
@@ -203,13 +203,13 @@ def test_detect_rejects_unsupported_provider():
     assert "unsupported --provider" in output.lower()
 
 
-def test_detect_rejects_missing_local_model(tmp_path):
+def test_audit_rejects_missing_local_model(tmp_path):
     missing_model = tmp_path / "missing.pth"
 
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "--provider",
             "torchvision",
             "--model",
@@ -225,14 +225,14 @@ def test_detect_rejects_missing_local_model(tmp_path):
     assert "model path not found" in output.lower()
 
 
-def test_detect_rejects_unsupported_defense(tmp_path):
+def test_audit_rejects_unsupported_defense(tmp_path):
     model_path = tmp_path / "fake.pth"
     model_path.write_bytes(b"ok")
 
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "--provider",
             "torchvision",
             "--model",
@@ -254,7 +254,7 @@ def test_detect_rejects_unsupported_defense(tmp_path):
 
 
 @pytest.mark.parametrize("defense", ["mmbd", "strip", "aeva", "freeeagle"])
-def test_detect_routes_torchvision_defenses(tmp_path, monkeypatch, cli_mocks, defense):
+def test_audit_routes_torchvision_defenses(tmp_path, monkeypatch, cli_mocks, defense):
     model_path = tmp_path / "fake.pth"
     model_path.write_bytes(b"ok")
 
@@ -278,7 +278,7 @@ def test_detect_routes_torchvision_defenses(tmp_path, monkeypatch, cli_mocks, de
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "--provider",
             "torchvision",
             "--model",
@@ -298,7 +298,7 @@ def test_detect_routes_torchvision_defenses(tmp_path, monkeypatch, cli_mocks, de
 
 
 @pytest.mark.parametrize("defense", ["mmbd", "strip", "aeva"])
-def test_detect_routes_huggingface_logits_only_defenses(tmp_path, monkeypatch, cli_mocks, defense):
+def test_audit_routes_huggingface_logits_only_defenses(tmp_path, monkeypatch, cli_mocks, defense):
     """
     Hugging Face routing should work for defenses that only need logits/model calls.
 
@@ -324,7 +324,7 @@ def test_detect_routes_huggingface_logits_only_defenses(tmp_path, monkeypatch, c
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "--provider",
             "huggingface",
             "--hf-model-id",

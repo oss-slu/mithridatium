@@ -46,12 +46,12 @@ def test_cli_help_loads():
 
     assert result.exit_code == 0
     assert "mithridatium" in result.stdout.lower()
-    assert "detect" in result.stdout.lower()
+    assert "audit" in result.stdout.lower()
     assert "defenses" in result.stdout.lower()
 
 
-def test_cli_detect_help_loads():
-    result = runner.invoke(app, ["detect", "--help"])
+def test_cli_audit_help_loads():
+    result = runner.invoke(app, ["audit", "--help"])
 
     assert result.exit_code == 0
 
@@ -64,14 +64,14 @@ def test_cli_detect_help_loads():
     assert "--out" in stdout
 
 
-def test_cli_detect_rejects_unknown_defense_before_running_model(tmp_path):
+def test_cli_audit_rejects_unknown_defense_before_running_model(tmp_path):
     fake_model = tmp_path / "fake.pth"
     fake_model.write_bytes(b"not a real checkpoint")
 
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "--model",
             str(fake_model),
             "--defense",

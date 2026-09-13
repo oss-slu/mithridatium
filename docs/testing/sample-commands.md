@@ -13,21 +13,21 @@ These commands are short CLI references for testing and debugging. Full scenario
 mithridatium --version
 mithridatium --help
 mithridatium defenses
-mithridatium detect --help
+mithridatium audit --help
 ```
 
 ## Run One Local Defense
 
 ```bash
-mithridatium detect --model models/resnet18_poison.pth --data cifar10 --defense mmbd --out reports/mmbd.json --force
+mithridatium audit --model models/resnet18_poison.pth --data cifar10 --defense mmbd --out reports/mmbd.json --force
 ```
 
 ```bash
-mithridatium detect --model models/resnet18_poison.pth --data cifar10 --defense strip --out reports/strip.json --force
+mithridatium audit --model models/resnet18_poison.pth --data cifar10 --defense strip --out reports/strip.json --force
 ```
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense freeeagle \
@@ -37,7 +37,7 @@ mithridatium detect \
 ```
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense aeva \
@@ -51,7 +51,7 @@ mithridatium detect \
 ## Run a Hugging Face Model
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \
@@ -67,7 +67,7 @@ cat reports/mmbd.json
 ```
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_clean.pth \
   --data cifar10 \
   --defense freeeagle \
@@ -76,7 +76,7 @@ mithridatium detect \
 ```
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_clean.pth \
   --data cifar10 \
   --defense freeeagle \

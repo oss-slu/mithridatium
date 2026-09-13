@@ -2,7 +2,7 @@
 Helpers for applying defense-specific CLI options to PreprocessConfig objects.
 
 The CLI should stay focused on command routing. Defense-specific configuration
-belongs here so detect() does not become a giant collection of unrelated flags.
+belongs here so audit() does not become a giant collection of unrelated flags.
 """
 
 from __future__ import annotations

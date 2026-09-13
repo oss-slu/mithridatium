@@ -49,7 +49,7 @@ Important `results` fields:
 Start with a small smoke test:
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense aeva \

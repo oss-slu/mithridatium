@@ -34,7 +34,7 @@ def _find_checkpoint(models_root: Path, stem: str) -> Path | None:
     return None
 
 
-def test_freeeagle_cli_detect_runs_on_poison_checkpoint(tmp_path, models_root):
+def test_freeeagle_cli_audit_runs_on_poison_checkpoint(tmp_path, models_root):
     checkpoint_path = _find_checkpoint(models_root, "resnet18_poison")
 
     if checkpoint_path is None:
@@ -49,7 +49,7 @@ def test_freeeagle_cli_detect_runs_on_poison_checkpoint(tmp_path, models_root):
     result = runner.invoke(
         app,
         [
-            "detect",
+            "audit",
             "-m",
             str(checkpoint_path),
             "-D",
