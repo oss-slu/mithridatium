@@ -5,6 +5,7 @@ Elijah researched LMR, Fine-Pruning, and Neural Cleanse. Ricky researched ANP, C
 
 Effort: S = fits in one sprint, M = new dependency or slow runtime, L = spans sprints.
 
+
 # Methods
 
 | Method | Paper / year | Code + license | Box | Extra data needed? | CIFAR/ResNet? | Effort | Recommend |
