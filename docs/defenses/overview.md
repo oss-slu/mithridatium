@@ -1,6 +1,6 @@
 # Defenses Overview
 
-Mithridatium provides four backdoor-detection defenses for pretrained image classifiers. The CLI runs one selected defense per `mithridatium detect` command.
+Mithridatium provides four backdoor-detection defenses for pretrained image classifiers. The CLI runs one selected defense per `mithridatium audit` command.
 
 ## Quick Reference
 
@@ -24,7 +24,7 @@ Use AEVA when you want a black-box-style, query-based decision-boundary signal a
 ## Shared CLI Pattern
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense mmbd \
@@ -35,7 +35,7 @@ mithridatium detect \
 Hugging Face example:
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \

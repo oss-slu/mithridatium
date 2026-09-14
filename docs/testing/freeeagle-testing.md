@@ -20,7 +20,7 @@ pytest tests/test_freeeagle.py tests/test_freeeagle_wrapper.py tests/test_freeea
 ## Local CLI Smoke Test
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense freeeagle \
@@ -35,7 +35,7 @@ mithridatium detect \
 ```bash
 for model in models/*.pth; do
   name="$(basename "$model" .pth)"
-  mithridatium detect \
+  mithridatium audit \
     --model "$model" \
     --data cifar10 \
     --defense freeeagle \

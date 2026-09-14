@@ -21,8 +21,8 @@ python -m scripts.train_resnet18 --dataset clean --epochs 5 --output_path models
 python -m scripts.train_resnet18 --dataset poison --train_poison_rate 0.1 --target_class 0 --epochs 5 --output_path models/resnet18_poison.pth
 ```
 
-## 4. Run detection:
+## 4. Run audit detection:
 
 ```bash
-mithridatium detect --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
+mithridatium audit --model models/resnet18_poison.pth --defense mmbd --data cifar10 --out reports/mmbd.json
 ```

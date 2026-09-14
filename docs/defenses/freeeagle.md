@@ -44,7 +44,7 @@ Important `results` fields:
 ## Example CLI Command
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense freeeagle \

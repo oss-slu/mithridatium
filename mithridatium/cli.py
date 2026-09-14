@@ -90,7 +90,7 @@ def defenses() -> None:
         typer.echo(d)
 
 @app.command()
-def detect(
+def audit(
     model: str = typer.Option(
         "models/resnet18.pth",
         "--model",

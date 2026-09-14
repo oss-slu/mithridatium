@@ -42,7 +42,7 @@ Some tests skip when local benchmark checkpoints are not available.
 Train or provide a checkpoint, then run one defense at a time:
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense mmbd \
@@ -57,7 +57,7 @@ Use a known clean model and a known poisoned model when possible. A defense is e
 Use `--provider huggingface` and a model that loads through `AutoModelForImageClassification`:
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --provider huggingface \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \

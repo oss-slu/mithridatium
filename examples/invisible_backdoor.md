@@ -65,7 +65,7 @@ The saved checkpoint can now be evaluated with any of the built-in defenses.
 ### 1) Strip
 
 ```bash
-mithridatium detect --model models/resnet18_invisible.pth --defense strip --data cifar10
+mithridatium audit --model models/resnet18_invisible.pth --defense strip --data cifar10
 ```
 
 ✅ Example output (trimmed):
@@ -142,7 +142,7 @@ mithridatium detect --model models/resnet18_invisible.pth --defense strip --data
 ### 2) MMBD
 
 ```bash
-mithridatium detect --model models/resnet18_invisible.pth --defense mmbd --data cifar10
+mithridatium audit --model models/resnet18_invisible.pth --defense mmbd --data cifar10
 ```
 
 ✅ Example output (trimmed):

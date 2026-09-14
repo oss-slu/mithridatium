@@ -4,7 +4,7 @@ Mithridatium is a Python package and CLI for running backdoor-detection defenses
 
 ```mermaid
 flowchart TD
-    A[User runs mithridatium detect] --> B[Parse CLI options]
+    A[User runs mithridatium audit] --> B[Parse CLI options]
     B --> C[Load model]
     C --> D[Build preprocessing config and dataloader]
     D --> E[Check defense compatibility]
@@ -26,7 +26,7 @@ flowchart TD
 | UI/service | `app.py`, `mithridatium/gradio_app.py`, `mithridatium/service.py` | Streamlit app, Gradio app, and service-oriented wrappers |
 | Tests | `tests/` | Unit and integration tests for loaders, reports, attacks, and defenses |
 
-## Current Detection Model
+## Current Auditing Model
 
 The CLI supports these defenses individually:
 

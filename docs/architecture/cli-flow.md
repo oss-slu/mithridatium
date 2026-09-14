@@ -3,7 +3,7 @@
 The main user entry point is:
 
 ```bash
-mithridatium detect --model models/resnet18_poison.pth --data cifar10 --defense mmbd --out reports/mmbd.json
+mithridatium audit --model models/resnet18_poison.pth --data cifar10 --defense mmbd --out reports/mmbd.json
 ```
 
 The command is implemented in `mithridatium/cli.py`.
@@ -13,7 +13,7 @@ The command is implemented in `mithridatium/cli.py`.
 ```bash
 mithridatium --version
 mithridatium --help
-mithridatium detect --help
+mithridatium audit --help
 mithridatium defenses
 ```
 
@@ -28,7 +28,7 @@ sequenceDiagram
     participant F as selected defense
     participant R as report.py
 
-    U->>CLI: mithridatium detect ...
+    U->>CLI: mithridatium audit ...
     CLI->>CLI: validate provider, defense, output options
     CLI->>L: load local or Hugging Face model
     CLI->>D: build preprocess config and dataloader
@@ -68,10 +68,10 @@ The current defense set is `aeva`, `freeeagle`, `mmbd`, and `strip`.
 
 ## Output Behavior
 
-By default, `mithridatium detect` writes JSON to `reports/report.json`. Use `--out -` to write JSON to stdout, or `--force` to overwrite an existing report file.
+By default, `mithridatium audit` writes JSON to `reports/report.json`. Use `--out -` to write JSON to stdout, or `--force` to overwrite an existing report file.
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   --model models/resnet18_clean.pth \
   --defense freeeagle \
   --data cifar10 \
@@ -83,7 +83,7 @@ When running from inside the package folder, adjust paths back to the repository
 
 ```bash
 cd mithridatium
-mithridatium detect \
+mithridatium audit \
   --model ../models/resnet18_clean.pth \
   --defense freeeagle \
   --data cifar10 \

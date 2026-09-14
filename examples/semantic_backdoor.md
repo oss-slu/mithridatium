@@ -68,7 +68,7 @@ Then run:
 ### MMBD
 
 ```bash
-python3 -m mithridatium.cli detect \
+python3 -m mithridatium.cli audit \
   -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
   -d cifar10 \
   -D mmbd \
@@ -78,7 +78,7 @@ python3 -m mithridatium.cli detect \
 OR
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
   -d cifar10 \
   -D mmbd \
@@ -94,7 +94,7 @@ Observed summary:
 ### STRIP
 
 ```bash
-python3 -m mithridatium.cli detect \
+python3 -m mithridatium.cli audit \
   -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
   -d cifar10 \
   -D strip \
@@ -104,7 +104,7 @@ python3 -m mithridatium.cli detect \
 OR
 
 ```bash
-mithridatium detect \
+mithridatium audit \
   -m models/resnet18_semantic_whitehorse_to_frog_e20.pth \
   -d cifar10 \
   -D strip \

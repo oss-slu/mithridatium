@@ -15,7 +15,7 @@ The project has local PyTorch checkpoint support, initial Hugging Face image-cla
 
 The main flow is:
 
-1. `mithridatium/cli.py` parses `mithridatium detect` options.
+1. `mithridatium/cli.py` parses `mithridatium audit` options.
 2. `mithridatium/loader.py` or `mithridatium/loader_hf.py` loads the model.
 3. `mithridatium/utils.py` builds preprocessing config and dataloaders.
 4. The selected defense runs from `mithridatium/defenses/`.
@@ -25,7 +25,7 @@ See [architecture overview](../architecture/overview.md) for diagrams.
 
 ## Major Completed Features
 
-- Typer CLI with `detect`, `defenses`, and `ui` commands.
+- Typer CLI with `audit`, `defenses`, and `ui` commands.
 - Individual defense dispatch for `mmbd`, `strip`, `aeva`, and `freeeagle`.
 - Local `.pt` and `.pth` checkpoint validation.
 - ResNet-18 variant detection for standard and CIFAR-style checkpoints.
@@ -58,8 +58,8 @@ See [architecture overview](../architecture/overview.md) for diagrams.
 pip install -e .
 pytest
 mithridatium defenses
-mithridatium detect --model models/resnet18_poison.pth --data cifar10 --defense mmbd --out reports/mmbd.json --force
-mithridatium detect --provider huggingface --hf-model-id microsoft/resnet-50 --data cifar10_for_imagenet --defense strip --out reports/hf_strip.json --force
+mithridatium audit --model models/resnet18_poison.pth --data cifar10 --defense mmbd --out reports/mmbd.json --force
+mithridatium audit --provider huggingface --hf-model-id microsoft/resnet-50 --data cifar10_for_imagenet --defense strip --out reports/hf_strip.json --force
 ```
 
 ## Recommended Next Steps
