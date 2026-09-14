@@ -106,6 +106,8 @@ def test_strip_scores_reproducible_with_same_seed():
 
 
 def test_strip_scores_verdict_threshold_logic():
+    # Default STRIP mode is dynamic_mad, which ignores entropy_mean_threshold.
+    # This test covers static_mean, where the mean is compared to that cutoff.
     model = MockModel()
     config = get_preprocess_config("cifar10")
 
@@ -118,6 +120,7 @@ def test_strip_scores_verdict_threshold_logic():
             num_perturbations=10,
             device="cpu",
             seed=42,
+            threshold_mode="static_mean",
             entropy_mean_threshold=0.0,
         )
 
@@ -130,8 +133,11 @@ def test_strip_scores_verdict_threshold_logic():
             num_perturbations=10,
             device="cpu",
             seed=42,
+            threshold_mode="static_mean",
             entropy_mean_threshold=100.0,
         )
 
+    assert low_threshold["thresholds"]["mode"] == "static_mean"
+    assert high_threshold["thresholds"]["mode"] == "static_mean"
     assert low_threshold["verdict"] == "likely backdoored"
     assert high_threshold["verdict"] == "likely clean"
