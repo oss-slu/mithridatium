@@ -57,12 +57,12 @@ def test_cli_audit_help_loads():
     assert result.exit_code == 0
 
 
-def test_cli_detect_declares_expected_options():
+def test_cli_audit_declares_expected_options():
     # Rich highlights option names per-token, so the rendered help can split
     # "--model" with escape codes on a color-capable terminal. Assert the
     # declared options instead of substrings of the rendered panel.
-    detect_command = get_command(app).commands["detect"]
-    declared = {opt for param in detect_command.params for opt in param.opts}
+    audit_command = get_command(app).commands["audit"]
+    declared = {opt for param in audit_command.params for opt in param.opts}
 
     assert {"--model", "--data", "--defense", "--provider", "--out"} <= declared
 
