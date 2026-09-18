@@ -449,6 +449,12 @@ def audit(
     print(rpt.render_summary(rep))
 
 @app.command()
+def detect(
+
+):
+    pass
+
+@app.command()
 def ui(
     host: str = typer.Option(
         "127.0.0.1",
