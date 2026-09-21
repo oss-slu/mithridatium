@@ -450,6 +450,61 @@ def audit(
 
 @app.command()
 def detect(
+        model: str = typer.Option(
+            "models/resnet18.pth",
+            "--model",
+            "-m",
+            help="The model path (.pth or .pt). E.g. 'models/resnet18.pth'.",
+        ),
+        data: str = typer.Option(
+            "cifar10",
+            "--data",
+            "-d",
+            help="The dataset name. E.g. 'cifar10', 'cifar10_for_imagenet', 'imagenet_subset', or 'imagenet'.",
+        ),
+        method: str = typer.Option(
+            "",
+            "--method",
+            "",
+            help="UNFILLED",
+        ),
+        num_samples: str = typer.Option(
+            "",
+            "--num-samples",
+            "",
+            help="",
+        ),
+        clean_samples: str = typer.Option(
+            "",
+            "--clean-samples",
+            "",
+            help="",
+        ),
+        threshold: str = typer.Option(
+            "",
+            "--threshold",
+            "",
+            help="",
+        ),
+        seed: str = typer.Option(
+            "",
+            "--seed",
+            "",
+            help="",
+        ),
+        out: str = typer.Option(
+            "reports/report.json",
+            "--out",
+            "-o",
+            help='The output path for the JSON report. Use "-" for stdout or a file path (e.g. "reports/report.json").',
+        ),
+        scaleup_scales: str = typer.Option(
+            "",
+            "--scaleup-scales",
+            help=''
+
+        )
+
 
 ):
     pass
