@@ -67,6 +67,21 @@ def test_cli_audit_declares_expected_options():
     assert {"--model", "--data", "--defense", "--provider", "--out"} <= declared
 
 
+def test_cli_repair_help_loads():
+    result = runner.invoke(app, ["repair", "--help"])
+
+    assert result.exit_code == 0
+    assert "method" in result.stdout.lower()
+    assert "lmr" in result.stdout.lower()
+
+
+def test_cli_repair_rejects_unknown_method():
+    result = runner.invoke(app, ["repair", "--method", "unsupported_method"])
+
+    assert result.exit_code != 0
+    assert "unsupported repair method" in result.stderr.lower()
+
+
 def test_cli_audit_rejects_unknown_defense_before_running_model(tmp_path):
     fake_model = tmp_path / "fake.pth"
     fake_model.write_bytes(b"not a real checkpoint")
