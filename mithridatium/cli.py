@@ -22,6 +22,7 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
+from mithridatium.repair import repair_lmr_stub
 
 try:
     VERSION = package_version("mithridatium")
@@ -531,7 +532,10 @@ def repair(
     ),
 ):
 
-    if method != "lmr":
+# Look through this and proably make better so we can scale it when we add more
+# have it read the method then go from there
+# check
+    if method not in REPAIR_METHODS:
         typer.secho(
             f"Error: Unsupported repair method '{method}'. "
             f"Supported methods: {', '.join(sorted(REPAIR_METHODS))}",
@@ -539,7 +543,11 @@ def repair(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
     
-    typer.echo(f"repair: method={method} model={model} out={out} (not implemented yet)")
+    report_path = report if report else out.with_suffix(".json")
+
+    repair_lmr_stub(model=model, out=str(out), report=str(report_path), dataset=data)
+
+    typer.secho(f"\n[cli] Repair stub method={method} model={model} out={out}")
 
 
 if __name__ == "__main__":
