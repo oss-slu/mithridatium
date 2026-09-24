@@ -31,6 +31,10 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [MMBD](defenses/mmbd.md)
 - [AEVA](defenses/aeva.md)
 
+## Repair
+
+- [Overview](repair/overview.md)
+
 ## Testing
 
 - [Overview](testing/overview.md)
