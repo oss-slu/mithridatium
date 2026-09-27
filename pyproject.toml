@@ -15,6 +15,7 @@ dependencies = [
     "numpy",
     "scipy",
     "jsonschema",
+    "fastmcp",
 ]
 
 [project.optional-dependencies]
@@ -55,6 +56,7 @@ include = ["mithridatium*"]
 
 [project.scripts]
 mithridatium = "mithridatium.cli:app"
+mithridatium-mcp = "mithridatium.audit_mcp:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
