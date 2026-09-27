@@ -22,6 +22,7 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
+from mithridatium.repair import repair_lmr_stub
 
 try:
     VERSION = package_version("mithridatium")
@@ -37,6 +38,7 @@ EXIT_IO_ERROR = 74        # input exists but can't be opened/read
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
+REPAIR_METHODS = {"lmr"}
 
 def _write_json(obj: dict, out_path: str, force: bool) -> None:
     """
@@ -484,6 +486,69 @@ def ui(
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     launch_ui(host=host, port=port, share=share)
+
+
+@app.command("repair")
+def repair(
+    model: str = typer.Option(
+        "models/resnet18.pth", "--model", "-m",
+        help="The model path (.pth or .pt). E.g. 'models/resnet18.pth'.",
+    ),
+    method: str = typer.Option(
+        "lmr", "--method", "-M",
+        help="The repair method to run. E.g. 'lmr'.",
+    ),
+    data: str = typer.Option(
+        "cifar10", "--data", "-d",
+        help="The dataset name. E.g. 'cifar10' or 'imagenet_subset'.",
+    ),
+    clean_samples: int = typer.Option(
+        500, "--clean-samples", "-c",
+        help="Number of clean samples the repair method may use.",
+    ),
+    seed: int = typer.Option(
+        None, "--seed", "-s",
+        help="Random seed for reproducibility.",
+    ),
+    out: Path = typer.Option(
+        Path("models/repaired.pth"), "--out", "-o",
+        help="Path for the repaired checkpoint (.pth or .pt).",
+    ),
+    report: Path = typer.Option(
+        None, "--report", "-r",
+        help='Path for the JSON report. Defaults to a sidecar beside --out. Use "-" for stdout.',
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Overwrite the checkpoint or report if it already exists.",
+    ),
+    lmr_target_class: int = typer.Option(
+        None, "--lmr-target-class",
+        help="LMR: target class to repair. Omit to infer.",
+    ),
+    lmr_prune_ratio: float = typer.Option(
+        None, "--lmr-prune-ratio",
+        help="LMR: fraction of most-moved columns to prune.",
+    ),
+):
+
+# Look through this and proably make better so we can scale it when we add more
+# have it read the method then go from there
+# check
+    if method not in REPAIR_METHODS:
+        typer.secho(
+            f"Error: Unsupported repair method '{method}'. "
+            f"Supported methods: {', '.join(sorted(REPAIR_METHODS))}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+    
+    report_path = report if report else out.with_suffix(".json")
+
+    repair_lmr_stub(model=model, out=str(out), report=str(report_path), dataset=data)
+
+    typer.secho(f"\n[cli] Repair stub method={method} model={model} out={out}")
+
 
 if __name__ == "__main__":
     app()

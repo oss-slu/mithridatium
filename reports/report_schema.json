@@ -10,20 +10,36 @@
 		"results"
 	],
 	"properties": {
-		"mithridatium_version": { "type": "string" },
-		"timestamp_utc": { "type": "string" },
-		"model_path": { "type": "string" },
-		"defense": { "type": "string" },
-		"dataset": { "type": "string" },
-		"results": { "type": "object" }
+		"mithridatium_version": {
+			"type": "string"
+		},
+		"timestamp_utc": {
+			"type": "string"
+		},
+		"model_path": {
+			"type": "string"
+		},
+		"defense": {
+			"type": "string"
+		},
+		"dataset": {
+			"type": "string"
+		},
+		"results": {
+			"type": "object"
+		}
 	},
 	"allOf": [
 		{
 			"if": {
 				"properties": {
-					"defense": { "const": "freeeagle" }
+					"defense": {
+						"const": "freeeagle"
+					}
 				},
-				"required": ["defense"]
+				"required": [
+					"defense"
+				]
 			},
 			"then": {
 				"properties": {
@@ -40,25 +56,40 @@
 							"dataset"
 						],
 						"properties": {
-							"defense": { "type": "string", "const": "freeeagle" },
-							"anomaly_metric": { "type": "number" },
+							"defense": {
+								"type": "string",
+								"const": "freeeagle"
+							},
+							"anomaly_metric": {
+								"type": "number"
+							},
 							"anomaly_matrix": {
 								"type": "array",
 								"items": {
 									"type": "array",
-									"items": { "type": "number" }
+									"items": {
+										"type": "number"
+									}
 								}
 							},
 							"tendency_per_target": {
 								"type": "array",
-								"items": { "type": "number" }
+								"items": {
+									"type": "number"
+								}
 							},
-							"verdict": { "type": "string" },
+							"verdict": {
+								"type": "string"
+							},
 							"thresholds": {
 								"type": "object",
-								"required": ["anomaly_metric_threshold"],
+								"required": [
+									"anomaly_metric_threshold"
+								],
 								"properties": {
-									"anomaly_metric_threshold": { "type": "number" }
+									"anomaly_metric_threshold": {
+										"type": "number"
+									}
 								},
 								"additionalProperties": true
 							},
@@ -71,22 +102,65 @@
 									"input_shape"
 								],
 								"properties": {
-									"num_classes": { "type": "integer" },
-									"inspect_layer_position": { "type": "integer" },
-									"optimize_steps": { "type": "integer" },
+									"num_classes": {
+										"type": "integer"
+									},
+									"inspect_layer_position": {
+										"type": "integer"
+									},
+									"optimize_steps": {
+										"type": "integer"
+									},
 									"input_shape": {
 										"type": "array",
-										"items": { "type": "integer" }
+										"items": {
+											"type": "integer"
+										}
 									}
 								},
 								"additionalProperties": true
 							},
-							"dataset": { "type": "string" }
+							"dataset": {
+								"type": "string"
+							}
 						},
 						"additionalProperties": true
 					}
 				},
-				"required": ["results"]
+				"required": [
+					"results"
+				]
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"defense": {
+						"const": "lmr"
+					}
+				},
+				"required": [
+					"defense"
+				]
+			},
+			"then": {
+				"properties": {
+					"results": {
+						"type": "object",
+						"required": [
+							"status"
+						],
+						"properties": {
+							"status": {
+								"type": "string"
+							}
+						},
+						"additionalProperties": true
+					}
+				},
+				"required": [
+					"results"
+				]
 			}
 		}
 	],
