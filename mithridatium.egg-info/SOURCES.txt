@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 mithridatium/__init__.py
+mithridatium/audit_mcp.py
 mithridatium/cli.py
 mithridatium/defense_config.py
 mithridatium/evaluator.py

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Any
-from fastmcp import FastMCP
 from mithridatium.cli import audit
 import contextlib #to send output to buffer instead of the MCP stdio channel
 import io
@@ -9,7 +8,7 @@ import tempfile #to create a temporary file to store the audit results
 from pathlib import Path
 import typer
 
-mcp = FastMCP("mithridatium")
+from mithridatium.mcp import mcp
 
 # audit parameters
 def _audit_kwargs(
@@ -224,9 +223,3 @@ def run_strip(
         strip_suspicious_fraction_threshold=strip_suspicious_fraction_threshold,
     ))
 
-def main() -> None:
-    mcp.run(transport="stdio")
-
-
-if __name__ == "__main__":
-    main()
