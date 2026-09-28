@@ -468,13 +468,13 @@ def detect(
             help="The dataset name. E.g. 'cifar10', 'cifar10_for_imagenet', 'imagenet_subset', or 'imagenet'.",
         ),
         method: str = typer.Option(
-            "",
+            "scaleup",
             "--method",
             "-M",
             help="The method name. E.g. 'scaleup'.",
         ),
         num_samples: str = typer.Option(
-            "",
+            "5000",
             "--scaleup-num-samples",
             "-n",
             help="The number of images from the dataset to test on.",
