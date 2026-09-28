@@ -507,9 +507,9 @@ def detect(
             help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
         ),
         scaleup_scales: str = typer.Option(
-            "(2,3,4,5,6,7,8,9,10,11)",
+            "(3,5,7,9,11)",
             "--scaleup-scales",
-            help='UNIMPLEMENTED! The series of value scalars to use in scaleup, e.g. "(2,3,4,5,6,7,8,9,10,11)."'
+            help='The series of value scalars to use in scaleup, e.g. "(3,5,7,9,11)."'
 
         )
 
