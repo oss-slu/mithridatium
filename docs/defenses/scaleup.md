@@ -32,14 +32,14 @@ mithridatium detect --model models/resnet18_poison.pth --method scaleup \
   --data cifar10 --scaleup-num-samples 1000 --out reports/detect_scaleup.json
 ```
 
-```bash
-mithridatium detect --provider huggingface --hf-model-id microsoft/resnet-50 \
-  --data cifar10_for_imagenet --out reports/hf_scaleup.json
-```
+Smoke path, needing no real data or checkpoint:
+`--data fake_imagenet --scaleup-num-samples 8 --out -`.
 
-Flags: `--num-samples` (256) costs `num_samples x (1 + len(scales))` forward
-passes. `--threshold` (0.5) flags when `SPC >` it. `--scaleup-scales`
-(`3,5,7,9,11`), `--seed`, `--provider`, `--out`, `--force`.
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--scaleup-num-samples` | `256` | Inputs to score. Costs `num_samples x (1 + len(scales))` forward passes |
+| `--scaleup-threshold` | `0.5` | Flag when `SPC >` it (strict, per Eq. 2). Must satisfy `0 < T <= 1.0` |
+| `--scaleup-scales` | `(3,5,7,9,11)` | Amplification factors, as a quoted tuple |
 
 ## Caveats
 
@@ -49,9 +49,9 @@ are choices awaiting calibration, and `{3,5,7,9,11}` appears in the paper as an
 example. A collapsed model predicts one class for everything, scoring SPC 1.0
 across the board, so confirm the model classifies before reading a verdict. The
 data-limited variant (Eq. 3-4, the sketch's `--clean-samples`) is not built.
-`--seed` is plumbed through but changes nothing today: the test split loads
-unshuffled and we take the first `--num-samples` inputs in order, so runs
-already repeat exactly. It seeds torch in case a shuffled loader arrives later.
+`detect` runs local torchvision checkpoints only. SCALE-UP reads just predicted
+labels, so a Hugging Face provider would be a small addition, but `detect` does
+not expose one yet, and there is no `--seed` flag.
 
 ## Licensing
 
