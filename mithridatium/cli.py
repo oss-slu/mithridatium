@@ -643,9 +643,9 @@ def repair(
 
         results["parameters"]["clean_samples"] = sample_count
 #build report
-        report = rpt.build_report(
+        report = rpt.build_repair_report(
             model_path=str(model_path),
-            repair_method=method,
+            method=method,
             dataset=data,
             version=VERSION,
             results=results,
