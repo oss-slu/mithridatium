@@ -5,7 +5,7 @@
 | Command | Purpose |
 |---|---|
 | `mithridatium audit` | **Detect** whether a model is backdoored. Runs a defense (e.g. FreeEagle, STRIP) and writes a verdict report. |
-| `mithridatium detect` | *(Alias / future entry-point for detection workflows.)* |
+| `mithridatium detect` | **Input-level** poisoning detection (e.g. SCALE-UP). See [Detect](detect.md). |
 | `mithridatium repair` | **Repair** a backdoored model. Copies the checkpoint to a new path and writes a report. |
 
 ## When to use repair vs audit

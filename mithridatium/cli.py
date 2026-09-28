@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
 import typer
+import ast
 # from mithridatium.service import (
 #     DEFENSES,
 #     DetectionExecutionError,
@@ -23,6 +24,7 @@ from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair import repair_lmr_stub
+from mithridatium.detect.scaleup import scaleup_stub_results
 
 try:
     VERSION = package_version("mithridatium")
@@ -39,6 +41,8 @@ app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr"}
+
+DETECT_METHODS = {"scaleup"}
 
 def _write_json(obj: dict, out_path: str, force: bool) -> None:
     """
@@ -449,6 +453,192 @@ def audit(
 
     _write_json(rep, out, force)
     print(rpt.render_summary(rep))
+
+@app.command()
+def detect(
+        model: str = typer.Option(
+            "models/resnet18.pth",
+            "--model",
+            "-m",
+            help="The model path (.pth or .pt). E.g. 'models/resnet18.pth'.",
+        ),
+        data: str = typer.Option(
+            "cifar10",
+            "--data",
+            "-d",
+            help="The dataset name. E.g. 'cifar10', 'cifar10_for_imagenet', 'imagenet_subset', or 'imagenet'.",
+        ),
+        method: str = typer.Option(
+            "scaleup",
+            "--method",
+            "-M",
+            help="The method name. E.g. 'scaleup'.",
+        ),
+        num_samples: str = typer.Option(
+            "5000",
+            "--scaleup-num-samples",
+            "-n",
+            help="The number of images from the dataset to test on.",
+        ),
+        # scaleup_clean_samples: str = typer.Option(
+        #     "",
+        #     "--scaleup-clean-samples",
+        #     help="",
+        # ),
+        scaleup_threshold: str = typer.Option(
+            "1.0",
+            "--scaleup-threshold",
+            help="The percent threshhold of distortion scalars an image must pass through to be declared poisoned.",
+        ),
+        # seed: str = typer.Option(
+        #     "",
+        #     "--seed",
+        #     "-s",
+        #     help="",
+        # ),
+        out: str = typer.Option(
+            "reports/report.json",
+            "--out",
+            "-o",
+            help='The output path for the JSON report. Use "-" for stdout or a file path (e.g. "reports/report.json").',
+        ),
+        force: bool = typer.Option(
+            False,
+            "--force",
+            "-f",
+            help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
+        ),
+        scaleup_scales: str = typer.Option(
+            "(2,3,4,5,6,7,8,9,10,11)",
+            "--scaleup-scales",
+            help='UNIMPLEMENTED! The series of value scalars to use in scaleup, e.g. "(2,3,4,5,6,7,8,9,10,11)."'
+
+        )
+
+
+):
+    """
+    Run a supported poisoning detection method.
+    """
+
+    """
+    Validate model choice.
+    """
+    p = Path(model)
+
+    if not p.exists() or not p.is_file():
+        typer.secho(
+            f"Error: model path not found or not a file: {p}", err=True
+        )
+        raise typer.Exit(code=EXIT_NO_INPUT)
+
+    try:
+        with p.open("rb"):
+            pass
+    except OSError as ex:
+        typer.secho(
+            f"Error: model file could not be opened: {p}\nReason: {ex}", err=True
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+    """
+    Validate method.
+    """
+    m = method.strip().lower()
+    if m not in DETECT_METHODS:
+        typer.secho(
+            f"Error: unsupported --method '{method}'. Supported methods: {', '.join(sorted(DETECT_METHODS))}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+
+    """
+    Validate sample count.
+    """
+    # TODO: Verify what range of samples would actually be valid. Min, max, etc.
+    Temporary_Value__Max_Samples = 1e99
+
+    try:
+        n_s = int(num_samples)
+
+    except ValueError:
+        typer.secho(f"Error: --scaleup-num-samples must be an integer, got {num_samples}.", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    if n_s <= 0:
+        typer.secho(f"Error: --scaleup-num-samples must be positive, got {num_samples}.", err=True)
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+    elif n_s >= Temporary_Value__Max_Samples:
+        typer.secho(f"Error: --scaleup-num-samples must be under {Temporary_Value__Max_Samples}, got {num_samples}.", err=True)
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+
+    """
+    Validate SCALE-UP treshold.
+    """
+    try:
+        scaleup_threshold_converted = float(scaleup_threshold)
+
+    except ValueError:
+        typer.secho(f"Error: --scaleup-threshold must be a float, got {scaleup_threshold}.", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    if scaleup_threshold_converted <= 0 or scaleup_threshold_converted > 1.0:
+        typer.secho(f"Error: --scaleup-threshold must be within 0 < T <= 1.0, got {scaleup_threshold}", err=True)
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+
+    """
+    Validate SCALE-UP scalars.
+    """
+    try:
+        scaleup_scales_converted = ast.literal_eval(scaleup_scales)
+        if type(scaleup_scales_converted) != tuple:
+            raise TypeError
+        for value in scaleup_scales_converted:
+            if type(value) != float and type(value) != int:
+                raise TypeError
+
+    except TypeError:
+        typer.secho(f"Error: --scaleup-scales must be a parenthesis enclosed, comma seperated list of numbers, got {scaleup_scales}", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    if all(scalar > 0 for scalar in scaleup_scales_converted) is False:
+        typer.secho(f"Error: --scaleup-scales must include only numbers greater than 0, got {scaleup_scales}.", err=True)
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+
+
+    results = scaleup_stub_results(
+        method=m,
+        num_samples=n_s,
+        threshold=scaleup_threshold_converted,
+        scales=scaleup_scales_converted,
+    )
+    rep = rpt.build_report(
+        model_path=model,
+        defense=m,
+        dataset=data,
+        version=VERSION,
+        results=results,
+    )
+
+    try:
+        rpt.validate_report_data(rep)
+    except Exception as ex:
+        typer.secho(
+            f"Error: generated report failed schema validation.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+    _write_json(rep, out, force)
+    print(rpt.render_summary(rep))
+
+
+
 
 @app.command()
 def ui(

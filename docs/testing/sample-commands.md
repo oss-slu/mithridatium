@@ -14,6 +14,7 @@ mithridatium --version
 mithridatium --help
 mithridatium defenses
 mithridatium audit --help
+mithridatium detect --help
 ```
 
 ## Run One Local Defense
@@ -45,6 +46,20 @@ mithridatium audit \
   --aeva-hsja-iterations 5 \
   --aeva-ep 1 \
   --out reports/aeva_smoke.json \
+  --force
+```
+
+## Run a poison detection method (SCALE-UP stub)
+
+See [Detect](../detect.md). Scoring is stubbed; the CLI validates options and writes JSON.
+
+```bash
+mithridatium detect \
+  --model models/resnet18_poison.pth \
+  --data cifar10 \
+  --method scaleup \
+  --scaleup-num-samples 1000 \
+  --out reports/detect_scaleup.json \
   --force
 ```
 
