@@ -533,9 +533,7 @@ def repair(
     ),
 ):
 
-# Look through this and proably make better so we can scale it when we add more
-# have it read the method then go from there
-# check
+
     if method not in REPAIR_METHODS:
         typer.secho(
             f"Error: Unsupported repair method '{method}'. "
