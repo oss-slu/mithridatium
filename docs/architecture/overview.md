@@ -19,6 +19,7 @@ flowchart TD
 | Area | Important files | Purpose |
 | --- | --- | --- |
 | CLI | `mithridatium/cli.py` | Typer commands, options, defense dispatch, report writing |
+| MCP and agent | `mithridatium/mcp/` | MCP tools for the four defenses, plus a small agent that calls them. The tools call `audit()` in `cli.py`. |
 | Model loading | `mithridatium/loader.py`, `mithridatium/loader_hf.py` | Local checkpoint loading and Hugging Face model wrapping |
 | Preprocessing | `mithridatium/utils.py` | Dataset configs, dataloaders, normalization, image sizes |
 | Defenses | `mithridatium/defenses/` | FreeEagle, STRIP, MMBD, and AEVA implementations |
@@ -52,6 +53,7 @@ The current system does not combine all defenses in one command. Users choose on
 ## Related Docs
 
 - [CLI flow](cli-flow.md)
+- [MCP server and audit agent](mcp.md)
 - [UI and hosted demo](ui.md)
 - [Model loading](model-loading.md)
 - [Reporting pipeline](reporting-pipeline.md)

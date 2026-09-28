@@ -38,6 +38,7 @@ The project documentation has been reorganized under [`docs/`](docs/README.md).
 
 - New contributors should start with the [docs index](docs/README.md), [architecture overview](docs/architecture/overview.md), and [glossary](docs/glossary.md).
 - Users running audits should see the [defenses overview](docs/defenses/overview.md) and [testing guide](docs/testing/overview.md).
+- The MCP server and bundled audit agent are documented in [MCP server and audit agent](docs/architecture/mcp.md).
 - Future maintainers should read the [tech lead handoff](docs/handoff/tech-lead-handoff.md), [known issues](docs/handoff/known-issues.md), and [future work](docs/handoff/future-work.md).
 
 ## Quickstart
@@ -49,6 +50,7 @@ pip install -e ".[dev]"
 # Optional extras:
 # pip install -e ".[hf]"      # Hugging Face model loading
 # pip install -e ".[ui]"      # Streamlit/Gradio UI dependencies
+# pip install -e ".[agent]"   # MCP server and audit agent
 # pip install -e ".[all]"     # Everything for development/demo work
 
 # (A) Train demo models (fast settings)

@@ -6,7 +6,6 @@ from pathlib import Path
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_openai import ChatOpenAI
 
 AUDIT_SYSTEM_PROMPT = """
 You audit image-classification checkpoints for backdoors.
