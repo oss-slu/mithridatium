@@ -13,6 +13,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [MCP server and audit agent](architecture/mcp.md): run the same audits as MCP tools, or from the bundled agent.
 - [UI and hosted demo](architecture/ui.md): Streamlit, Gradio, and the Hugging Face Space.
 - [Defenses overview](defenses/overview.md): compare FreeEagle, STRIP, MMBD, and AEVA.
+- [Detect CLI](detect.md): input-level methods (`detect`) vs model-level defenses (`audit`).
 - [Testing overview](testing/overview.md): practical testing workflow.
 - [Glossary](glossary.md): definitions for common project and backdoor-defense terms.
 
@@ -33,6 +34,10 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [MMBD](defenses/mmbd.md)
 - [AEVA](defenses/aeva.md)
 
+## Detect and repair
+
+- [Detect](detect.md)
+- [Repair](repair.md)
 
 ## Testing
 

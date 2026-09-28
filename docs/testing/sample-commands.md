@@ -14,6 +14,7 @@ mithridatium --version
 mithridatium --help
 mithridatium defenses
 mithridatium audit --help
+mithridatium detect --help
 ```
 
 ## Run One Local Defense
@@ -48,20 +49,18 @@ mithridatium audit \
   --force
 ```
 
-## Run a Poison Detection Method
-#### Note: No methods currently implemented (9.27.2026). First method to be implemented will be scaleup.
-```bash
-mithridatium detect -- model models/resnet18_poison.pth --data cifar10 --method scaleup --out reports/scaleup.json --force
-```
+## Run a poison detection method (SCALE-UP stub)
+
+See [Detect](../detect.md). Scoring is stubbed; the CLI validates options and writes JSON.
 
 ```bash
 mithridatium detect \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --method scaleup \
-  --out reports/scaleup.json \
+  --scaleup-num-samples 1000 \
+  --out reports/detect_scaleup.json \
   --force
-
 ```
 
 ## Run a Hugging Face Model

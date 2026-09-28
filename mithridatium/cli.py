@@ -24,6 +24,7 @@ from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair import repair_lmr_stub
+from mithridatium.detect.scaleup import scaleup_stub_results
 
 try:
     VERSION = package_version("mithridatium")
@@ -503,7 +504,7 @@ def detect(
         ),
         force: bool = typer.Option(
             False,
-            "--force"
+            "--force",
             "-f",
             help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
         ),
@@ -549,7 +550,7 @@ def detect(
             f"Error: unsupported --method '{method}'. Supported methods: {', '.join(sorted(DETECT_METHODS))}",
             err=True,
         )
-        raise typer.Exit(code=EXIT_IO_ERROR)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
 
     """
@@ -562,15 +563,15 @@ def detect(
         n_s = int(num_samples)
 
     except ValueError:
-        typer.secho(f"Error: --num-samples must be an integer, got {num_samples}.", err=True)
+        typer.secho(f"Error: --scaleup-num-samples must be an integer, got {num_samples}.", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     if n_s <= 0:
-        typer.secho(f"Error: --num-samples must be positive, got {num_samples}.", err=True)
+        typer.secho(f"Error: --scaleup-num-samples must be positive, got {num_samples}.", err=True)
         raise typer.Exit(code=EXIT_IO_ERROR)
 
     elif n_s >= Temporary_Value__Max_Samples:
-        typer.secho(f"Error: --num-samples must be under {Temporary_Value__Max_Samples}, got {num_samples}.", err=True)
+        typer.secho(f"Error: --scaleup-num-samples must be under {Temporary_Value__Max_Samples}, got {num_samples}.", err=True)
         raise typer.Exit(code=EXIT_IO_ERROR)
 
 
@@ -581,7 +582,7 @@ def detect(
         scaleup_threshold_converted = float(scaleup_threshold)
 
     except ValueError:
-        typer.secho(f"Error: --num-samples must be a float, got {scaleup_threshold}.", err=True)
+        typer.secho(f"Error: --scaleup-threshold must be a float, got {scaleup_threshold}.", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     if scaleup_threshold_converted <= 0 or scaleup_threshold_converted > 1.0:
@@ -610,11 +611,18 @@ def detect(
 
 
 
+    results = scaleup_stub_results(
+        method=m,
+        num_samples=n_s,
+        threshold=scaleup_threshold_converted,
+        scales=scaleup_scales_converted,
+    )
     rep = rpt.build_report(
         model_path=model,
-        defense=method,
+        defense=m,
         dataset=data,
         version=VERSION,
+        results=results,
     )
 
     try:
