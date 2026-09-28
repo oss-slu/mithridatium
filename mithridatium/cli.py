@@ -23,6 +23,7 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
+from mithridatium.detect.scaleup import run_scaleup
 
 try:
     VERSION = package_version("mithridatium")
@@ -472,7 +473,7 @@ def detect(
             help="The method name. E.g. 'scaleup'.",
         ),
         num_samples: str = typer.Option(
-            "",
+            "256",
             "--scaleup-num-samples",
             "-n",
             help="The number of images from the dataset to test on.",
@@ -483,7 +484,7 @@ def detect(
         #     help="",
         # ),
         scaleup_threshold: str = typer.Option(
-            "1.0",
+            "0.5",
             "--scaleup-threshold",
             help="The percent threshhold of distortion scalars an image must pass through to be declared poisoned.",
         ),
@@ -501,7 +502,7 @@ def detect(
         ),
         force: bool = typer.Option(
             False,
-            "--force"
+            "--force",
             "-f",
             help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
         ),
@@ -547,7 +548,7 @@ def detect(
             f"Error: unsupported --method '{method}'. Supported methods: {', '.join(sorted(DETECT_METHODS))}",
             err=True,
         )
-        raise typer.Exit(code=EXIT_IO_ERROR)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
 
     """
@@ -565,11 +566,11 @@ def detect(
 
     if n_s <= 0:
         typer.secho(f"Error: --num-samples must be positive, got {num_samples}.", err=True)
-        raise typer.Exit(code=EXIT_IO_ERROR)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     elif n_s >= Temporary_Value__Max_Samples:
         typer.secho(f"Error: --num-samples must be under {Temporary_Value__Max_Samples}, got {num_samples}.", err=True)
-        raise typer.Exit(code=EXIT_IO_ERROR)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
 
     """
@@ -584,7 +585,7 @@ def detect(
 
     if scaleup_threshold_converted <= 0 or scaleup_threshold_converted > 1.0:
         typer.secho(f"Error: --scaleup-threshold must be within 0 < T <= 1.0, got {scaleup_threshold}", err=True)
-        raise typer.Exit(code=EXIT_IO_ERROR)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
 
     """
@@ -598,21 +599,54 @@ def detect(
             if type(value) != float and type(value) != int:
                 raise TypeError
 
-    except TypeError:
+    except (TypeError, ValueError, SyntaxError):
         typer.secho(f"Error: --scaleup-scales must be a parenthesis enclosed, comma seperated list of numbers, got {scaleup_scales}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     if all(scalar > 0 for scalar in scaleup_scales_converted) is False:
         typer.secho(f"Error: --scaleup-scales must include only numbers greater than 0, got {scaleup_scales}.", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+
+
+    print(f"[cli] loading model from {p}…")
+
+    try:
+        cfg = utils.get_preprocess_config(data)
+        mdl, _ = loader.detect_and_build(str(p), num_classes=cfg.get_num_classes())
+        test_loader, config = utils.dataloader_for(data, "test", 128)
+    except Exception as ex:
+        typer.secho(
+            f"Error: failed to load model '{p}'.\nReason: {ex}",
+            err=True,
+        )
         raise typer.Exit(code=EXIT_IO_ERROR)
 
+    print(f"[cli] running method={m}…")
 
+    try:
+        results = run_scaleup(
+            mdl,
+            config,
+            num_samples=n_s,
+            threshold=scaleup_threshold_converted,
+            scales=scaleup_scales_converted,
+            device=get_device(0),
+            test_loader=test_loader,
+        )
+    except Exception as ex:
+        typer.secho(
+            f"Error: failed to run '{m}' on model {p}.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
 
     rep = rpt.build_report(
-        model_path=model,
-        defense=method,
+        model_path=str(p),
+        defense=m,
         dataset=data,
         version=VERSION,
+        results=results,
     )
 
     try:
@@ -625,9 +659,10 @@ def detect(
         raise typer.Exit(code=EXIT_IO_ERROR)
 
     _write_json(rep, out, force)
-    print(rpt.render_summary(rep))
-
-
+    print(
+        f"[detect] {results['verdict']}: {results['num_flagged']}/{results['num_inputs']} "
+        f"inputs flagged (SPC > {scaleup_threshold_converted})"
+    )
 
 
 @app.command()

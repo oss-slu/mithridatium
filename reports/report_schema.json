@@ -88,6 +88,40 @@
 				},
 				"required": ["results"]
 			}
+		},
+		{
+			"if": {
+				"properties": {
+					"defense": { "const": "scaleup" }
+				},
+				"required": ["defense"]
+			},
+			"then": {
+				"properties": {
+					"results": {
+						"required": [
+							"mode",
+							"method",
+							"verdict",
+							"num_inputs",
+							"num_flagged",
+							"threshold",
+							"parameters",
+							"per_sample"
+						],
+						"properties": {
+							"mode": { "const": "input-level" },
+							"method": { "const": "scaleup" },
+							"per_sample": {
+								"type": "array",
+								"items": {
+									"required": ["index", "predicted_label", "score", "flagged"]
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	],
 	"additionalProperties": true
