@@ -30,6 +30,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [STRIP](defenses/strip.md)
 - [MMBD](defenses/mmbd.md)
 - [AEVA](defenses/aeva.md)
+- [SCALE-UP](defenses/scaleup.md) (`detect`, input-level)
 
 ## Testing
 

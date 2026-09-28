@@ -48,6 +48,22 @@ mithridatium audit \
   --force
 ```
 
+## Run a Poison Detection Method
+#### Note: No methods currently implemented (9.27.2026). First method to be implemented will be scaleup.
+```bash
+mithridatium detect -- model models/resnet18_poison.pth --data cifar10 --method scaleup --out reports/scaleup.json --force
+```
+
+```bash
+mithridatium detect \
+  --model models/resnet18_poison.pth \
+  --data cifar10 \
+  --method scaleup \
+  --out reports/scaleup.json \
+  --force
+
+```
+
 ## Run a Hugging Face Model
 
 ```bash
