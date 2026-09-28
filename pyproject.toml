@@ -18,6 +18,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+agent = [
+    "fastmcp>=3.4,<4",
+    "langchain",
+    "langchain-mcp-adapters==0.3.2",
+]
 hf = [
     "transformers>=4.40",
     "huggingface-hub>=0.23",
@@ -47,6 +52,9 @@ all = [
     "pytest-cov",
     "build",
     "twine",
+    "fastmcp>=3.4,<4",
+    "langchain",
+    "langchain-mcp-adapters==0.3.2",
 ]
 
 [tool.setuptools.packages.find]
@@ -55,6 +63,7 @@ include = ["mithridatium*"]
 
 [project.scripts]
 mithridatium = "mithridatium.cli:app"
+mithridatium-mcp = "mithridatium.mcp:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
