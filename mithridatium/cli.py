@@ -3,6 +3,7 @@ import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
+import torch
 import typer
 # from mithridatium.service import (
 #     DEFENSES,
@@ -22,7 +23,7 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
-from mithridatium.repair import repair_lmr_stub
+from mithridatium.repair import run_lmr
 
 try:
     VERSION = package_version("mithridatium")
@@ -524,7 +525,7 @@ def repair(
     ),
     lmr_target_class: int = typer.Option(
         None, "--lmr-target-class",
-        help="LMR: target class to repair. Omit to infer.",
+        help="LMR: target class to repair. Required for LMR.",
     ),
     lmr_prune_ratio: float = typer.Option(
         None, "--lmr-prune-ratio",
@@ -560,12 +561,137 @@ def repair(
         )
         raise typer.Exit(code=EXIT_IO_ERROR)
     
-    report_path = report if report else out.with_suffix(".json")
+    if method == "lmr":
 
-    repair_lmr_stub(model=model, out=str(out), report=str(report_path), dataset=data)
+    #validate inputs for LMR
+        if lmr_target_class is None:
+            typer.secho(
+                "Error: --lmr-target-class is required for LMR repair.",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if lmr_prune_ratio is None:
+            typer.secho(
+                "Error: --lmr-prune-ratio is required for LMR repair.",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if clean_samples <= 0:
+            typer.secho(
+                "Error: --clean-samples must be a positive integer.",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    typer.secho(f"\n[cli] Repair stub method={method} model={model} out={out}")
+        prune_ratio = lmr_prune_ratio
 
+        seed_value = seed if seed is not None else 0
+#check paths
+        model_path = Path(model)
+
+        if not model_path.exists() or not model_path.is_file():
+            typer.secho(
+                f"Error: model path not found or not a file: {model_path}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_NO_INPUT)
+
+        report_path = report if report is not None else out.with_suffix(".json")
+
+        if out.exists() and not force:
+            typer.secho(
+                f"Error: output file already exists: {out}. Use --force to overwrite.",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_CANT_CREATE)
+
+        if report_path != Path("-") and report_path.exists() and not force:
+            typer.secho(
+                f"Error: report file already exists: {report_path}. Use --force to overwrite.",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_CANT_CREATE)
+#load model
+        try:
+            config = utils.get_preprocess_config(data)
+            num_classes = config.get_num_classes()
+
+            mdl, _ = loader.detect_and_build(str(model_path), arch_hint="resnet18", num_classes=num_classes)
+
+        except Exception as ex:
+            typer.secho(
+                f"Error: failed to load model '{model_path}'.\nReason: {ex}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_IO_ERROR)
+#build clean dataset
+        try:
+            train_loader, _ = utils.dataloader_for(data, "train", 64)
+
+            dataset_size = len(train_loader.dataset)
+
+            sample_count = min(clean_samples, dataset_size)
+
+            generator = torch.Generator()
+            generator.manual_seed(seed_value)
+
+            indices = torch.randperm(dataset_size, generator=generator)[:sample_count].tolist()
+
+            clean_subset = torch.utils.data.Subset(train_loader.dataset, indices)
+
+            clean_loader = torch.utils.data.DataLoader(clean_subset, batch_size=(min(64, sample_count)), shuffle=True, num_workers=0)
+
+        except Exception as ex:
+            typer.secho(
+                f"Error: failed to build dataloader for dataset '{data}'.\nReason: {ex}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_IO_ERROR)
+#run lmr
+        try:
+            repaired_model, results = run_lmr(mdl, clean_loader, target_class=lmr_target_class, prune_ratio=prune_ratio, seed=seed_value)
+
+        except Exception as ex:
+            typer.secho(
+                f"Error: failed to run LMR repair on model '{model_path}'.\nReason: {ex}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_IO_ERROR)
+
+        results["parameters"]["clean_samples"] = sample_count
+#build report
+        report = rpt.build_repair_report(
+            model_path=str(model_path),
+            method=method,
+            dataset=data,
+            version=VERSION,
+            results=results,
+        )
+
+        try: 
+            rpt.validate_report_data(report)
+
+        except Exception as ex:
+            typer.secho(
+                f"Error: generated report failed schema validation.\nReason: {ex}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_IO_ERROR)
+#save repaired model and report
+        try: 
+            out.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(repaired_model.state_dict(), out)
+
+        except Exception as ex:
+            typer.secho(
+                f"Error: failed to save repaired model to '{out}'.\nReason: {ex}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_IO_ERROR)
+
+        _write_json(report, str(report_path), force)
+
+        typer.secho(f"\n[cli] LMR repair completed successfully. Repaired model saved to '{out}'. Report saved to '{report_path}'.", fg=typer.colors.GREEN)
 
 if __name__ == "__main__":
     app()

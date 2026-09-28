@@ -26,6 +26,25 @@ def build_report(
     }
     return to_json_safe(payload)
 
+from datetime import datetime, timezone
+
+
+def build_repair_report(
+    model_path: str,
+    method: str,
+    dataset: str,
+    version: str,
+    results: dict,
+) -> dict:
+    return {
+        "mithridatium_version": version,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "model_path": model_path,
+        "method": method,
+        "dataset": dataset,
+        "results": results,
+    }
+
 # def mmbd_defense(model, preprocess_config) -> Dict[str, Any]:
 #     return run_mmbd(model, preprocess_config)
 
