@@ -1,49 +1,47 @@
 import asyncio
+import sys
+import os
+from pathlib import Path
 
 from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
 
-AUDIT_SYSTEM_PROMPT = (
-    "You are the audit toolset specialist. You run backdoor and poisoning detection on image-classification models using run_mmbd, run_strip, run_aeva, and run_freeeagle.\n"
-    "You receive a focused task from the supervisor with model source, provider, arch, dataset, and which defenses to run. Do not ask the user clarifying questions. If required inputs are missing, return status='needs_input' with missing_fields.\n"
-    "Run only the requested defenses. Do not choose a routing strategy unless defenses are unspecified. In that case run mmbd and strip as defaults.\n\n"
-    "\nReturn ONLY a JSON object matching this format:\n"
-    "specialist, status, model_ref, dataset, findings[], errors[], limitations[]\n"
-    "Each finding must include: defense, ok, verdict, metrics, summary.\n"
-    "On tool failure (ok=false), record defense, error, and logs in errors[].\n"
-    "\nDo not aggregate across defenses, assign overall risk, or write a final report. Do not compare with other specialists. Report raw per-defense results only."
-)
+AUDIT_SYSTEM_PROMPT = """
+You audit image-classification checkpoints for backdoors.
+Tools: run_mmbd, run_strip, run_aeva, run_freeeagle.
+Pass the model path the user gives. Unless they say otherwise, use
+data='cifar10', arch='resnet18', provider='torchvision'.
+Run only the defenses they name. If they name none, run run_mmbd.
+Report each defense's verdict from the tool result. Do not invent metrics.
+"""
 
+def _server_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("BASH_FUNC_")
+    }
 
-async def _build_audit_specialist():
-    client = MultiServerMCPClient(MITHRIDAT_MCP_SERVERS)
+def _load_mithridatium_mcp():
+    return {
+        "mithridatium": {
+            "transport": "stdio",
+            "command": sys.executable,
+            "args": ["-c", "from mithridatium.mcp import main; main()"],
+            "cwd": Path(__file__).resolve().parents[2],
+            "env": _server_env(),
+        }
+    }
+
+async def audit_agent(model_path: str):
+    client = MultiServerMCPClient(_load_mithridatium_mcp())
+    model = init_chat_model(model="gpt-4o-mini")
     tools = await client.get_tools()
-    return create_agent(
-        model=model,
-        tools=tools,
-        system_prompt=AUDIT_SYSTEM_PROMPT,
-        middleware=[include_oversight_metadata],
-        state_schema=OversightState,
-    )
+    agent = create_agent(model, tools, system_prompt=AUDIT_SYSTEM_PROMPT)
+    result = await agent.ainvoke({"messages": f"Audit {model_path}."})
+    return result.get("messages", [])[-1].content
 
-
-def _load_audit_specialist():
-    return asyncio.run(_build_audit_specialist())
-
-
-class _LazyAuditSpecialist:
-    """Load the MCP-backed audit agent on first use so imports stay cheap."""
-
-    def __init__(self):
-        self._agent = None
-
-    def _get(self):
-        if self._agent is None:
-            self._agent = _load_audit_specialist()
-        return self._agent
-
-    def invoke(self, *args, **kwargs):
-        return self._get().invoke(*args, **kwargs)
-
-
-audit_specialist = _LazyAuditSpecialist()
+if __name__ == "__main__":
+    print(asyncio.run(audit_agent("models/resnet18_poison.pth")))

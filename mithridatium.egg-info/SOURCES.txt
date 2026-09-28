@@ -2,7 +2,6 @@ LICENSE
 README.md
 pyproject.toml
 mithridatium/__init__.py
-mithridatium/audit_mcp.py
 mithridatium/cli.py
 mithridatium/defense_config.py
 mithridatium/evaluator.py
@@ -28,3 +27,6 @@ mithridatium/defenses/freeeagle.py
 mithridatium/defenses/mmbd.py
 mithridatium/defenses/strip.py
 mithridatium/defenses/FreeEagle/backdoor_inspection_new.py
+mithridatium/mcp/__init__.py
+mithridatium/mcp/audit_agent.py
+mithridatium/mcp/audit_mcp.py

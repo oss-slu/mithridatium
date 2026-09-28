@@ -18,6 +18,7 @@ Optional extras:
 ```bash
 pip install -e ".[hf]"      # Hugging Face model loading
 pip install -e ".[ui]"      # Streamlit and Gradio UI dependencies
+pip install -e ".[agent]"   #
 pip install -e ".[all]"     # Development, HF, UI, and demo dependencies
 ```
 

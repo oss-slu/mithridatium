@@ -18,8 +18,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp = [
-    "fastmcp",
+agent = [
+    "fastmcp>=3.4,<4",
+    "langchain",
+    "langchain-mcp-adapters==0.3.2",
+    "langchain-openai",
 ]
 hf = [
     "transformers>=4.40",

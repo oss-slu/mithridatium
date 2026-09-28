@@ -4,7 +4,6 @@ from mithridatium.cli import audit
 import contextlib #to send output to buffer instead of the MCP stdio channel
 import io
 import json
-import tempfile #to create a temporary file to store the audit results
 from pathlib import Path
 import typer
 
@@ -97,13 +96,14 @@ def _catch_output():
             raise RuntimeError(output.getvalue().strip()) from err
 
 def _run_audit(audit_kwargs: dict[str, Any]) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        out_path = str(Path(tmp_dir) / "report.json")
-        with _catch_output():
-            audit(**audit_kwargs, out=out_path, force=True)
-        return json.loads(Path(out_path).read_text())
+    reports = Path("reports")
+    reports.mkdir(exist_ok=True)
+    saved = reports / f"{Path(audit_kwargs['model']).stem}_{audit_kwargs['defense']}.json"
+    with _catch_output():
+        audit(**audit_kwargs, out=str(saved), force=True)
+    return json.loads(Path(saved).read_text())
 
-@mcp.tool()
+@mcp.tool(run_in_thread=False)
 def run_mmbd(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
@@ -121,7 +121,7 @@ def run_mmbd(
         hf_model_id=hf_model_id,
     ))
 
-@mcp.tool()
+@mcp.tool(run_in_thread=False)
 def run_freeeagle(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
@@ -161,7 +161,7 @@ def run_freeeagle(
         freeeagle_inspect_layer_position=freeeagle_inspect_layer_position,
     ))
 
-@mcp.tool()
+@mcp.tool(run_in_thread=False)
 def run_aeva(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
@@ -197,7 +197,7 @@ def run_aeva(
         aeva_ep=aeva_ep,
     ))
 
-@mcp.tool()
+@mcp.tool(run_in_thread=False)
 def run_strip(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
