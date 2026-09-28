@@ -18,7 +18,8 @@ Optional extras:
 ```bash
 pip install -e ".[hf]"      # Hugging Face model loading
 pip install -e ".[ui]"      # Streamlit and Gradio UI dependencies
-pip install -e ".[all]"     # Development, HF, UI, and demo dependencies
+pip install -e ".[agent]"   # MCP server and Langchain dependencies
+pip install -e ".[all]"     # Development, HF, UI, demo, and MCP agent dependencies
 ```
 
 ## Run the Test Suite
@@ -84,3 +85,4 @@ Treat a single report as a signal, not a complete proof. Thresholds may need cal
 - [FreeEagle testing](freeeagle-testing.md)
 - [Hugging Face model testing](huggingface-model-testing.md)
 - [Sample commands](sample-commands.md)
+- [MCP server and audit agent](../architecture/mcp.md)

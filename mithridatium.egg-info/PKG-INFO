@@ -11,6 +11,11 @@ Requires-Dist: torchvision
 Requires-Dist: numpy
 Requires-Dist: scipy
 Requires-Dist: jsonschema
+Provides-Extra: agent
+Requires-Dist: fastmcp<4,>=3.4; extra == "agent"
+Requires-Dist: langchain; extra == "agent"
+Requires-Dist: langchain-mcp-adapters==0.3.2; extra == "agent"
+Requires-Dist: langchain-openai; extra == "agent"
 Provides-Extra: hf
 Requires-Dist: transformers>=4.40; extra == "hf"
 Requires-Dist: huggingface-hub>=0.23; extra == "hf"
