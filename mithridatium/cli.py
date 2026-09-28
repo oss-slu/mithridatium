@@ -487,29 +487,35 @@ def detect(
             "--scaleup-threshold",
             help="The percent threshhold of distortion scalars an image must pass through to be declared poisoned.",
         ),
-        seed: str = typer.Option(
-            "",
-            "--seed",
-            "-s",
-            help="",
-        ),
+        # seed: str = typer.Option(
+        #     "",
+        #     "--seed",
+        #     "-s",
+        #     help="",
+        # ),
         out: str = typer.Option(
             "reports/report.json",
             "--out",
             "-o",
             help='The output path for the JSON report. Use "-" for stdout or a file path (e.g. "reports/report.json").',
         ),
+        force: bool = typer.Option(
+            False,
+            "--force"
+            "-f",
+            help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
+        ),
         scaleup_scales: str = typer.Option(
             "(2,3,4,5,6,7,8,9,10,11)",
             "--scaleup-scales",
-            help='The series of value scalars to use in scaleup, e.g. "(2,3,4,5,6,7,8,9,10,11)."'
+            help='UNIMPLEMENTED! The series of value scalars to use in scaleup, e.g. "(2,3,4,5,6,7,8,9,10,11)."'
 
         )
 
 
 ):
     """
-    Validate and handle a detect command.
+    Run a supported poisoning detection method.
     """
 
     """
@@ -599,6 +605,29 @@ def detect(
     if all(scalar > 0 for scalar in scaleup_scales_converted) is False:
         typer.secho(f"Error: --scaleup-scales must include only numbers greater than 0, got {scaleup_scales}.", err=True)
         raise typer.Exit(code=EXIT_IO_ERROR)
+
+
+
+    rep = rpt.build_report(
+        model_path=model,
+        defense=method,
+        dataset=data,
+        version=VERSION,
+    )
+
+    try:
+        rpt.validate_report_data(rep)
+    except Exception as ex:
+        typer.secho(
+            f"Error: generated report failed schema validation.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
+
+    _write_json(rep, out, force)
+    print(rpt.render_summary(rep))
+
+
 
 
 @app.command()
