@@ -535,13 +535,30 @@ def repair(
 # Look through this and proably make better so we can scale it when we add more
 # have it read the method then go from there
 # check
-    if method not in REPAIR_METHODS:
+    if method.strip().lower() not in REPAIR_METHODS:
         typer.secho(
             f"Error: Unsupported repair method '{method}'. "
             f"Supported methods: {', '.join(sorted(REPAIR_METHODS))}",
             err=True,
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    model_path = Path(model)
+    if not model_path.exists() or not model_path.is_file():
+        typer.secho(
+            f"Error: model path not found or not a file: {model_path}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_NO_INPUT)
+
+    try:
+        with model_path.open("rb"):
+            pass
+    except OSError as ex:
+        typer.secho(
+            f"Error: model file could not be opened: {model_path}\nReason: {ex}", err=True
+        )
+        raise typer.Exit(code=EXIT_IO_ERROR)
     
     report_path = report if report else out.with_suffix(".json")
 

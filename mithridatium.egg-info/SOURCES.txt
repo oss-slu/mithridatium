@@ -27,3 +27,4 @@ mithridatium/defenses/freeeagle.py
 mithridatium/defenses/mmbd.py
 mithridatium/defenses/strip.py
 mithridatium/defenses/FreeEagle/backdoor_inspection_new.py
+mithridatium/repair/__init__.py
