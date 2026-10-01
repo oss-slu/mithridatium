@@ -11,13 +11,31 @@ Thank you for checking out **Mithridatium**! We are excited to have you here. Th
 
 We encourage you to watch this repository if you’d like to stay updated!
 
+## Hacktoberfest
+
+Mithridatium is participating in [Hacktoberfest](https://hacktoberfest.com/)! Issues open for Hacktoberfest are labeled **`hacktoberfest`**. If you're new, start with one also labeled **`good first issue`**.
+
+### Claiming an Issue
+
+1. **Comment on the issue** asking to work on it. Please don't start until it's assigned to you.
+2. **A maintainer will assign it to you.** Issues go to the first person who asks. Each issue has one contributor at a time.
+3. **Keep us posted.** If an assigned issue has no activity (comments, commits, or a PR) for **more than 5 days**, we'll unassign it and open it back up for others. If you need more time, just leave a comment saying so.
+4. If you can't finish an issue, comment to let us know so we can reassign it.
+
+### How Your PR Counts
+
+- Link the issue in your PR description (e.g., `Fixes #123`).
+- Your PR counts toward Hacktoberfest once a maintainer merges it, approves it, or labels it **`hacktoberfest-accepted`**.
+- Low-effort or spam PRs (e.g., whitespace-only changes, PRs for issues not assigned to you, or AI-generated changes you haven't reviewed and tested) will be labeled **`spam`** or **`invalid`** and won't count.
+
 ## Issue Labels
 
 We use labels to organize contributions:
 
 - **`internal team`** – restricted to the internal project developers.
 - **`bug`**, **`enhancement`**, **`documentation`** – for categorizing tasks.
-- In the future: **`good first issue`** and **`help wanted`** will indicate tasks that are open to the community.
+- **`good first issue`** and **`help wanted`** – tasks open to the community.
+- **`hacktoberfest`** – tasks open for Hacktoberfest contributions.
 
 ## Getting Started
 
@@ -50,6 +68,7 @@ We use labels to organize contributions:
 ### 1.Choose an Issue
 
 - Choose an open issue from the GitHub project board and carefully read the details and acceptance criteria before starting to work on it.
+- Comment on the issue to claim it and wait to be assigned before starting (see [Claiming an Issue](#claiming-an-issue)).
 
 ### 2. Make Your Changes
 
