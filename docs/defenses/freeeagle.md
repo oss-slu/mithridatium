@@ -59,10 +59,16 @@ mithridatium audit \
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--freeeagle-num-classes` | `0` | Use `0` to infer from model head |
+| `--freeeagle-num-dummy` | `1` | Number of dummy optimization vectors |
+| `--freeeagle-num-important-neurons` | `5` | Top neurons used when computing tendency |
+| `--freeeagle-metric` | `softmax_score` | Anomaly metric name (e.g. `softmax_score`) |
 | `--freeeagle-optimize-steps` | `300` | More steps can improve sensitivity but take longer |
+| `--freeeagle-learning-rate` | `1e-2` | Optimization learning rate |
+| `--freeeagle-weight-decay` | `5e-3` | Optimization weight decay |
 | `--freeeagle-anomaly-threshold` | `2.0` | Higher values reduce sensitivity |
 | `--freeeagle-inspect-layer-position` | `2` | ResNet stage index from `0` to `4` |
 | `--freeeagle-use-transpose-correction` | `false` | Optional symmetric correction |
+| `--freeeagle-bound-on` / `--freeeagle-no-bound-on` | `bound on` | Enable or disable bounded optimization |
 
 ## Strengths
 
