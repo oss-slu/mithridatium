@@ -17,6 +17,7 @@ People who have built and maintained Mithridatium. To contribute, see [CONTRIBUT
 | William Phoenix | [@williamphoenix](https://github.com/williamphoenix) | Saint Louis University | |
 | Gustavo Lucca | [@GustavoLucca](https://github.com/GustavoLucca) | Saint Louis University | |
 | Payton Guffey | [@PGuffey](https://github.com/PGuffey) | Saint Louis University | |
+| Ricky Truong | [@Kkori-n](https://github.com/Kkori-n) | Saint Louis University 
 | Bryan Castro Hernandez | [@handle](https://github.com/NotBryan1) | Saint Louis University | |
 | Henry Morgan | [@HMSLU](https://github.com/HMSLU) | Saint Louis University | |
 | Elijah Holman | [@eholman501](https://github.com/eholman501) | Saint Louis University | |
