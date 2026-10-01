@@ -1,7 +1,10 @@
 """
-Fail when a defense-prefixed audit CLI flag is missing from docs/defenses/.
+Guardrail so defense-prefixed `audit` flags stay documented.
 
-The flag list is read from the live Typer app rather than a hard-coded list.
+Each `--aeva-*`, `--freeeagle-*`, `--mmbd-*`, and `--strip-*` option on the
+`audit` command must appear on that defense's page in `docs/defenses/`.
+The flag list is read from the live Typer/Click command object, not a
+hard-coded snapshot.
 """
 
 from __future__ import annotations
@@ -16,49 +19,44 @@ from mithridatium.cli import app
 
 pytestmark = pytest.mark.unit
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DOCS_DEFENSES = REPO_ROOT / "docs" / "defenses"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DOCS_DIR = PROJECT_ROOT / "docs" / "defenses"
 
-DEFENSE_PREFIXES = ("aeva", "freeeagle", "mmbd", "strip")
+DEFENSE_PREFIXES = {
+    "aeva": "--aeva-",
+    "freeeagle": "--freeeagle-",
+    "mmbd": "--mmbd-",
+    "strip": "--strip-",
+}
 
 
-def _audit_option_flags() -> list[str]:
+def _audit_option_names() -> list[str]:
     command = typer.main.get_command(app)
-    audit = command.commands["audit"]
-    flags: list[str] = []
+    audit = command.get_command(None, "audit")
+    names: list[str] = []
     for param in audit.params:
         for opt in param.opts:
             if opt.startswith("--"):
-                flags.append(opt)
-    return flags
+                names.append(opt)
+    return names
 
 
-def _defense_flags_by_prefix() -> dict[str, list[str]]:
-    grouped: dict[str, list[str]] = {prefix: [] for prefix in DEFENSE_PREFIXES}
-    for flag in _audit_option_flags():
-        name = flag[2:]
-        for prefix in DEFENSE_PREFIXES:
-            if name == prefix or name.startswith(f"{prefix}-"):
-                grouped[prefix].append(flag)
-                break
-    return grouped
+def _flags_for_defense(prefix: str) -> list[str]:
+    return sorted({name for name in _audit_option_names() if name.startswith(prefix)})
 
 
-def test_defense_docs_mention_all_prefixed_audit_flags() -> None:
-    missing: dict[str, list[str]] = {}
-    grouped = _defense_flags_by_prefix()
+def _doc_text(defense: str) -> str:
+    path = DOCS_DIR / f"{defense}.md"
+    assert path.is_file(), f"missing defense docs page: {path}"
+    return path.read_text(encoding="utf-8")
 
-    for prefix, flags in grouped.items():
-        page = DOCS_DEFENSES / f"{prefix}.md"
-        assert page.is_file(), f"expected defense docs page at {page}"
-        text = page.read_text(encoding="utf-8")
-        absent = [flag for flag in flags if flag not in text]
-        if absent:
-            missing[prefix] = absent
 
-    assert not missing, (
-        "Defense docs are missing audit CLI flags:\n"
-        + "\n".join(
-            f"  {prefix}: {', '.join(flags)}" for prefix, flags in missing.items()
-        )
+@pytest.mark.parametrize("defense,prefix", sorted(DEFENSE_PREFIXES.items()))
+def test_audit_defense_flags_are_documented(defense: str, prefix: str) -> None:
+    flags = _flags_for_defense(prefix)
+    docs = _doc_text(defense)
+    missing = [flag for flag in flags if flag not in docs]
+    assert missing == [], (
+        f"{defense} CLI flags missing from docs/defenses/{defense}.md: "
+        + ", ".join(missing)
     )
