@@ -9,13 +9,22 @@ Uses CIFAR-10 when it is on disk (python -m scripts.download_cifar10), and
 falls back to synthetic classes so it runs offline.
 
     PYTHONPATH=. .venv/bin/python scripts/verify_scaleup.py
+
+Pass --model to score a trained checkpoint (e.g. models/resnet18_poison.pth
+from scripts/train_resnet18.py --dataset poison) instead of the toy CNN. Its
+trigger must match stamp(): white 4x4, bottom-right, which is that script's
+default.
 """
+
+import argparse
+from pathlib import Path
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from mithridatium.detect.scaleup import run_scaleup
+from mithridatium.loader import detect_and_build
 from mithridatium.utils import DATA_ROOT, get_preprocess_config
 
 TARGET, TRIG, EPOCHS, N = 0, 4, 4, 4000
@@ -71,11 +80,7 @@ def auroc(clean, poisoned):
     return torch.trapz(tp / tp[-1], fp / fp[-1]).item()
 
 
-def main():
-    torch.manual_seed(0)
-    Xtr, ytr, Xte, yte, classes, source = load()
-    print(f"data: {source}")
-
+def train_toy_cnn(Xtr, ytr, classes):
     p = int(0.1 * len(Xtr))          # poison 10% of training data
     Xtr[:p], ytr[:p] = stamp(Xtr[:p]), TARGET
 
@@ -88,6 +93,23 @@ def main():
             opt.zero_grad()
             nn.functional.cross_entropy(model(xb), yb).backward()
             opt.step()
+    return model
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", help="checkpoint to score instead of training the toy CNN")
+    args = ap.parse_args()
+    if args.model and not Path(args.model).is_file():
+        ap.error(f"no checkpoint at {args.model}; train one with scripts/train_resnet18.py")
+
+    torch.manual_seed(0)
+    Xtr, ytr, Xte, yte, classes, source = load()
+    print(f"data: {source}")
+    if args.model:
+        model, _ = detect_and_build(args.model, num_classes=classes)
+    else:
+        model = train_toy_cnn(Xtr, ytr, classes)
     model.eval()
 
     with torch.no_grad():
