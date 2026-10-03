@@ -7,7 +7,7 @@ import torch
 from torchvision import datasets, transforms
 from torchvision.datasets.utils import download_and_extract_archive
 from dataclasses import dataclass, field
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 import json
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +17,20 @@ IMAGENETTE_ARCHIVE_NAME = "imagenette2-160.tgz"
 IMAGENETTE_EXTRACTED_DIR = DATA_ROOT / "imagenette2-160"
 
 class PreprocessConfig:
-    """Configuration for input preprocessing."""
+    """
+    Configuration for input preprocessing.
+
+    Attributes:
+        input_size: Input tensor shape as (C, H, W).
+        channels_first: True for NCHW layout, False for NHWC.
+        value_range: Min and max pixel values after ToTensor (e.g., (0.0, 1.0)).
+        mean: Per-channel (R, G, B) normalization mean.
+        std: Per-channel (R, G, B) normalization standard deviation.
+        num_classes: Number of output classes for the target task.
+        normalize: Whether to apply mean/std normalization.
+        ops: Optional ordered preprocessing op names (e.g., ["resize:32"]).
+        dataset: Name of the dataset this config was built for.
+    """
 
     def __init__(
         self,
@@ -28,9 +41,10 @@ class PreprocessConfig:
         std: Tuple[float, float, float] = (0.2023, 0.1994, 0.2010),   # (R, G, B)
         num_classes: int = 10,
         normalize: bool = True,
-        ops: List[str] = None,                     # e.g., ["resize:32"]
+        ops: Optional[List[str]] = None,          # e.g., ["resize:32"]
         dataset: str = "Unlisted"
-    ):
+    ) -> None:
+        """Initialize a preprocessing configuration with the given values."""
         self.input_size = input_size
         self.channels_first = channels_first
         self.value_range = value_range
@@ -42,59 +56,113 @@ class PreprocessConfig:
         self.dataset = dataset
 
     # ======== Getters ========
-    def get_input_size(self):
+    def get_input_size(self) -> Tuple[int, int, int]:
+        """Return the input tensor shape as (C, H, W)."""
         return self.input_size
 
-    def get_channels_first(self):
+    def get_channels_first(self) -> bool:
+        """Return True if inputs use NCHW layout, False for NHWC."""
         return self.channels_first
 
-    def get_value_range(self):
+    def get_value_range(self) -> Tuple[float, float]:
+        """Return the (min, max) pixel value range after ToTensor."""
         return self.value_range
 
-    def get_mean(self):
+    def get_mean(self) -> Tuple[float, float, float]:
+        """Return the per-channel (R, G, B) normalization mean."""
         return self.mean
 
-    def get_std(self):
+    def get_std(self) -> Tuple[float, float, float]:
+        """Return the per-channel (R, G, B) normalization standard deviation."""
         return self.std
 
-    def get_num_classes(self):
+    def get_num_classes(self) -> int:
+        """Return the number of output classes for the target task."""
         return self.num_classes
 
-    def get_normalize(self):
+    def get_normalize(self) -> bool:
+        """Return True if mean/std normalization is enabled."""
         return self.normalize
 
-    def get_ops(self):
+    def get_ops(self) -> List[str]:
+        """Return the ordered list of preprocessing op names."""
         return self.ops
     
-    def get_dataset(self):
+    def get_dataset(self) -> str:
+        """Return the dataset name this config was built for."""
         return self.dataset
 
     # ======== Setters ========
-    def set_input_size(self, input_size: Tuple[int, int]):
+    def set_input_size(self, input_size: Tuple[int, int]) -> None:
+        """Set the input tensor shape.
+
+        Args:
+            input_size: New input shape as (C, H, W).
+        """
         self.input_size = input_size
 
-    def set_channels_first(self, channels_first: bool):
+    def set_channels_first(self, channels_first: bool) -> None:
+        """Set the expected tensor layout.
+
+        Args:
+            channels_first: True for NCHW layout, False for NHWC.
+        """
         self.channels_first = channels_first
 
-    def set_value_range(self, value_range: Tuple[float, float]):
+    def set_value_range(self, value_range: Tuple[float, float]) -> None:
+        """Set the (min, max) pixel value range.
+
+        Args:
+            value_range: New value range, e.g., (0.0, 1.0).
+        """
         self.value_range = value_range
 
-    def set_mean(self, mean: Tuple[float, float, float]):
+    def set_mean(self, mean: Tuple[float, float, float]) -> None:
+        """Set the per-channel normalization mean.
+
+        Args:
+            mean: New (R, G, B) mean values.
+        """
         self.mean = mean
 
-    def set_std(self, std: Tuple[float, float, float]):
+    def set_std(self, std: Tuple[float, float, float]) -> None:
+        """Set the per-channel normalization standard deviation.
+
+        Args:
+            std: New (R, G, B) standard deviation values.
+        """
         self.std = std
 
-    def set_num_classes(self, num_classes: int):
+    def set_num_classes(self, num_classes: int) -> None:
+        """Set the number of output classes.
+
+        Args:
+            num_classes: New class count for the target task.
+        """
         self.num_classes = num_classes
 
-    def set_normalize(self, normalize: bool):
+    def set_normalize(self, normalize: bool) -> None:
+        """Enable or disable mean/std normalization.
+
+        Args:
+            normalize: True to normalize inputs, False to skip it.
+        """
         self.normalize = normalize
 
-    def set_ops(self, ops: List[str]):
+    def set_ops(self, ops: List[str]) -> None:
+        """Set the ordered preprocessing op names.
+
+        Args:
+            ops: New list of op names, e.g., ["resize:32"].
+        """
         self.ops = ops
 
-    def set_dataset(self, dataset):
+    def set_dataset(self, dataset: str) -> None:
+        """Set the dataset name this config describes.
+
+        Args:
+            dataset: New dataset name.
+        """
         self.dataset = dataset
 
 
@@ -216,12 +284,19 @@ def get_preprocess_config(dataset: str) -> PreprocessConfig:
     )
 
 
-def _build_transform_from_config(config: PreprocessConfig, *, train: bool = False):
+def _build_transform_from_config(config: PreprocessConfig, *, train: bool = False) -> transforms.Compose:
     """
     Build torchvision transforms from a PreprocessConfig.
 
     The config is the source of truth for input size, normalization, and
     preprocessing behavior.
+
+    Args:
+        config: Preprocessing configuration to build transforms from.
+        train: Whether the transforms are for the training split.
+
+    Returns:
+        A composed torchvision transform pipeline.
     """
     _, h, w = config.get_input_size()
 
@@ -246,37 +321,7 @@ def _build_transform_from_config(config: PreprocessConfig, *, train: bool = Fals
 
     return transforms.Compose(transform_list)
 
-def _build_transform_from_config(config: PreprocessConfig, *, train: bool = False):
-    """
-    Build torchvision transforms from a PreprocessConfig.
-
-    The config is the source of truth for input size, normalization, and
-    preprocessing behavior.
-    """
-    _, h, w = config.get_input_size()
-
-    transform_list = []
-
-    # CIFAR-style 32x32 datasets do not need resizing.
-    # ImageNet-style configs do.
-    if h != 32 or w != 32:
-        if train:
-            transform_list.append(transforms.Resize(max(h, w)))
-            transform_list.append(transforms.CenterCrop((h, w)))
-        else:
-            transform_list.append(transforms.Resize(max(h, w)))
-            transform_list.append(transforms.CenterCrop((h, w)))
-
-    transform_list.append(transforms.ToTensor())
-
-    if config.get_normalize():
-        transform_list.append(
-            transforms.Normalize(config.get_mean(), config.get_std())
-        )
-
-    return transforms.Compose(transform_list)
-
-def dataloader_for(dataset: str, split: str, batch_size: int = 256):
+def dataloader_for(dataset: str, split: str, batch_size: int = 256) -> Tuple[torch.utils.data.DataLoader, PreprocessConfig]:
     """
     Create a dataloader for the specified dataset using canonical transforms.
 
@@ -391,13 +436,25 @@ def dataloader_for_config(
     split: str,
     config: PreprocessConfig,
     batch_size: int = 256,
-):
+) -> Tuple[torch.utils.data.DataLoader, PreprocessConfig]:
     """
     Create a dataloader using an explicit preprocessing config instead of only
     dataset canonical defaults.
 
     This is useful for Hugging Face models whose expected preprocessing may
     differ from the dataset default.
+
+    Args:
+        dataset: Dataset name (e.g., "cifar10", "imagenet_subset").
+        split: "train" or "test".
+        config: Explicit preprocessing configuration to build transforms from.
+        batch_size: Batch size for the dataloader.
+
+    Returns:
+        tuple: (torch.utils.data.DataLoader, PreprocessConfig)
+
+    Raises:
+        ValueError: If split is invalid or dataset is not supported.
     """
     dataset_lower = dataset.lower().strip()
     split_lower = split.lower().strip()
