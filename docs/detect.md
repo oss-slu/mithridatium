@@ -16,6 +16,8 @@
 
 SCALE-UP scoring is not fully implemented yet; `--method scaleup` runs a stub that validates CLI options and writes a schema-checked JSON report.
 
+[TED](defenses/ted.md) is planned as a second method (`--method ted`). Unlike SCALE-UP it needs model internals and clean input data at inference time.
+
 ## Example command
 
 ```bash
