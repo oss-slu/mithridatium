@@ -33,6 +33,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [STRIP](defenses/strip.md)
 - [MMBD](defenses/mmbd.md)
 - [AEVA](defenses/aeva.md)
+- [TED](defenses/ted.md) (`detect`, input-level, planned)
 
 ## Detect and repair
 
