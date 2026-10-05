@@ -42,7 +42,7 @@ app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr"}
 
-DETECT_METHODS = {"scaleup"}
+DETECT_METHODS = {"scaleup", "ted"}
 
 def _write_json(obj: dict, out_path: str, force: bool) -> None:
     """
