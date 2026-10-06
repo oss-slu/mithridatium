@@ -8,7 +8,7 @@ import plotly.express as px
 import torch
 import torch.nn as nn
 import torch.utils.data as data
-# import wandb
+import wandb
 
 from collections import Counter, defaultdict
 from pyod.models.pca import PCA
@@ -21,9 +21,9 @@ from torchmetrics.functional import pairwise_euclidean_distance
 from umap import UMAP
 from numpy.random import choice
 
-# from classifier_models import PreActResNet18, VGG
-# from defense_dataloader import get_dataset
-# from networks.models import Generator, NetC_MNIST
+from mithridatium.detect.detect_method_requirements.ted.classifier_models import PreActResNet18, VGG
+from mithridatium.detect.detect_method_requirements.ted.defense_dataloader import get_dataset
+from mithridatium.detect.detect_method_requirements.ted.models import Generator, NetC_MNIST
 
 
 "These need to be rewritten, as they make certain assumptions about the data the user is using and where data is held."
@@ -113,7 +113,7 @@ netM = load_state(netM, state_dict["netM"])
 
 
 
-"This looks like data loading, but Mithridat may already have a way to load data."
+"This looks like data loading, but Mithridat may already have a way to load data? To some extent."
 # Set up dataset loaders
 testset = get_dataset(opt, train=True)
 
