@@ -124,6 +124,38 @@ def render_summary(report: Dict[str, Any]) -> str:
 
         return "".join(lines).rstrip()
     
+    if defense == "aeva":
+        lines = [head]
+
+        verdict = r.get("verdict")
+        if verdict is not None:
+            lines.append(f"- verdict:           {verdict}\n")
+
+        target = r.get("suspected_target")
+        if target is not None:
+            lines.append(f"- suspected_target:  {target}\n")
+
+        score = r.get("suspicion_score")
+        if isinstance(score, (int, float)):
+            lines.append(f"- suspicion_score:   {score:.6f}\n")
+
+        thresholds = r.get("thresholds") or {}
+        threshold = thresholds.get("anomaly_index_threshold")
+        if threshold is not None:
+            lines.append(f"- anomaly_thr:       {threshold}\n")
+
+        accuracy = r.get("clean_accuracy")
+        if isinstance(accuracy, (int, float)):
+            lines.append(f"- clean_accuracy:    {accuracy:.6f}\n")
+
+        params = r.get("parameters") or {}
+        sp = params.get("sp")
+        ep = params.get("ep")
+        if sp is not None or ep is not None:
+            lines.append(f"- class_range:       {sp}-{ep}\n")
+
+        return "".join(lines).rstrip()
+
     # Fallback for legacy/ reports
     return (
         head
