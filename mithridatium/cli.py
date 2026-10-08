@@ -472,7 +472,7 @@ def detect(
             "scaleup",
             "--method",
             "-M",
-            help="The method name. E.g. 'scaleup'.",
+            help="The method name: 'scaleup' or 'ted'.",
         ),
         num_samples: str = typer.Option(
             "5000",
@@ -513,7 +513,24 @@ def detect(
             "--scaleup-scales",
             help='UNIMPLEMENTED! The series of value scalars to use in scaleup, e.g. "(2,3,4,5,6,7,8,9,10,11)."'
 
-        )
+        ),
+        ted_num_samples: int = typer.Option(
+            256,
+            "--ted-num-samples",
+            min=1,
+            help="TED: the number of test images to score.",
+        ),
+        ted_reference_size: int = typer.Option(
+            1000,
+            "--ted-reference-size",
+            min=1,
+            help="TED: the cap on known-clean reference images, drawn from the training split.",
+        ),
+        ted_contamination: float = typer.Option(
+            0.01,
+            "--ted-contamination",
+            help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
+        ),
 
 
 ):
@@ -611,12 +628,48 @@ def detect(
 
 
 
-    results = scaleup_stub_results(
-        method=m,
-        num_samples=n_s,
-        threshold=scaleup_threshold_converted,
-        scales=scaleup_scales_converted,
-    )
+    if m == "ted":
+        if not 0 < ted_contamination <= 0.5:
+            typer.secho(f"Error: --ted-contamination must be within 0 < alpha <= 0.5, got {ted_contamination}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+        # TED's dependencies are optional, so import it only when it is used.
+        try:
+            from mithridatium.detect.ted import ted
+        except ImportError as ex:
+            typer.secho(
+                f"Error: --method ted needs extra dependencies (missing {ex.name}). "
+                "Install with: pip install 'mithridatium[ted]'",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        from torch.utils.data import Subset
+
+        try:
+            test_loader, cfg = utils.dataloader_for(data, "test")
+            train_loader, _ = utils.dataloader_for(data, "train")
+        except ValueError as ex:
+            typer.secho(f"Error: {ex}", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+        mdl, _ = loader.detect_and_build(str(p), num_classes=cfg.get_num_classes())
+        test_ds, train_ds = test_loader.dataset, train_loader.dataset
+        results = ted(
+            mdl,
+            # 2x headroom for the misclassified images ted() drops from the reference set
+            reference_data=Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+            suspect_data=Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
+            reference_size=ted_reference_size,
+            contamination=ted_contamination,
+            device=get_device(0),
+        )
+    else:
+        results = scaleup_stub_results(
+            method=m,
+            num_samples=n_s,
+            threshold=scaleup_threshold_converted,
+            scales=scaleup_scales_converted,
+        )
     rep = rpt.build_report(
         model_path=model,
         defense=m,

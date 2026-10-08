@@ -20,6 +20,9 @@ from mithridatium.detect.detect_method_requirements.ted.models import NetC_MNIST
 
 "TED configurations. These should all be changed in the ted method. Some configurations may be unneeded."
 "These need to be rewritten, as they make certain assumptions about the data the user is using and where data is held."
+"Now set from ted() parameters: device, batch_size, defense_train_size (-> reference_size). data_root is gone: data is passed in."
+"dataset only feeds load_model(), which ted() no longer calls: the model is a parameter. target only feeds accuracy_VT"
+"(evaluation, needs the attack's target). attack_mode and input_* are unused."
 # Initialize argparse Namespace
 opt = argparse.Namespace()
 opt.dataset = "mnist"
@@ -242,38 +245,59 @@ def aggregate_by_all_layers(output_label):
 
 
 
-def ted( ):
+def ted(
+        model,
+        reference_data,
+        suspect_data,
+        reference_size: int = 1000,
+        contamination: float = 0.01,
+        batch_size: int = 100,
+        seed=None,
+        device="cpu",
+        ):
+    """
+    TED input-level detection (Mo et al., IEEE S&P 2024).
+
+    Args:
+        model: The classifier to inspect, already loaded with its weights.
+            TED hooks its intermediate layers, so it needs the full model.
+        reference_data: Known-clean, labelled Dataset yielding (image, label),
+            preprocessed the way the model expects. Builds the reference set
+            whose neighbours every input is ranked against, and fits the PCA
+            detector. Labels are used only to drop images the model misclassifies.
+        suspect_data: Dataset of inputs to score, which may or may not be
+            poisoned. Yields (image, label) like reference_data; the label is
+            ignored, since TED ranks by the model's predictions. TED needs no
+            known-poisoned data.
+        reference_size: Cap on clean reference images. 1000 is the reference
+            code's CIFAR-10 value (opt.defense_train_size).
+        contamination: Fraction of reference trajectories the PCA threshold
+            rejects, alpha in the paper. 0.01 is the reference code's value.
+        batch_size: Forward-pass batch size.
+        seed: Seed for choosing reference images when there are more than
+            reference_size.
+        device: Device to run the model on.
+
+    Returns:
+        A dictionary with per-input TED outlier scores and the batch verdict.
+    """
+    # The code below still reads these from opt.
+    opt.device = device
+    opt.batch_size = batch_size
 
 
+    "Model: passed in already loaded, so TED inspects the user's checkpoint instead of the reference repo's."
+    model = model.to(opt.device).eval().requires_grad_(False)
 
 
-    # Load model and its state
-    model = load_model()
-    state_dict = load_model_state()
-    model = load_state(model, state_dict["netC"])
-    print(model)
-
-
-    "This looks like data loading."
-    # Set up dataset loaders
-    testset = get_dataset(opt, train=False)
-
-    # Indices of the whole dataset
-    indices = np.arange(len(testset))
-
-    # Split indices into benign_unknown_indices and defense_subset_indices
-    benign_unknown_indices, defense_subset_indices = train_test_split(
-        indices, test_size=0.1, random_state=42)
-
-    # Create subsets for benign_unknown and defense
-    defense_subset = Subset(testset, defense_subset_indices)
-
-    # DataLoader for defense_subset
+    "Reference (defense) set: read from reference_data. The reference code carved it out of a 10% split of"
+    "the test set; here the caller passes known-clean data in directly, so there is nothing to split."
+    defense_subset_indices = np.arange(len(reference_data))
     defense_loader = data.DataLoader(
-        defense_subset,
+        reference_data,
         batch_size=opt.batch_size,
         num_workers=0,
-        shuffle=True)
+        shuffle=False)  # predictions must line up with defense_subset_indices
 
 
 
@@ -300,12 +324,12 @@ def ted( ):
     # Select indices of benign samples
     benign_indices = defense_subset_indices[benign_mask]
 
-    # If the number of benign samples exceeds DEFENSE_TRAIN_SIZE, randomly select DEFENSE_TRAIN_SIZE samples
-    if len(benign_indices) > DEFENSE_TRAIN_SIZE:
-        benign_indices = np.random.choice(benign_indices, DEFENSE_TRAIN_SIZE, replace=False)
+    # If the number of benign samples exceeds reference_size, randomly select reference_size samples
+    if len(benign_indices) > reference_size:
+        benign_indices = np.random.default_rng(seed).choice(benign_indices, reference_size, replace=False)
 
     # Create a new defense subset and DataLoader
-    defense_subset = Subset(testset, benign_indices)
+    defense_subset = Subset(reference_data, benign_indices)
     defense_loader = data.DataLoader(defense_subset, batch_size=opt.batch_size, num_workers=0, shuffle=True)
 
 
@@ -323,25 +347,15 @@ def ted( ):
 
 
 
-    "Here is where data is actually loaded. Replace with loading user provided data."
-    # Data loaders for different sets
-    # VT Loader
-    bd_set = CustomDataset(data=bd_inputs_set, labels=bd_labels_set)
-    bd_loader = torch.utils.data.DataLoader(bd_set, batch_size=opt.batch_size, num_workers=0, shuffle=True)
-    print("VT set size:", len(bd_loader))
-    del bd_inputs_set, bd_labels_set, bd_pred_set
-
-    # NVT Loader
-    cleanT_set = CustomDataset(data=cleanT_inputs_set, labels=cleanT_labels_set)
-    cleanT_loader = torch.utils.data.DataLoader(cleanT_set, batch_size=opt.batch_size, num_workers=0, shuffle=True)
-    print("NVT set size:", len(cleanT_loader))
-    del cleanT_inputs_set, cleanT_labels_set, cleanT_pred_set
-
-    # NoT Loader
-    benign_set = CustomDataset(data=benign_inputs_set, labels=benign_labels_set)
-    benign_loader = torch.utils.data.DataLoader(benign_set, batch_size=opt.batch_size, num_workers=0, shuffle=True)
-    print("NoT set size:", len(benign_loader))
-    del benign_inputs_set, benign_labels_set, benign_pred_set
+    "Inputs to score: read from suspect_data. The reference code built three sets here (VT, NVT, NoT) because it"
+    "generated its own triggers and knew which inputs were poisoned, which only matters for measuring AUC/TPR."
+    "A user has one set of unknown data, so the bd_loader / cleanT_loader / benign_loader uses below collapse"
+    "into suspect_loader, scored under one temp label."
+    suspect_loader = data.DataLoader(
+        suspect_data,
+        batch_size=opt.batch_size,
+        num_workers=0,
+        shuffle=False)  # keep input order so each score maps back to its input
 
 
 
@@ -522,25 +536,38 @@ def ted( ):
     labels_all_unknown = np.concatenate(labels_all_unknown)
 
 
-    pca = PCA(contamination=0.01, n_components='mle')
+    pca = PCA(contamination=contamination, n_components='mle')
     pca.fit(inputs_all_benign)
 
 
     y_test_scores = pca.decision_function(inputs_all_unknown)
     y_test_pred = pca.predict(inputs_all_unknown)
-    prediction_mask = (y_test_pred == 1)
-    prediction_labels = labels_all_unknown[prediction_mask]
-    label_counts = Counter(prediction_labels)
+    "The reference code printed AUC/TPR here, which needs to know which inputs were triggered."
+    "A user does not know that, so return the scores instead. Measuring AUC belongs in a verification script."
+    num_flagged = int(y_test_pred.sum())
+    flagged_fraction = num_flagged / len(y_test_pred)
 
-    for label, count in label_counts.items():
-        print(f'Label {label}: {count}')
+    # ponytail: the threshold rejects `contamination` of clean inputs by design, so
+    # flag the batch only when more than that are flagged. Uncalibrated.
+    verdict = "likely backdoored" if flagged_fraction > contamination else "likely clean"
 
-    fpr, tpr, thresholds = metrics.roc_curve((labels_all_unknown == VT_TEMP_LABEL).astype(int), y_test_scores, pos_label=1)
-    print("AUC:", metrics.auc(fpr, tpr))
-
-    tn, fp, fn, tp = confusion_matrix((labels_all_unknown == VT_TEMP_LABEL).astype(int), y_test_pred).ravel()
-    print("TPR:", tp / (tp + fn))
-    print("True Positives (TP):", tp)
-    print("False Positives (FP):", fp)
-    print("True Negatives (TN):", tn)
-    print("False Negatives (FN):", fn)
+    # NOTE: per_sample follows the trajectory order built above, which groups inputs
+    # by predicted class, not suspect_data's order, so no input index is reported yet.
+    return {
+        "mode": "input-level",
+        "method": "ted",
+        "verdict": verdict,
+        "num_inputs": len(y_test_pred),
+        "num_flagged": num_flagged,
+        "threshold": float(pca.threshold_),
+        "parameters": {
+            "reference_size": reference_size,
+            "contamination": contamination,
+            "batch_size": batch_size,
+            "seed": seed,
+        },
+        "per_sample": [
+            {"score": float(score), "flagged": bool(flag)}
+            for score, flag in zip(y_test_scores, y_test_pred)
+        ],
+    }
