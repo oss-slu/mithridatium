@@ -93,7 +93,7 @@ class PreprocessConfig:
         return self.dataset
 
     # ======== Setters ========
-    def set_input_size(self, input_size: Tuple[int, int]) -> None:
+    def set_input_size(self, input_size: Tuple[int, int, int]) -> None:
         """Set the input tensor shape.
 
         Args:
