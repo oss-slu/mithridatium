@@ -1,0 +1,69 @@
+{
+  "mithridatium_version": "0.1.0",
+  "timestamp_utc": "2026-10-09T00:36:57.248965+00:00",
+  "model_path": "models/resnet18_poison.pth",
+  "defense": "clp",
+  "dataset": "n/a (data-free)",
+  "results": {
+    "method": "clp",
+    "parameters": {
+      "threshold_mult": 3.0
+    },
+    "total_channels_pruned": 42,
+    "layer_breakdown": [
+      {
+        "layer": "conv1",
+        "channels_pruned": 2
+      },
+      {
+        "layer": "layer1.0.conv1",
+        "channels_pruned": 1
+      },
+      {
+        "layer": "layer2.0.conv1",
+        "channels_pruned": 2
+      },
+      {
+        "layer": "layer2.0.conv2",
+        "channels_pruned": 1
+      },
+      {
+        "layer": "layer2.0.downsample.0",
+        "channels_pruned": 1
+      },
+      {
+        "layer": "layer2.1.conv2",
+        "channels_pruned": 2
+      },
+      {
+        "layer": "layer3.0.conv2",
+        "channels_pruned": 2
+      },
+      {
+        "layer": "layer3.1.conv2",
+        "channels_pruned": 3
+      },
+      {
+        "layer": "layer4.0.conv1",
+        "channels_pruned": 9
+      },
+      {
+        "layer": "layer4.0.conv2",
+        "channels_pruned": 8
+      },
+      {
+        "layer": "layer4.0.downsample.0",
+        "channels_pruned": 4
+      },
+      {
+        "layer": "layer4.1.conv1",
+        "channels_pruned": 5
+      },
+      {
+        "layer": "layer4.1.conv2",
+        "channels_pruned": 2
+      }
+    ],
+    "status": "pruned 42 channels (u=3.0)"
+  }
+}

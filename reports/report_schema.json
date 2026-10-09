@@ -162,6 +162,52 @@
 					"results"
 				]
 			}
+		},
+		{
+			"if": {
+				"properties": {
+					"defense": {
+						"const": "clp"
+					}
+				},
+				"required": [
+					"defense"
+				]
+			},
+			"then": {
+				"properties": {
+					"results": {
+						"type": "object",
+						"required": [
+							"method",
+							"parameters",
+							"status"
+						],
+						"properties": {
+							"method": {
+								"type": "string",
+								"const": "clp"
+							},
+							"parameters": {
+								"type": "object"
+							},
+							"total_channels_pruned": {
+								"type": "integer"
+							},
+							"layer_breakdown": {
+								"type": "array"
+							},
+							"status": {
+								"type": "string"
+							}
+						},
+						"additionalProperties": true
+					}
+				},
+				"required": [
+					"results"
+				]
+			}
 		}
 	],
 	"additionalProperties": true

@@ -24,6 +24,7 @@ from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair import repair_lmr_stub
+from mithridatium.repair.clp import repair_clp
 from mithridatium.detect.scaleup import scaleup_stub_results
 
 try:
@@ -40,7 +41,7 @@ EXIT_IO_ERROR = 74        # input exists but can't be opened/read
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
-REPAIR_METHODS = {"lmr"}
+REPAIR_METHODS = {"lmr", "clp"}
 
 DETECT_METHODS = {"scaleup"}
 
@@ -720,6 +721,10 @@ def repair(
         None, "--lmr-prune-ratio",
         help="LMR: fraction of most-moved columns to prune.",
     ),
+    clp_threshold_mult: float = typer.Option(
+        3.0, "--clp-threshold-mult",
+        help="CLP threshold multiplier u (prune channels with score > mean + u*std). Default 3.0.",
+    ),
 ):
 
 # Look through this and proably make better so we can scale it when we add more
@@ -752,9 +757,16 @@ def repair(
     
     report_path = report if report else out.with_suffix(".json")
 
-    repair_lmr_stub(model=model, out=str(out), report=str(report_path), dataset=data)
+    method = method.strip().lower()
+    if method == "lmr":
+        repair_lmr_stub(model=model, out=str(out), report=str(report_path), dataset=data)
+    elif method == "clp":
+        repair_clp(model_path=model, out=str(out), report=str(report_path), threshold_mult=clp_threshold_mult)
+    else:
+        typer.secho(f"Error: unsupported --method '{method}'. "
+                    f"Supported: {', '.join(sorted(REPAIR_METHODS))}", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    typer.secho(f"\n[cli] Repair stub method={method} model={model} out={out}")
 
 
 if __name__ == "__main__":
