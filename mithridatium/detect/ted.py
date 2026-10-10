@@ -1,21 +1,12 @@
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.utils.data as data
 
-from collections import Counter
 from pyod.models.pca import PCA
-from sklearn import metrics
-from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Subset
 from torchmetrics.functional import pairwise_euclidean_distance
-
-from mithridatium.detect.detect_method_requirements.ted.classifier_models import PreActResNet18, VGG
-from mithridatium.detect.detect_method_requirements.ted.defense_dataloader import get_dataset
-from mithridatium.detect.detect_method_requirements.ted.models import NetC_MNIST
 
 
 "TED configurations. These should all be changed in the ted method. Some configurations may be unneeded."
@@ -55,75 +46,44 @@ opt.defense_train_size = {"cifar10": 1000, "gtsrb": 1000, "mnist": 1000, "imagen
 "End TED configs"
 
 
-"Other Initializations"
-hook_handle = []
 
-activations = {}
 
-topological_representation = {}
-
-# Test_C = 0 # Test_C must be defined within ted(). Go back to the ted source code and put the code for defining Test_C back into the program
-
-candidate_ = {}
 
 # Define global constant
 DEFENSE_TRAIN_SIZE = opt.defense_train_size
-# Function to load model based on dataset
-def load_model():
-    if opt.dataset == "mnist":
-        return NetC_MNIST().to(opt.device)
-    elif opt.dataset == "cifar10":
-        return PreActResNet18().to(opt.device)
-    elif opt.dataset == "gtsrb":
-        return PreActResNet18(num_classes=43).to(opt.device)
-    elif opt.dataset == "imagenet":
-        return VGG('VGG16').to(opt.device)
-    elif opt.dataset == "pubfig":
-        return VGG('VGG16-pubfig').to(opt.device)
-    else:
-        raise ValueError(f"Unknown dataset: {opt.dataset}")
+
+def fetch_activation(model, device, loader, activations):
+            model.eval()
+            all_h_label = []
+            pred_set = []
+            h_batch = {}
+            activation_container = {}
 
 
-# Function to load model state
-def load_state(model, state_dict):
-    model.load_state_dict(state_dict)
-    model.to(opt.device)
-    model.eval()
-    model.requires_grad_(False)
-    return model
+            for batch_idx, (images, labels) in enumerate(loader, start=1):
+                output = model(images.to(device))
+                for key in activations:
+                    activation_container[key] = []
 
+            for batch_idx, (images, labels) in enumerate(loader, start=1):
+                output = model(images.to(device))
+                pred_set.append(torch.argmax(output, -1).to(device))
 
-# Function to load the state of the model
-def load_model_state():
-    base_path = './checkpoints/'
-    model_path = f"{base_path}{opt.dataset}/SSDT/target_{opt.target}/SSDT_{opt.dataset}_ckpt.pth.tar"
-    return torch.load(model_path, map_location=opt.device)
+                for key in activations:
+                    h_batch[key] = activations[key].data.view(images.shape[0], -1)
+                    for h in h_batch[key]:
+                        activation_container[key].append(h.to(device))
 
+                for label in labels:
+                    all_h_label.append(label.to(device))
 
+            for key in activation_container:
+                activation_container[key] = torch.stack(activation_container[key])
 
+            all_h_label = torch.stack(all_h_label)
+            pred_set = torch.concat(pred_set)
 
-
-
-
-
-
-
-
-
-# Function to create backdoor inputs
-def create_bd(netG, netM, inputs):
-    patterns = netG(inputs)
-    patterns = netG.normalize_pattern(patterns)
-    masks_output = netM.threshold(netM(inputs))
-    bd_inputs = inputs + (patterns - inputs) * masks_output
-    return bd_inputs
-
-# Function to create targets
-def create_targets(targets, opt, label):
-    new_targets = torch.ones_like(targets) * label
-    return new_targets.to(opt.device)
-
-
+            return all_h_label, activation_container, pred_set
 
 # Custom dataset class
 class CustomDataset(data.Dataset):
@@ -142,7 +102,7 @@ class CustomDataset(data.Dataset):
 
 
 
-def get_activation(name):
+def get_activation(name, activations):
         def hook(model, input, output):
             activations[name] = output.detach()
         return hook
@@ -156,9 +116,9 @@ def calculate_accuracy(ori_labels, preds):
 
 
 
-def gather_activation_into_class(target, h):
-    h_c_c = [0 for _ in range(Test_C)]
-    for c in range(Test_C):
+def gather_activation_into_class(target, h, num_classes):
+    h_c_c = [0 for _ in range(num_classes)]
+    for c in range(num_classes):
         idxs = (target == c).nonzero(as_tuple=True)[0]
         if len(idxs) == 0:
             continue
@@ -168,22 +128,24 @@ def gather_activation_into_class(target, h):
 
 
 def get_dis_sort(item, destinations):
-    size = item.size
     item = torch.reshape(item, (1, item.shape[0]))
-    new_dis = pairwise_euclidean_distance(item.to("cuda"), destinations.to("cuda"))
+    new_dis = pairwise_euclidean_distance(item, destinations)
     _, indices_individual = torch.sort(new_dis)
-    return indices_individual.to("cpu")
+    return indices_individual.cpu()
 
 
-def getDefenseRegion(final_prediction, h_defense_activation, processing_label, layer, layer_test_region_individual):
+def getDefenseRegion(final_prediction, h_defense_activation, processing_label, layer, layer_test_region_individual, num_classes):
     r_layer = h_defense_activation
+    candidate_ = {}
+
     # initialize the dictionary
     if layer not in layer_test_region_individual:
         layer_test_region_individual[layer] = {}
     layer_test_region_individual[layer][processing_label] = []
 
     candidate_[layer] = gather_activation_into_class(final_prediction,
-                                                     h_defense_activation)
+                                                     h_defense_activation,
+                                                     num_classes)
 
     if np.ndim(candidate_[layer][processing_label]) == 0:  # Check for 0-d array
         print("No sample in this class")
@@ -199,25 +161,35 @@ def getDefenseRegion(final_prediction, h_defense_activation, processing_label, l
     return layer_test_region_individual
 
 
-def getLayerRegionDistance(new_prediction, new_activation, new_temp_label,
-                           h_defense_prediction, h_defense_activation,
-                           layer, layer_test_region_individual):
-    r_layer = h_defense_activation
-    labels = torch.unique(new_prediction)
-    candidate_ = gather_activation_into_class(new_prediction, new_activation)
-
+def getLayerRegionDistance(
+    new_prediction,
+    new_activation,
+    new_temp_label,
+    h_defense_prediction,
+    h_defense_activation,
+    layer,
+    layer_test_region_individual,
+):
     if layer not in layer_test_region_individual:
         layer_test_region_individual[layer] = {}
-    layer_test_region_individual[layer][new_temp_label] = []
 
-    for processing_label in labels:
-        for index, item in enumerate(candidate_[processing_label]):
-            ranking_array = get_dis_sort(item, r_layer)[0]
-            r_ = [h_defense_prediction[i] for i in ranking_array]
-            if processing_label in r_:
-                itemindex = r_.index(processing_label)
-                layer_test_region_individual[layer][new_temp_label].append(itemindex)
+    sample_distances = []
 
+    for prediction, activation in zip(new_prediction, new_activation):
+        ranking = get_dis_sort(activation, h_defense_activation)[0]
+
+        ranked_reference_predictions = h_defense_prediction.detach().cpu()[ranking]
+        matching_ranks = (ranked_reference_predictions == prediction.detach().cpu()).nonzero()
+
+        if matching_ranks.numel() == 0:
+            raise ValueError(
+                f"No clean reference samples were predicted as class "
+                f"{prediction.item()}; cannot calculate TED distance for layer {layer}."
+            )
+
+        sample_distances.append(int(matching_ranks[0].item()))
+
+    layer_test_region_individual[layer][new_temp_label] = sample_distances
     return layer_test_region_individual
 
 
@@ -227,7 +199,7 @@ def getLayerRegionDistance(new_prediction, new_activation, new_temp_label,
 
 # TED on all layers in the network
 
-def aggregate_by_all_layers(output_label):
+def aggregate_by_all_layers(output_label, topological_representation):
     inputs_container = []
 
     first_key = list(topological_representation.keys())[0]
@@ -281,293 +253,242 @@ def ted(
     Returns:
         A dictionary with per-input TED outlier scores and the batch verdict.
     """
-    # The code below still reads these from opt.
-    opt.device = device
-    opt.batch_size = batch_size
+    try:
+        # The code below still reads these from opt.
+        opt.device = device
+        opt.batch_size = batch_size
+
+        activations = {}
+        topological_representation = {}
+        hook_handle = []
+        num_classes = 0
+
+        "Model: passed in already loaded, so TED inspects the user's checkpoint instead of the reference repo's."
+        model = model.to(opt.device).eval().requires_grad_(False)
 
 
-    "Model: passed in already loaded, so TED inspects the user's checkpoint instead of the reference repo's."
-    model = model.to(opt.device).eval().requires_grad_(False)
-
-
-    "Reference (defense) set: read from reference_data. The reference code carved it out of a 10% split of"
-    "the test set; here the caller passes known-clean data in directly, so there is nothing to split."
-    defense_subset_indices = np.arange(len(reference_data))
-    defense_loader = data.DataLoader(
-        reference_data,
-        batch_size=opt.batch_size,
-        num_workers=0,
-        shuffle=False)  # predictions must line up with defense_subset_indices
-
-
-
-    # Create defense dataset for TED training with Defense Size
-    h_benign_preds = []
-    h_benign_ori_labels = []
-
-    # Predict labels using the model and collect predictions and original labels
-    with torch.no_grad():
-        for inputs, labels in defense_loader:
-            inputs, labels = inputs.to(opt.device), labels.to(opt.device)
-            outputs = model(inputs)
-            preds = torch.argmax(outputs, dim=1)
-            h_benign_preds.extend(preds.cpu().numpy())
-            h_benign_ori_labels.extend(labels.cpu().numpy())
-
-    # Convert lists to numpy arrays
-    h_benign_preds = np.array(h_benign_preds)
-    h_benign_ori_labels = np.array(h_benign_ori_labels)
-
-    # Create a mask for correctly predicted (benign) samples
-    benign_mask = h_benign_ori_labels == h_benign_preds
-
-    # Select indices of benign samples
-    benign_indices = defense_subset_indices[benign_mask]
-
-    # If the number of benign samples exceeds reference_size, randomly select reference_size samples
-    if len(benign_indices) > reference_size:
-        benign_indices = np.random.default_rng(seed).choice(benign_indices, reference_size, replace=False)
-
-    # Create a new defense subset and DataLoader
-    defense_subset = Subset(reference_data, benign_indices)
-    defense_loader = data.DataLoader(defense_subset, batch_size=opt.batch_size, num_workers=0, shuffle=True)
+        "Reference (defense) set: read from reference_data. The reference code carved it out of a 10% split of"
+        "the test set; here the caller passes known-clean data in directly, so there is nothing to split."
+        defense_subset_indices = np.arange(len(reference_data))
+        defense_loader = data.DataLoader(
+            reference_data,
+            batch_size=opt.batch_size,
+            num_workers=0,
+            shuffle=False)  # predictions must line up with defense_subset_indices
 
 
 
+        # Create defense dataset for TED training with Defense Size
+        h_benign_preds = []
+        h_benign_ori_labels = []
 
+        # Predict labels using the model and collect predictions and original labels
+        with torch.no_grad():
+            for inputs, labels in defense_loader:
+                inputs, labels = inputs.to(opt.device), labels.to(opt.device)
+                outputs = model(inputs)
 
-    # Constants for label types
-    VT_TEMP_LABEL = "VT"   # Victim with Trigger
-    NVT_TEMP_LABEL = "NVT" # Non-Victim but with Trigger
-    NoT_TEMP_LABEL = "NoT" # No Trigger
+                num_classes = outputs.shape[1]
+                preds = torch.argmax(outputs, dim=1)
+                h_benign_preds.extend(preds.cpu().numpy())
+                h_benign_ori_labels.extend(labels.cpu().numpy())
 
+        # Convert lists to numpy arrays
+        h_benign_preds = np.array(h_benign_preds)
+        h_benign_ori_labels = np.array(h_benign_ori_labels)
 
+        # Create a mask for correctly predicted (benign) samples
+        benign_mask = h_benign_ori_labels == h_benign_preds
 
- 
+        # Select indices of benign samples
+        benign_indices = defense_subset_indices[benign_mask]
 
+        # If the number of benign samples exceeds reference_size, randomly select reference_size samples
+        if len(benign_indices) > reference_size:
+            benign_indices = np.random.default_rng(seed).choice(benign_indices, reference_size, replace=False)
 
-
-    "Inputs to score: read from suspect_data. The reference code built three sets here (VT, NVT, NoT) because it"
-    "generated its own triggers and knew which inputs were poisoned, which only matters for measuring AUC/TPR."
-    "A user has one set of unknown data, so the bd_loader / cleanT_loader / benign_loader uses below collapse"
-    "into suspect_loader, scored under one temp label."
-    suspect_loader = data.DataLoader(
-        suspect_data,
-        batch_size=opt.batch_size,
-        num_workers=0,
-        shuffle=False)  # keep input order so each score maps back to its input
-
-
-
-
-    # Now, reassign the model's modules to a variable
-    net_children = model.modules()
-
-    index = 0
-    for _, child in enumerate(net_children):
-        if isinstance(child, nn.Conv2d) and child.kernel_size != (1, 1):
-            hook_handle.append(child.register_forward_hook(get_activation("Conv2d_"+str(index))))
-            index += 1
-
-        if isinstance(child, nn.ReLU):
-            hook_handle.append(child.register_forward_hook(get_activation("Relu_"+str(index))))
-            index = index + 1
-
-        if isinstance(child, nn.Linear):
-            hook_handle.append(child.register_forward_hook(get_activation("Linear_"+str(index))))
-            index = index + 1
-
-        # Hook more layers here if needed
-
-        def fetch_activation(model, device, loader, activations):
-            model.eval()
-            all_h_label = []
-            pred_set = []
-            h_batch = {}
-            activation_container = {}
-
-            for batch_idx, (images, labels) in enumerate(loader, start=1):
-                output = model(images.to(device))
-                for key in activations:
-                    activation_container[key] = []
-
-            for batch_idx, (images, labels) in enumerate(loader, start=1):
-                output = model(images.to(device))
-                pred_set.append(torch.argmax(output, -1).to(device))
-
-                for key in activations:
-                    h_batch[key] = activations[key].data.view(images.shape[0], -1)
-                    for h in h_batch[key]:
-                        activation_container[key].append(h.to(device))
-
-                for label in labels:
-                    all_h_label.append(label.to(device))
-
-            for key in activation_container:
-                activation_container[key] = torch.stack(activation_container[key])
-
-            all_h_label = torch.stack(all_h_label)
-            pred_set = torch.concat(pred_set)
-
-            return all_h_label, activation_container, pred_set
-
-
-
-    h_bd_ori_labels, h_bd_activations, h_bd_preds = fetch_activation(model, opt.device, bd_loader, activations)
-    h_benign_ori_labels, h_benign_activations, h_benign_preds = fetch_activation(model, opt.device, benign_loader, activations)
-    h_cleanT_ori_labels, h_cleanT_activations, h_cleanT_preds = fetch_activation(model, opt.device, cleanT_loader, activations)
-    h_defense_ori_labels, h_defense_activations, h_defense_preds = fetch_activation(model, opt.device, defense_loader, activations)
+        # Create a new defense subset and DataLoader
+        defense_subset = Subset(reference_data, benign_indices)
+        defense_loader = data.DataLoader(defense_subset, batch_size=opt.batch_size, num_workers=0, shuffle=True)
 
 
 
 
 
-
-    accuracy_defense = calculate_accuracy(h_defense_ori_labels, h_defense_preds)
-    accuracy_VT = calculate_accuracy(opt.target * torch.ones_like(h_bd_preds), h_bd_preds)
-
-    print(f"Accuracy on defense_loader: {accuracy_defense}%")
-    print(f"Accuracy on bd_loader: {accuracy_VT}%")
+        # Constants for label types
+        SUSPECT = "SUS"   # Victim with Trigger
+    
 
 
 
+    
 
-    class_names = np.unique(h_defense_ori_labels.cpu().numpy())
 
-    for index, label in enumerate(class_names):
-            for layer in h_defense_activations:
-                    topological_representation = getDefenseRegion(
-                            final_prediction=h_defense_preds,
-                            h_defense_activation=h_defense_activations[layer],
-                            processing_label=label,
-                            layer=layer,
-                            layer_test_region_individual=topological_representation
-                    )
-                    topo_rep_array = np.array(topological_representation[layer][label])
-                    print(f"Topological Representation Label [{label}] & layer [{layer}]: {topo_rep_array}")
-                    print(f"Mean: {np.mean(topo_rep_array)}\n")
+
+        "Inputs to score: read from suspect_data. The reference code built three sets here (VT, NVT, NoT) because it"
+        "generated its own triggers and knew which inputs were poisoned, which only matters for measuring AUC/TPR."
+        "A user has one set of unknown data, so the bd_loader / cleanT_loader / benign_loader uses below collapse"
+        "into suspect_loader, scored under one temp label."
+        suspect_loader = data.DataLoader(
+            suspect_data,
+            batch_size=opt.batch_size,
+            num_workers=0,
+            shuffle=False)  # keep input order so each score maps back to its input
 
 
 
 
+        # Now, reassign the model's modules to a variable
+        net_children = model.modules()
 
-    for layer_ in h_bd_activations:
-            topological_representation = getLayerRegionDistance(
-                    new_prediction=h_bd_preds,
-                    new_activation=h_bd_activations[layer_],
-                    new_temp_label=VT_TEMP_LABEL,
-                    h_defense_prediction=h_defense_preds,
-                    h_defense_activation=h_defense_activations[layer_],
-                    layer=layer_,
-                    layer_test_region_individual=topological_representation
+        index = 0
+        for _, child in enumerate(net_children):
+            if isinstance(child, nn.Conv2d) and child.kernel_size != (1, 1):
+                hook_handle.append(child.register_forward_hook(get_activation("Conv2d_"+str(index), activations)))
+                index += 1
+
+            if isinstance(child, nn.ReLU):
+                hook_handle.append(child.register_forward_hook(get_activation("Relu_"+str(index), activations)))
+                index = index + 1
+
+            if isinstance(child, nn.Linear):
+                hook_handle.append(child.register_forward_hook(get_activation("Linear_"+str(index), activations)))
+                index = index + 1
+
+            # Hook more layers here if needed
+
+            
+        with torch.no_grad():
+            _, suspect_activations, suspect_preds = fetch_activation(
+            model, opt.device, suspect_loader, activations
             )
-            topo_rep_array_vt = np.array(topological_representation[layer_][VT_TEMP_LABEL])
-            print(f"Topological Representation Label [{VT_TEMP_LABEL}] & layer [{layer_}]: {topo_rep_array_vt}")
-            print(f"Mean: {np.mean(topo_rep_array_vt)}\n")
 
-
-
-
-    for layer_ in h_benign_activations:
-            topological_representation = getLayerRegionDistance(
-                    new_prediction=h_benign_preds,
-                    new_activation=h_benign_activations[layer_],
-                    new_temp_label=NoT_TEMP_LABEL,
-                    h_defense_prediction=h_defense_preds,
-                    h_defense_activation=h_defense_activations[layer_],
-                    layer=layer_,
-                    layer_test_region_individual=topological_representation
+            defense_ori_labels, defense_activations, defense_preds = fetch_activation(
+                model, opt.device, defense_loader, activations
             )
-            topo_rep_array_not = np.array(topological_representation[layer_][NoT_TEMP_LABEL])
-            print(f"Topological Representation Label [{NoT_TEMP_LABEL}] - layer [{layer_}]: {topo_rep_array_not}")
-            print(f"Mean: {np.mean(topo_rep_array_not)}\n")
+
+
+
+
+        #accuracy_defense = calculate_accuracy(defense_ori_labels, defense_preds)
+        #accuracy_VT = calculate_accuracy(opt.target * torch.ones_like(suspect_preds), suspect_preds)
+
+        #print(f"Accuracy on defense_loader: {accuracy_defense}%")
+        #print(f"Accuracy on bd_loader: {accuracy_VT}%")
+
+
+
+
+        class_names = np.unique(defense_ori_labels.cpu().numpy())
+
+        for index, label in enumerate(class_names):
+                for layer in defense_activations:
+                        topological_representation = getDefenseRegion(
+                                final_prediction=defense_preds,
+                                h_defense_activation=defense_activations[layer],
+                                processing_label=label,
+                                layer=layer,
+                                layer_test_region_individual=topological_representation,
+                                num_classes=num_classes
+                        )
+                        topo_rep_array = np.array(topological_representation[layer][label])
+                        #print(f"Topological Representation Label [{label}] & layer [{layer}]: {topo_rep_array}")
+                        #print(f"Mean: {np.mean(topo_rep_array)}\n")
+
+
+
+
+
+        for layer_ in suspect_activations:
+                topological_representation = getLayerRegionDistance(
+                        new_prediction=suspect_preds,
+                        new_activation=suspect_activations[layer_],
+                        new_temp_label=SUSPECT,
+                        h_defense_prediction=defense_preds,
+                        h_defense_activation=defense_activations[layer_],
+                        layer=layer_,
+                        layer_test_region_individual=topological_representation
+                )
+                topo_rep_array_vt = np.array(topological_representation[layer_][SUSPECT])
+                print(f"Topological Representation Label [{SUSPECT}] & layer [{layer_}]: {topo_rep_array_vt}")
+                print(f"Mean: {np.mean(topo_rep_array_vt)}\n")
 
 
 
 
 
 
-    for layer_ in h_cleanT_activations:
-            topological_representation = getLayerRegionDistance(
-                    new_prediction=h_cleanT_preds,
-                    new_activation=h_cleanT_activations[layer_],
-                    new_temp_label=NVT_TEMP_LABEL,
-                    h_defense_prediction=h_defense_preds,
-                    h_defense_activation=h_defense_activations[layer_],
-                    layer=layer_,
-                    layer_test_region_individual=topological_representation
+        inputs_all_benign = []
+        labels_all_benign = []
+
+        inputs_all_unknown = []
+        labels_all_unknown = []
+
+        first_key = list(topological_representation.keys())[0]
+        class_name = list(topological_representation[first_key])
+
+        for inx in class_name:
+
+            inputs, labels = aggregate_by_all_layers(output_label=inx, topological_representation=topological_representation)
+
+            if inputs.ndim != 2 or inputs.shape[0] == 0:
+                if inx == SUSPECT:
+                    raise ValueError("No topology measurements were produced for suspect inputs.")
+                continue
+            
+            if inx != SUSPECT:
+                inputs_all_benign.append(np.array(inputs))
+                labels_all_benign.append(np.array(labels))
+            else:
+                inputs_all_unknown.append(np.array(inputs))
+                labels_all_unknown.append(np.array(labels))
+
+        inputs_all_benign = np.concatenate(inputs_all_benign)
+        labels_all_benign = np.concatenate(labels_all_benign)
+
+        inputs_all_unknown = np.concatenate(inputs_all_unknown)
+        labels_all_unknown = np.concatenate(labels_all_unknown)
+
+
+        pca = PCA(contamination=contamination, n_components='mle')
+        pca.fit(inputs_all_benign)
+
+
+        y_test_scores = pca.decision_function(inputs_all_unknown)
+        y_test_pred = pca.predict(inputs_all_unknown)
+        "The reference code printed AUC/TPR here, which needs to know which inputs were triggered."
+        "A user does not know that, so return the scores instead. Measuring AUC belongs in a verification script."
+        num_flagged = int(y_test_pred.sum())
+        flagged_fraction = num_flagged / len(y_test_pred)
+
+        "Debugging check."
+        if len(y_test_scores) != len(suspect_data):
+            raise RuntimeError(
+                f"Expected {len(suspect_data)} suspect scores, got {len(y_test_scores)}."
             )
-            topo_rep_array_nvt = np.array(topological_representation[layer_][NVT_TEMP_LABEL])
-            print(f"Topological Representation [{NVT_TEMP_LABEL}] - layer [{layer_}]: {topo_rep_array_nvt}")
-            print(f"Mean: {np.mean(topo_rep_array_nvt)}\n")
 
+        # ponytail: the threshold rejects `contamination` of clean inputs by design, so
+        # flag the batch only when more than that are flagged. Uncalibrated.
+        verdict = "likely backdoored" if flagged_fraction > contamination else "likely clean"
 
-
-
-
-
-
-
-
-    inputs_all_benign = []
-    labels_all_benign = []
-
-    inputs_all_unknown = []
-    labels_all_unknown = []
-
-    first_key = list(topological_representation.keys())[0]
-    class_name = list(topological_representation[first_key])
-
-    for inx in class_name:
-
-        inputs, labels = aggregate_by_all_layers(output_label=inx)
-
-        if inx != VT_TEMP_LABEL and inx != NVT_TEMP_LABEL and inx != NoT_TEMP_LABEL:
-            inputs_all_benign.append(np.array(inputs))
-            labels_all_benign.append(np.array(labels))
-        else:
-            inputs_all_unknown.append(np.array(inputs))
-            labels_all_unknown.append(np.array(labels))
-
-    inputs_all_benign = np.concatenate(inputs_all_benign)
-    labels_all_benign = np.concatenate(labels_all_benign)
-
-    inputs_all_unknown = np.concatenate(inputs_all_unknown)
-    labels_all_unknown = np.concatenate(labels_all_unknown)
-
-
-    pca = PCA(contamination=contamination, n_components='mle')
-    pca.fit(inputs_all_benign)
-
-
-    y_test_scores = pca.decision_function(inputs_all_unknown)
-    y_test_pred = pca.predict(inputs_all_unknown)
-    "The reference code printed AUC/TPR here, which needs to know which inputs were triggered."
-    "A user does not know that, so return the scores instead. Measuring AUC belongs in a verification script."
-    num_flagged = int(y_test_pred.sum())
-    flagged_fraction = num_flagged / len(y_test_pred)
-
-    # ponytail: the threshold rejects `contamination` of clean inputs by design, so
-    # flag the batch only when more than that are flagged. Uncalibrated.
-    verdict = "likely backdoored" if flagged_fraction > contamination else "likely clean"
-
-    # NOTE: per_sample follows the trajectory order built above, which groups inputs
-    # by predicted class, not suspect_data's order, so no input index is reported yet.
-    return {
-        "mode": "input-level",
-        "method": "ted",
-        "verdict": verdict,
-        "num_inputs": len(y_test_pred),
-        "num_flagged": num_flagged,
-        "threshold": float(pca.threshold_),
-        "parameters": {
-            "reference_size": reference_size,
-            "contamination": contamination,
-            "batch_size": batch_size,
-            "seed": seed,
-        },
-        "per_sample": [
-            {"score": float(score), "flagged": bool(flag)}
-            for score, flag in zip(y_test_scores, y_test_pred)
-        ],
-    }
+        return {
+            "mode": "input-level",
+            "method": "ted",
+            "verdict": verdict,
+            "num_inputs": len(y_test_pred),
+            "num_flagged": num_flagged,
+            "threshold": float(pca.threshold_),
+            "parameters": {
+                "reference_size": reference_size,
+                "contamination": contamination,
+                "batch_size": batch_size,
+                "seed": seed,
+            },
+            "per_sample": [
+                {"score": float(score), "flagged": bool(flag)}
+                for score, flag in zip(y_test_scores, y_test_pred)
+            ],
+        }
+    finally:
+        for handle in hook_handle:
+            handle.remove()
