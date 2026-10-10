@@ -94,7 +94,7 @@ This is how it searches for what the trigger actually is. The first half asks wh
 ## 4. ANP
 
 A backdoor model has specific neurons that are important for a backdoor to work so ANP purposefully perturbs the neurons to find out which ones are suspicious, then prunes them from network. Since it doesn't know what neuron is connected to what pattern it basically messes with the neuron's parameters and sees which part of the model becomes problematic.
-ANP learns a mask value for each neuron while also applying the adversarial pertubations to the neurons weight and biases, so the ones with lower values become suspicious. As masks are learned, the neurons are prunedm, modifying the weights. Is a whitebox method, requires small amount of clean data and offical implementations support CIFAR-10 and ResNet-18
+ANP learns a mask value for each neuron while also applying the adversarial perturbations to the neurons weight and biases, so the ones with lower values become suspicious. As masks are learned, the neurons are pruned, modifying the weights. Is a whitebox method, requires small amount of clean data and official implementations support CIFAR-10 and ResNet-18
 
 ## 5. CLP
 
