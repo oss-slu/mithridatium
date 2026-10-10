@@ -73,7 +73,7 @@ def _write_json(obj: dict, out_path: str, force: bool) -> None:
 
 @app.callback(invoke_without_command=True)
 def _root(
-    # This is a calback that prints the version whenever it is ran.
+    # This is a callback that prints the version whenever it is ran.
     version: bool = typer.Option(
         False,
         "--version",
@@ -488,7 +488,7 @@ def detect(
         scaleup_threshold: str = typer.Option(
             "1.0",
             "--scaleup-threshold",
-            help="The percent threshhold of distortion scalars an image must pass through to be declared poisoned.",
+            help="The percent threshold of distortion scalars an image must pass through to be declared poisoned.",
         ),
         # seed: str = typer.Option(
         #     "",
@@ -576,7 +576,7 @@ def detect(
 
 
     """
-    Validate SCALE-UP treshold.
+    Validate SCALE-UP threshold.
     """
     try:
         scaleup_threshold_converted = float(scaleup_threshold)
@@ -602,7 +602,7 @@ def detect(
                 raise TypeError
 
     except TypeError:
-        typer.secho(f"Error: --scaleup-scales must be a parenthesis enclosed, comma seperated list of numbers, got {scaleup_scales}", err=True)
+        typer.secho(f"Error: --scaleup-scales must be a parenthesis enclosed, comma separated list of numbers, got {scaleup_scales}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     if all(scalar > 0 for scalar in scaleup_scales_converted) is False:
@@ -722,7 +722,7 @@ def repair(
     ),
 ):
 
-# Look through this and proably make better so we can scale it when we add more
+# Look through this and probably make better so we can scale it when we add more
 # have it read the method then go from there
 # check
     if method.strip().lower() not in REPAIR_METHODS:
