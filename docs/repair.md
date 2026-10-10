@@ -22,3 +22,21 @@ mithridatium repair \
   --data cifar10 \
   --out models/resnet18_repaired.pth \
   --report reports/repair_report.json
+```
+
+## Useful flags
+
+| Flag | Role |
+|---|---|
+| `--model` / `-m` | Local checkpoint (`.pth` / `.pt`) to repair. |
+| `--method` / `-M` | Repair method (`lmr` today). |
+| `--data` / `-d` | Dataset name for clean samples (e.g. `cifar10`). |
+| `--clean-samples` / `-c` | Number of clean samples the repair method may use. |
+| `--seed` / `-s` | Random seed for reproducibility. |
+| `--out` / `-o` | Path for the repaired output checkpoint (`.pth` / `.pt`). |
+| `--report` / `-r` | Path for the JSON report, or `-` for stdout. |
+| `--force` / `-f` | Overwrite the checkpoint or report if it already exists. |
+| `--lmr-target-class` | LMR: target class to repair (omit to infer). |
+| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune. |
+
+More copy-paste examples: [Sample commands](testing/sample-commands.md).
