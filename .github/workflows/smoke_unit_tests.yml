@@ -6,6 +6,13 @@ on:
     pull_request:
         branches: [ main ]
 
+# Once this block exists, the workflow gets only what is listed here.
+permissions:
+    contents: read            # check out the repository
+    id-token: write           # request the short-lived identity token that signs the attestation
+    attestations: write       # store the signed attestation
+    artifact-metadata: write  # link the attestation to this repository's artifacts
+
 jobs:
     test:
         runs-on: ubuntu-latest
@@ -21,3 +28,48 @@ jobs:
                 pip install -e ".[dev]"
             - name: Run Tests
               run: python -m pytest tests/smoke tests/unit -q
+            # Supply-chain steps (OSS-SLU Supply-Chain Security Baseline).
+            # The SBOM is generated from the folder pip installed into, so it lists the
+            # resolved packages and versions this run actually tested against.
+            - name: Locate installed Python packages
+              id: site
+              run: echo "dir=$(python -c 'import site; print(site.getsitepackages()[0])')" >> "$GITHUB_OUTPUT"
+            - name: Generate SBOM with Syft
+              uses: anchore/sbom-action@v0
+              with:
+                  path: ${{ steps.site.outputs.dir }}
+                  format: spdx-json
+                  output-file: mithridatium-sbom.spdx.json
+                  syft-version: v1.52.0
+                  upload-artifact: false # uploaded explicitly below under a stable name
+            - name: Summarize SBOM contents
+              run: |
+                python - mithridatium-sbom.spdx.json >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+                import json, sys
+                doc = json.load(open(sys.argv[1]))
+                pkgs = sorted({(p["name"], p.get("versionInfo", "NOASSERTION")) for p in doc.get("packages", [])},
+                              key=lambda p: p[0].lower())
+                print("## Python environment SBOM")
+                print()
+                print(f"`{sys.argv[1]}`: {doc.get('spdxVersion', '?')} JSON, {len(pkgs)} distinct packages.")
+                print()
+                print("| Package | Version |")
+                print("|---|---|")
+                for name, version in pkgs:
+                    print(f"| `{name}` | {version} |")
+                EOF
+            - name: Upload SBOM artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: mithridatium-sbom
+                  path: mithridatium-sbom.spdx.json
+                  if-no-files-found: error
+            # Signs the SBOM file's digest with this workflow's identity. Only on pushes to
+            # main: pull requests from forks are not given signing permission.
+            # Verify a downloaded copy with:
+            #   gh attestation verify ./mithridatium-sbom.spdx.json --owner oss-slu
+            - name: Attest SBOM provenance
+              if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+              uses: actions/attest@v4
+              with:
+                  subject-path: mithridatium-sbom.spdx.json
