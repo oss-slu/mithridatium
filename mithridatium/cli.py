@@ -23,7 +23,11 @@ from mithridatium.defenses.strip import strip_scores
 from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
-from mithridatium.defense_config import apply_freeeagle_cli_options
+from mithridatium.defense_config import (
+    apply_freeeagle_cli_options,
+    apply_mmbd_cli_options,
+    parse_mmbd_classes,
+)
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.repair import run_lmr
@@ -274,6 +278,11 @@ def audit(
         "--strip-suspicious-fraction-threshold",
         help="STRIP fraction of low-entropy outliers required to flag as backdoored.",
     ),
+    mmbd_classes: str = typer.Option(
+        None,
+        "--mmbd-classes",
+        help="MMBD classes to probe: comma-separated list of indices (e.g. '0,3,7'), 'all', or default (first 5 classes).",
+    ),
 ):
     """
     Run a supported defense against either a local checkpoint or a Hugging Face model.
@@ -318,6 +327,17 @@ def audit(
 
     cfg = utils.get_preprocess_config(data)
     num_classes = cfg.get_num_classes()
+
+    parsed_mmbd_classes = None
+    if mmbd_classes is not None and d == "mmbd":
+        try:
+            parsed_mmbd_classes = parse_mmbd_classes(mmbd_classes, num_classes)
+        except ValueError as ex:
+            typer.secho(
+                f"Error: invalid --mmbd-classes: {ex}",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] loading model from provider={provider}…")
 
@@ -384,7 +404,10 @@ def audit(
             anomaly_threshold=freeeagle_anomaly_threshold,
             inspect_layer_position=freeeagle_inspect_layer_position,
         )
-        
+
+    if d == "mmbd":
+        apply_mmbd_cli_options(config, classes=parsed_mmbd_classes)
+
     model_ref = str(p) if provider == "torchvision" else hf_model_id
 
     try:

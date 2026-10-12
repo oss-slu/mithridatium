@@ -13,6 +13,10 @@ import numpy as np
 
 #Code adapted from https://github.com/wanghangpsu/MM-BD/blob/main/univ_bd.py
 
+NUM_IMAGES = 30
+NSTEP = 75
+
+
 def get_device(device_index=0):
     if torch.cuda.is_available():
         return torch.device(f"cuda:{device_index}")
@@ -48,7 +52,7 @@ def get_device(device_index=0):
     return model'''
 
 
-def run_mmbd(model, configs, device=None):
+def run_mmbd(model, configs, device=None, classes=None):
 
     random.seed()
     if device is None:
@@ -73,12 +77,30 @@ def run_mmbd(model, configs, device=None):
 
     NI = 150
     PI = 0.9
-    NSTEP = 75
     TC = 6
     batch_size = 20
 
-    N_CLASSES_TO_PROBE = min(5, NC)
-    NUM_IMAGES = 30
+    # Resolve which classes to probe
+    classes_to_probe = classes
+    if classes_to_probe is None and hasattr(configs, "mmbd_classes"):
+        classes_to_probe = getattr(configs, "mmbd_classes")
+
+    if classes_to_probe is None:
+        N_CLASSES_TO_PROBE = min(5, NC)
+        classes_to_probe = list(range(N_CLASSES_TO_PROBE))
+    else:
+        classes_to_probe = list(classes_to_probe)
+
+    for c in classes_to_probe:
+        if isinstance(c, bool) or not isinstance(c, (int, np.integer)):
+            raise ValueError(f"Invalid class index '{c}': must be an integer.")
+        if c < 0 or c >= NC:
+            raise ValueError(f"Class index {c} is out of range for model with {NC} classes.")
+    if len(classes_to_probe) != len(set(classes_to_probe)):
+        raise ValueError("Duplicate class indices found in MMBD classes to probe.")
+    if len(classes_to_probe) == 0:
+        raise ValueError("MMBD requires at least one class to probe.")
+
     # Load model
     model = model.to(device=device, dtype=torch.float32).eval()
     criterion = nn.CrossEntropyLoss()
@@ -95,8 +117,9 @@ def run_mmbd(model, configs, device=None):
         return lr
 
     res = []
-    for t in range(N_CLASSES_TO_PROBE):
-        print(f"[MMBD] optimizing class {t+1}/{N_CLASSES_TO_PROBE}…", flush=True)
+    num_probed = len(classes_to_probe)
+    for idx, t in enumerate(classes_to_probe):
+        print(f"[MMBD] optimizing class {idx+1}/{num_probed} (class {t})…", flush=True)
         images = torch.rand([NUM_IMAGES, *configs.input_size], device=device, dtype=torch.float32, requires_grad=True)
         last_loss = 1000.0
         labels = torch.full((len(images),), t, dtype=torch.long, device=device)
@@ -138,11 +161,18 @@ def run_mmbd(model, configs, device=None):
 
 
     ind_max = int(np.argmax(stats))
+    suspected_target = classes_to_probe[ind_max]
     r_eval = float(np.amax(stats))
     r_null = np.delete(stats, ind_max)
 
-    shape, loc, scale = gamma.fit(r_null)
-    pv = 1 - pow(gamma.cdf(r_eval, a=shape, loc=loc, scale=scale), len(r_null)+1)
+    pv = 1.0
+    if len(r_null) > 1:
+        try:
+            shape, loc, scale = gamma.fit(r_null)
+            pv = float(1 - pow(gamma.cdf(r_eval, a=shape, loc=loc, scale=scale), len(r_null)+1))
+        except Exception:
+            pv = 1.0
+
     verdict = "Likely clean" if pv > 0.05 else "Likely backdoored"
 
     # suspected_backdoor = (verdict == "attack")
@@ -166,15 +196,17 @@ def run_mmbd(model, configs, device=None):
         "optimizer": "SGD(momentum=0.2)",
         "lr_init": 1e-2,
         "device": str(device),
+        "classes_probed": classes_to_probe,
     }
 
     results = {
         "defense": "mmbd",
         "per_class_scores": stats.tolist(),
         "normalized_scores": score.tolist(),
+        "classes_probed": classes_to_probe,
         "p_value": float(pv),
         "verdict": verdict,
-        # "suspected_target": (int(ind_max) if verdict == "attack" else None),
+        "suspected_target": (int(suspected_target) if verdict == "Likely backdoored" else None),
         "thresholds": thresholds,
         "parameters": parameters,
         "dataset": configs.get_dataset(),

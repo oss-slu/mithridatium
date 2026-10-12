@@ -36,18 +36,45 @@ Important `results` fields:
 | --- | --- |
 | `per_class_scores` | Raw optimized scores for probed classes |
 | `normalized_scores` | MAD-normalized deviation scores |
+| `classes_probed` | List of class indices that were probed |
 | `p_value` | Statistical anomaly score |
 | `top_eigenvalue` | Maximum class score alias used by existing schema/reporting |
 | `verdict` | `Likely clean` or `Likely backdoored` |
 | `thresholds` | p-value and normalized-score interpretation bands |
 
-## Example CLI Command
+## Example CLI Commands
+
+Check default classes (first 5 classes):
 
 ```bash
 mithridatium audit \
   --model models/resnet18_poison.pth \
   --data cifar10 \
   --defense mmbd \
+  --out reports/mmbd.json \
+  --force
+```
+
+Check specific target classes:
+
+```bash
+mithridatium audit \
+  --model models/resnet18_poison.pth \
+  --data cifar10 \
+  --defense mmbd \
+  --mmbd-classes 0,3,7 \
+  --out reports/mmbd.json \
+  --force
+```
+
+Check all classes:
+
+```bash
+mithridatium audit \
+  --model models/resnet18_poison.pth \
+  --data cifar10 \
+  --defense mmbd \
+  --mmbd-classes all \
   --out reports/mmbd.json \
   --force
 ```
@@ -60,18 +87,37 @@ mithridatium audit \
   --hf-model-id microsoft/resnet-50 \
   --data cifar10_for_imagenet \
   --defense mmbd \
+  --mmbd-classes 0,1,2 \
   --out reports/hf_mmbd.json \
   --force
 ```
 
+## Probing Classes (`--mmbd-classes`)
+
+By default, MMBD probes only the first `min(5, NC)` classes (`0` to `4` on CIFAR-10). If a backdoor attack targets a class outside this default range, MMBD can miss it.
+
+The `--mmbd-classes` option allows users to configure exactly which classes are probed:
+
+- **Comma-separated indices:** `--mmbd-classes 0,3,7` checks only classes 0, 3, and 7.
+- **All classes:** `--mmbd-classes all` probes every class in the model.
+- **Default (no flag):** probes the first `min(5, NC)` classes.
+
+### Runtime Cost Considerations
+
+MMBD optimizes synthetic images for each probed class across 75 optimization iterations (`NSTEP = 75`) with 30 synthetic images per class. Because optimization runs sequentially per class, execution time scales directly with the number of probed classes:
+
+- On a 10-class dataset like CIFAR-10, probing all classes (`--mmbd-classes all`) doubles the runtime compared to the default 5 classes.
+- On large datasets like ImageNet (1,000 classes), probing all classes requires 1,000 optimization passes and is computationally prohibitive.
+- Using targeted probing (e.g. `--mmbd-classes 0,3,7`) allows efficient verification of suspected target classes without unnecessary computation.
+
 ## Current Internal Defaults
 
-These settings are currently internal to `mithridatium/defenses/mmbd.py` rather than CLI flags:
+These settings configure MMBD behavior:
 
 | Setting | Current value |
 | --- | --- |
 | `NSTEP` | `75` |
-| `N_CLASSES_TO_PROBE` | `min(5, NC)` |
+| `N_CLASSES_TO_PROBE` | `min(5, NC)` (default when `--mmbd-classes` is omitted) |
 | `NUM_IMAGES` | `30` |
 | optimizer | `SGD(lr=1e-2, momentum=0.9)` |
 | p-value threshold | `0.05` |
