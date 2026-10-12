@@ -341,3 +341,110 @@ def test_audit_routes_huggingface_logits_only_defenses(tmp_path, monkeypatch, cl
     assert result.exit_code == 0
     assert called["defense"] == defense
     assert out_path.exists()
+
+
+def test_audit_mmbd_classes_valid(tmp_path, monkeypatch, cli_mocks):
+    model_path = tmp_path / "fake.pth"
+    model_path.write_bytes(b"ok")
+    out_path = tmp_path / "mmbd_classes.json"
+
+    captured_config = {}
+
+    def fake_mmbd(model, config, device=None, classes=None):
+        captured_config["mmbd_classes"] = getattr(config, "mmbd_classes", None)
+        return _valid_result("mmbd")
+
+    monkeypatch.setattr("mithridatium.cli.run_mmbd", fake_mmbd)
+
+    # Test comma-separated list
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            "--provider",
+            "torchvision",
+            "--model",
+            str(model_path),
+            "--defense",
+            "mmbd",
+            "--data",
+            "cifar10",
+            "--mmbd-classes",
+            "0,3,7",
+            "--out",
+            str(out_path),
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured_config["mmbd_classes"] == [0, 3, 7]
+
+    # Test 'all'
+    result_all = runner.invoke(
+        app,
+        [
+            "audit",
+            "--provider",
+            "torchvision",
+            "--model",
+            str(model_path),
+            "--defense",
+            "mmbd",
+            "--data",
+            "cifar10",
+            "--mmbd-classes",
+            "all",
+            "--out",
+            str(out_path),
+            "--force",
+        ],
+    )
+
+    assert result_all.exit_code == 0
+    assert captured_config["mmbd_classes"] == list(range(10))
+
+
+@pytest.mark.parametrize(
+    "bad_classes,err_match",
+    [
+        ("0,10", "out of range"),
+        ("-1,2", "out of range"),
+        ("0,foo,2", "must be an integer or 'all'"),
+        ("0,1,1", "duplicate class index"),
+        ("", "cannot be empty"),
+    ],
+)
+def test_audit_mmbd_classes_invalid_fails_before_model(tmp_path, monkeypatch, bad_classes, err_match):
+    model_called = []
+    model_path = tmp_path / "fake.pth"
+    model_path.write_bytes(b"ok")
+
+    def mock_detect_and_build(*_args, **_kwargs):
+        model_called.append(True)
+        return DummyModel(), None
+
+    monkeypatch.setattr("mithridatium.cli.loader.detect_and_build", mock_detect_and_build)
+
+    result = runner.invoke(
+        app,
+        [
+            "audit",
+            "--provider",
+            "torchvision",
+            "--model",
+            str(model_path),
+            "--defense",
+            "mmbd",
+            "--data",
+            "cifar10",
+            "--mmbd-classes",
+            bad_classes,
+        ],
+    )
+
+    assert result.exit_code == EXIT_USAGE_ERROR
+    output = (result.stdout or "") + (result.stderr or "")
+    assert err_match.lower() in output.lower()
+    # Verified model loading is never reached
+    assert model_called == []
