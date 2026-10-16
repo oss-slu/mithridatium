@@ -24,10 +24,6 @@ AEVA is computationally expensive. Runtime grows with the number of source-targe
 
 MMBD probes only a subset of classes by default. If a backdoor target is outside the probed set, the defense may miss it.
 
-## Report Summaries
-
-`render_summary()` has detailed summary branches for MMBD, STRIP, and FreeEagle. AEVA currently relies more on the generic fallback summary.
-
 ## MCP Package Versions
 
 `langchain-mcp-adapters` 0.3.2 requires the `mcp` 1.x SDK. FastMCP 4 requires `mcp` 2.x, which removed `mcp.shared.context.RequestContext` and breaks the adapter import. Keep the `agent` extra on FastMCP 3.x (`fastmcp>=3.4,<4`).
