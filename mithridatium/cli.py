@@ -26,6 +26,7 @@ from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
+#from mithridatium.repair.anp import run_anp
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.repair import run_lmr
@@ -783,6 +784,22 @@ def repair(
         500, "--clean-samples", "-c",
         help="Number of clean samples the repair method may use.",
     ),
+    anp_eps: float = typer.Option(
+        0.4, "--anp-eps",
+        help="Epsilon bound for adversarial perturbation in ANP."
+    ),
+    anp_alpha: float = typer.Option(
+        0.2, "--anp-alpha",
+        help="Alpha weighting for natural vs perturbed loss in ANP."
+    ),
+    anp_steps: int = typer.Option(
+        10, "--anp-steps",
+        help="Number of optimization steps for ANP."
+    ),
+    anp_prune_threshold: float = typer.Option(
+        0.2, "--anp-prune-threshold",
+        help="Threshold for pruning neurons in ANP."
+    ),
     seed: int = typer.Option(
         None, "--seed", "-s",
         help="Random seed for reproducibility.",
@@ -993,6 +1010,31 @@ def repair(
             repair_clp(model_path=model, out=str(out), report=str(report_path), threshold_mult=clp_threshold_mult, version=VERSION)
         except Exception as ex:
             typer.secho(f"Error: failed to run CLP repair on model '{model_path}'.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
+    elif method == "anp":
+        # Placeholder for ANP repair dispatch
+        # Reuse output and report handling like CLP
+        if out.exists() and not force:
+            typer.secho(f"Error: output file already exists: {out}. Use --force to overwrite.", err=True)
+            raise typer.Exit(code=EXIT_CANT_CREATE)
+        if report_path != Path("-") and report_path.exists() and not force:
+            typer.secho(f"Error: report file already exists: {report_path}. Use --force to overwrite.", err=True)
+            raise typer.Exit(code=EXIT_CANT_CREATE)
+        try:
+            run_anp(
+                model_path=model,
+                out=str(out),
+                report=str(report_path),
+                eps=anp_eps,
+                alpha=anp_alpha,
+                steps=anp_steps,
+                prune_threshold=anp_prune_threshold,
+                clean_samples=clean_samples,
+                seed=seed if seed is not None else 0,
+                version=VERSION,
+            )
+        except Exception as ex:
+            typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
 
 if __name__ == "__main__":
