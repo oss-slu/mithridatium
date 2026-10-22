@@ -28,6 +28,7 @@ from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
+from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
 from mithridatium.repair import run_lmr
 
 try:
@@ -46,7 +47,7 @@ app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp"}
 
-DETECT_METHODS = {"scaleup", "ted"}
+DETECT_METHODS = {"scaleup", "ted", "ibdpsc"}
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
@@ -484,7 +485,7 @@ def detect(
             "scaleup",
             "--method",
             "-M",
-            help="The method name: 'scaleup' or 'ted'.",
+            help="The method name: 'scaleup', 'ted' or 'ibdpsc'.",
         ),
         num_samples: str = typer.Option(
             "256",
@@ -542,6 +543,34 @@ def detect(
             0.01,
             "--ted-contamination",
             help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
+        ),
+        ibdpsc_num_samples: int = typer.Option(
+            256,
+            "--ibdpsc-num-samples",
+            min=1,
+            help="IBD-PSC: the number of test images to score.",
+        ),
+        ibdpsc_clean_samples: int = typer.Option(
+            100,
+            "--ibdpsc-clean-samples",
+            min=1,
+            help="IBD-PSC: known-clean images from the training split used to choose which BN layers to amplify.",
+        ),
+        ibdpsc_scale: float = typer.Option(
+            1.5,
+            "--ibdpsc-scale",
+            help="IBD-PSC: the factor (omega) applied to gamma and beta of the amplified BN layers, above 1.",
+        ),
+        ibdpsc_num_models: int = typer.Option(
+            5,
+            "--ibdpsc-num-models",
+            min=1,
+            help="IBD-PSC: the number of amplified models (n) averaged per input.",
+        ),
+        ibdpsc_threshold: float = typer.Option(
+            0.9,
+            "--ibdpsc-threshold",
+            help="IBD-PSC: flag an input when its PSC score exceeds this, within 0 < T < 1.",
         ),
 
 
@@ -646,6 +675,17 @@ def detect(
             typer.secho(f"Error: --ted-contamination must be within 0 < alpha <= 0.5, got {ted_contamination}.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
+    """
+    Validate IBD-PSC options.
+    """
+    if m == "ibdpsc":
+        if ibdpsc_scale <= 1:
+            typer.secho(f"Error: --ibdpsc-scale must be greater than 1 to amplify, got {ibdpsc_scale}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not 0 < ibdpsc_threshold < 1:
+            typer.secho(f"Error: --ibdpsc-threshold must be within 0 < T < 1, got {ibdpsc_threshold}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+
     _check_out_writable(out, force)
 
     try:
@@ -661,12 +701,21 @@ def detect(
         test_loader, config = utils.dataloader_for(data, "test", 128)
         if m == "ted":
             train_loader, _ = utils.dataloader_for(data, "train", 128)
+        if m == "ibdpsc":
+            train_loader, _ = utils.dataloader_for(data, "train", 128)
     except Exception as ex:
         typer.secho(
             f"Error: failed to load model '{p}'.\nReason: {ex}",
             err=True,
         )
         raise typer.Exit(code=EXIT_IO_ERROR)
+
+    if m == "ibdpsc" and not bn_layers(mdl):
+        typer.secho(
+            f"Error: --method ibdpsc amplifies BatchNorm layers, and model {p} has none.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] running method={m}…")
 
@@ -680,6 +729,17 @@ def detect(
                 suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
                 reference_size=ted_reference_size,
                 contamination=ted_contamination,
+                device=get_device(0),
+            )
+        elif m == "ibdpsc":
+            test_ds, train_ds = test_loader.dataset, train_loader.dataset
+            results = ibdpsc(
+                mdl,
+                clean_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), ibdpsc_clean_samples))),
+                suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ibdpsc_num_samples))),
+                scale=ibdpsc_scale,
+                num_models=ibdpsc_num_models,
+                threshold=ibdpsc_threshold,
                 device=get_device(0),
             )
         else:
@@ -719,6 +779,8 @@ def detect(
     _write_json(rep, out, force)
     if m == "ted":
         rule = f"TED score > {results['threshold']:.4g}"
+    elif m == "ibdpsc":
+        rule = f"PSC > {ibdpsc_threshold}"
     else:
         rule = f"SPC > {scaleup_threshold_converted}"
     print(

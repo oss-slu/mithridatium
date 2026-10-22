@@ -199,6 +199,83 @@ def test_cli_detect_scaleup_writes_schema_valid_report(tmp_path, monkeypatch):
     assert results["parameters"]["scales"] == [3.0, 5.0, 7.0, 9.0, 11.0]
 
 
+def _patch_detect_inputs(monkeypatch, toy, data):
+    from torch.utils.data import DataLoader
+
+    from mithridatium import cli
+    from mithridatium.utils import get_preprocess_config
+
+    cfg = get_preprocess_config("cifar10")
+    monkeypatch.setattr(cli.loader, "detect_and_build", lambda *a, **k: (toy, None))
+    monkeypatch.setattr(cli.utils, "dataloader_for", lambda *a, **k: (DataLoader(data, batch_size=16), cfg))
+
+
+def test_cli_detect_ibdpsc_writes_schema_valid_report(tmp_path, monkeypatch):
+    import torch
+    from torch.utils.data import TensorDataset
+
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+    out_path = tmp_path / "detect_ibdpsc.json"
+
+    nn = torch.nn
+    toy = nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.BatchNorm2d(4), nn.ReLU(), nn.Flatten(), nn.Linear(4 * 32 * 32, 10)).eval()
+    x = torch.randn(32, 3, 32, 32, generator=torch.Generator().manual_seed(0))
+    with torch.no_grad():
+        wrong = (toy(x).argmax(1) + 1) % 10   # always-wrong clean labels, so layer selection stops at k = 1
+    _patch_detect_inputs(monkeypatch, toy, TensorDataset(x, wrong))
+
+    result = runner.invoke(
+        app,
+        [
+            "detect",
+            "--model",
+            str(fake_model),
+            "--method",
+            "ibdpsc",
+            "--data",
+            "cifar10",
+            "--ibdpsc-num-samples",
+            "8",
+            "--ibdpsc-clean-samples",
+            "16",
+            "--out",
+            str(out_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    rpt.validate_report_data(payload)
+
+    results = payload["results"]
+    assert results["mode"] == "input-level"
+    assert results["method"] == "ibdpsc"
+    assert results["num_inputs"] == 8
+    assert len(results["per_sample"]) == 8
+    assert results["parameters"]["scale"] == 1.5
+    assert results["parameters"]["start_layer"] == 1
+
+
+def test_cli_detect_ibdpsc_rejects_model_without_batchnorm(tmp_path, monkeypatch):
+    import torch
+    from torch.utils.data import TensorDataset
+
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+
+    toy = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(3 * 32 * 32, 10))
+    _patch_detect_inputs(monkeypatch, toy, TensorDataset(torch.randn(4, 3, 32, 32), torch.zeros(4, dtype=torch.long)))
+
+    result = runner.invoke(
+        app,
+        ["detect", "--model", str(fake_model), "--method", "ibdpsc", "--out", str(tmp_path / "r.json")],
+    )
+
+    assert result.exit_code == EXIT_USAGE_ERROR
+    assert "batchnorm" in result.stderr.lower()
+
+
 
 def test_cli_detect_refuses_overwrite_without_force(tmp_path):
     fake_model = tmp_path / "fake.pth"
