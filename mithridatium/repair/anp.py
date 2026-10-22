@@ -301,20 +301,26 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
     results = {
         "method": "anp",
         "status": "completed",
+        "verdict": "repair_applied",
         "parameters": {
             "eps": eps, "alpha": alpha, "steps": steps,
             "prune_threshold": prune_threshold, "clean_samples": len(clean),
             "eval_samples": len(evaluation), "seed": seed,
         },
         "total_channels_pruned": sum(item["count"] for item in pruned),
-        "layer_breakdown": pruned,
+        "layer_breakdown": [
+            {"layer": item["layer"], "channels_pruned": item["count"],
+             "indices": item["indices"]} for item in pruned
+        ],
         "clean_accuracy_before": clean_before,
         "clean_accuracy_after": clean_after,
-        "asr_before": asr_before,
-        "asr_after": asr_after,
-        "asr_evaluation_samples": asr_count,
-        "asr_status": "evaluated" if asr_after is not None else "not available",
     }
+    if asr_after is not None:
+        results.update({
+            "asr_before": asr_before,
+            "asr_after": asr_after,
+            "asr_evaluation_samples": asr_count,
+        })
     payload = rpt.build_repair_report(model_path, "anp", data, version, results)
     rpt.validate_report_data(payload)
 
