@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import re
+import sys
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from mithridatium import utils
 from mithridatium.defenses.mmbd import get_device
@@ -409,6 +411,14 @@ def _pair_gap_peak(perturbations_abs: np.ndarray) -> float:
     return float(np.max(score))
 
 
+def _progress_enabled() -> bool:
+    """Return whether an interactive progress bar is safe to display."""
+    try:
+        return sys.stdout.isatty() and sys.stderr.isatty()
+    except (AttributeError, OSError):
+        return False
+
+
 class BDDetect:
     def __init__(
         self,
@@ -557,11 +567,20 @@ class BDDetect:
         if not (0 <= sp < ep <= self.num_labels):
             raise ValueError(f"Invalid class range: sp={sp}, ep={ep}, num_labels={self.num_labels}")
 
-        for source_label in range(sp, ep):
-            labels = list(range(self.num_labels))
-            labels.remove(source_label)
-            for target_label in labels:
-                self.get_vec(original_label=source_label, target_label=target_label)
+        total_pairs = (ep - sp) * (self.num_labels - 1)
+        with tqdm(
+            total=total_pairs,
+            desc="AEVA source-target pairs",
+            unit="pair",
+            disable=not _progress_enabled(),
+            leave=False,
+        ) as progress:
+            for source_label in range(sp, ep):
+                labels = list(range(self.num_labels))
+                labels.remove(source_label)
+                for target_label in labels:
+                    self.get_vec(original_label=source_label, target_label=target_label)
+                    progress.update(1)
 
         pair_gap, pair_mean_l2 = self._load_pair_matrices()
         valid_counts = np.sum(~np.isnan(pair_gap), axis=0)
