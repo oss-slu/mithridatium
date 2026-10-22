@@ -218,12 +218,20 @@ def test_cli_detect_ibdpsc_writes_schema_valid_report(tmp_path, monkeypatch):
     fake_model.write_bytes(b"not a real checkpoint")
     out_path = tmp_path / "detect_ibdpsc.json"
 
-    nn = torch.nn
-    toy = nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.BatchNorm2d(4), nn.ReLU(), nn.Flatten(), nn.Linear(4 * 32 * 32, 10)).eval()
-    x = torch.randn(32, 3, 32, 32, generator=torch.Generator().manual_seed(0))
-    with torch.no_grad():
-        wrong = (toy(x).argmax(1) + 1) % 10   # always-wrong clean labels, so layer selection stops at k = 1
-    _patch_detect_inputs(monkeypatch, toy, TensorDataset(x, wrong))
+    class Flip(torch.nn.Module):
+        """Predicts class 1 until its one BN layer is amplified by 1.5, then class 0, so layer selection stops at k = 1."""
+
+        def __init__(self):
+            super().__init__()
+            self.bn = torch.nn.BatchNorm2d(1)
+            torch.nn.init.ones_(self.bn.bias)
+
+        def forward(self, x):
+            z = self.bn(x[:, :1]).mean((1, 2, 3))
+            return torch.stack([z, torch.full_like(z, 1.25)], 1)
+
+    x = 0.01 * torch.randn(32, 3, 32, 32, generator=torch.Generator().manual_seed(0))
+    _patch_detect_inputs(monkeypatch, Flip(), TensorDataset(x, torch.ones(32, dtype=torch.long)))
 
     result = runner.invoke(
         app,
@@ -255,6 +263,34 @@ def test_cli_detect_ibdpsc_writes_schema_valid_report(tmp_path, monkeypatch):
     assert len(results["per_sample"]) == 8
     assert results["parameters"]["scale"] == 1.5
     assert results["parameters"]["start_layer"] == 1
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        {"ibdpsc_scale": float("nan")},
+        {"ibdpsc_scale": float("inf")},
+        {"ibdpsc_num_models": 0},
+        {"ibdpsc_clean_samples": 0},
+        {"ibdpsc_num_samples": -1},
+        {"ibdpsc_threshold": 1.0},
+        {"ibdpsc_threshold": float("nan")},
+    ],
+)
+def test_cli_detect_ibdpsc_rejects_bad_options_when_called_directly(tmp_path, option):
+    """The MCP tool calls detect() as a function, where typer's own range checks never run."""
+    import typer
+
+    from mithridatium.cli import detect
+
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+    defaults = {p.name: p.default for p in get_command(app).commands["detect"].params}
+
+    with pytest.raises(typer.Exit) as exited:
+        detect(**{**defaults, "model": str(fake_model), "method": "ibdpsc", "out": str(tmp_path / "r.json"), **option})
+
+    assert exited.value.exit_code == EXIT_USAGE_ERROR
 
 
 def test_cli_detect_ibdpsc_rejects_model_without_batchnorm(tmp_path, monkeypatch):

@@ -34,7 +34,7 @@ def amplify(bns, num_layers: int, scale: float) -> Dict[str, torch.Tensor]:
     """Parameter overrides that multiply gamma and beta of the last num_layers BN layers by scale."""
     return {
         f"{name}.{param}": getattr(bn, param) * scale
-        for name, bn in bns[len(bns) - num_layers:]
+        for name, bn in bns[max(len(bns) - num_layers, 0):]
         for param in ("weight", "bias")
     }
 
@@ -51,6 +51,13 @@ def clean_error(model, overrides, data, device, batch_size: int = 100) -> float:
 
 def select_start_layer(model, bns, clean_data, scale: float, xi: float, device, batch_size: int = 100) -> int:
     """Algorithm 1: the fewest amplified BN layers, counted from the last, whose clean error exceeds xi."""
+    # Algorithm 1 assumes a working model; past xi already, it would stop at k = 1 and mean nothing.
+    base = clean_error(model, {}, clean_data, device, batch_size)
+    if base > xi:
+        raise ValueError(
+            f"the model misclassifies {base:.0%} of the clean images before any amplification, "
+            f"above xi = {xi:.0%}; check that --data matches the model"
+        )
     for k in range(1, len(bns) + 1):
         if clean_error(model, amplify(bns, k, scale), clean_data, device, batch_size) > xi:
             return k
@@ -105,15 +112,19 @@ def ibdpsc(
     Returns:
         A dictionary containing per-input PSC scores and the batch verdict.
     """
-    model = model.to(device).eval()
     bns = bn_layers(model)
     if not bns:
-        raise ValueError("IBD-PSC amplifies BatchNorm layers, and this model has none")
+        raise ValueError("IBD-PSC amplifies affine BatchNorm2d layers, and this model has none")
 
-    start = select_start_layer(model, bns, clean_data, scale, xi, device, batch_size)
-    # k + n - 1 can pass the BN count; like the authors' code, repeat the all-layers copy.
-    layer_counts = [min(start + i, len(bns)) for i in range(num_models)]
-    scores, preds = psc_scores(model, bns, suspect_data, layer_counts, scale, device, batch_size)
+    was_training, original_device = model.training, next(model.parameters()).device
+    model.to(device).eval()
+    try:
+        start = select_start_layer(model, bns, clean_data, scale, xi, device, batch_size)
+        # k + n - 1 can pass the BN count; like the authors' code, repeat the all-layers copy.
+        layer_counts = [min(start + i, len(bns)) for i in range(num_models)]
+        scores, preds = psc_scores(model, bns, suspect_data, layer_counts, scale, device, batch_size)
+    finally:
+        model.to(original_device).train(was_training)   # hand the model back as it came
 
     flagged = scores > threshold   # Sec. 4.4 is a strict inequality
     num_flagged = int(flagged.sum())

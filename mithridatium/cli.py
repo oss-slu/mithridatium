@@ -679,8 +679,12 @@ def detect(
     Validate IBD-PSC options.
     """
     if m == "ibdpsc":
-        if ibdpsc_scale <= 1:
-            typer.secho(f"Error: --ibdpsc-scale must be greater than 1 to amplify, got {ibdpsc_scale}.", err=True)
+        # typer's min=1 only runs when parsing the command line; the MCP tool calls detect() directly.
+        if min(ibdpsc_num_samples, ibdpsc_clean_samples, ibdpsc_num_models) < 1:
+            typer.secho("Error: --ibdpsc-num-samples, --ibdpsc-clean-samples and --ibdpsc-num-models must be at least 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not 1 < ibdpsc_scale < float("inf"):   # also rejects nan
+            typer.secho(f"Error: --ibdpsc-scale must be a finite number greater than 1, got {ibdpsc_scale}.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
         if not 0 < ibdpsc_threshold < 1:
             typer.secho(f"Error: --ibdpsc-threshold must be within 0 < T < 1, got {ibdpsc_threshold}.", err=True)
@@ -712,7 +716,7 @@ def detect(
 
     if m == "ibdpsc" and not bn_layers(mdl):
         typer.secho(
-            f"Error: --method ibdpsc amplifies BatchNorm layers, and model {p} has none.",
+            f"Error: --method ibdpsc amplifies affine BatchNorm2d layers, and model {p} has none.",
             err=True,
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
