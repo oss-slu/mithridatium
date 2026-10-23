@@ -6,7 +6,7 @@
 |---|---|
 | `mithridatium audit` | **Detect** whether a model is backdoored. Runs a defense (e.g. FreeEagle, STRIP) and writes a verdict report. |
 | `mithridatium detect` | **Input-level** poisoning detection (e.g. SCALE-UP). See [Detect](detect.md). |
-| `mithridatium repair` | **Repair** a backdoored model. Runs a repair method (CLP or LMR) and writes a modified checkpoint plus a report. |
+| `mithridatium repair` | **Repair** a backdoored model. Runs a repair method (CLP, LMR, or ANP) and writes a modified checkpoint plus a report. |
 
 ## When to use repair vs audit
 
@@ -18,6 +18,15 @@
 Currently supported:
 - 'lmr' - Logit-Margin Repulsion based repair
 - 'clp' - Channel Lipschitzness-based Pruning repair
+- 'anp' - Adversarial Neuron Pruning repair
+
+## Which repair method should I use?
+
+| Method | Extra Clean Data Needed? | Target Class Required? | Architecture Requirements | Typical Runtime | Best When... |
+|---|---|---|---|---|---|
+| **CLP** | **None** (Data-free) | **No** | Conv2d + BatchNorm2d (ResNet-18) | Fast (< 5 seconds) | You have zero clean images and want an immediate weight-based pruning baseline. |
+| **ANP** | **Small clean set** (~500 images) | **No** | BatchNorm2d (ResNet-18) | Moderate (~1–2 minutes) | You have a small clean validation set, but do not know the backdoor trigger or target class. |
+| **LMR** | **Small clean set** (~500 images) | **Yes** (`--lmr-target-class`) | Linear output layer | Moderate (~1–2 minutes) | You already identified the suspected target class (e.g. from an audit) and want targeted logit suppression. |
 
 
 ## LMR (Logit-Margin Repulsion)
@@ -121,4 +130,81 @@ python3 -m pytest tests/smoke/test_cli_smoke.py -v
 The unit tests use a small fake ResNet-like module to check scoring, pruning,
 and report/checkpoint output. The CLI smoke tests exercise command dispatch
 and overwrite protection. Neither test requires a 60-epoch training run.
+
+## ANP (Adversarial Neuron Pruning)
+
+ANP is a **white-box, optimization-based** model repair method (Wu & Wang, NeurIPS 2021).
+It identifies and suppresses backdoor neurons by exploiting their disproportionate sensitivity
+to adversarial perturbations. It wraps each BatchNorm layer with a learned continuous mask and
+applies bounded noise, then zeroes the weights and biases of channels whose learned mask falls
+below a threshold. It requires a small set of clean images (e.g. ~500 CIFAR-10 images), but
+does **not** require knowing the trigger or backdoor target class.
+
+For each batch of clean images, ANP alternates between maximizing noise within $[-\epsilon, \epsilon]$
+and minimizing the combined loss:
+
+`alpha * clean_loss + (1 - alpha) * noisy_loss`
+
+Channels with learned mask values `score <= threshold` are pruned.
+The `--clean-samples` option sets the number of clean images used (shared, default: `500`),
+`--anp-eps` controls the perturbation bound (default: `0.4`), `--anp-alpha` balances
+clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps
+(default: `10`), and `--anp-prune-threshold` sets the cutoff below which channels are pruned
+(default: `0.2`).
+
+### Run ANP
+
+```bash
+mithridatium repair \
+  --model models/resnet18_poison.pth \
+  --method anp \
+  --data cifar10 \
+  --clean-samples 500 \
+  --anp-eps 0.4 \
+  --anp-alpha 0.2 \
+  --anp-steps 10 \
+  --anp-prune-threshold 0.2 \
+  --out models/resnet18_anp.pth \
+  --report reports/repair_anp.json
+```
+
+This saves a new `.pth` checkpoint and a JSON report. The report's `results`
+include `method: "anp"`, parameter values, `total_channels_pruned`, a per-layer
+breakdown, `clean_accuracy_before`, `clean_accuracy_after`, and optional ASR metrics.
+On the demo poisoned ResNet-18 model, clean accuracy is preserved (approx 90.0% before
+vs 88.0% after) while attack success rate (ASR) drops significantly (approx 95.0% before
+down to 10.0% after). By default, existing output files are protected; use `--force`
+if overwriting is intentional. You can omit `--report` for a JSON sidecar or use
+`--report -` to print the JSON to stdout.
+
+### Limitations and interpretation
+
+- The current loader builds a **ResNet-18 with 10 output classes**. Checkpoint
+  weights and the supported Conv2d/BatchNorm2d structure must be compatible.
+  This is not a generic method for arbitrary neural-network architectures.
+- Setting `--anp-prune-threshold` too high prunes legitimate neurons and drops clean
+  accuracy, while setting it too low may fail to eliminate the backdoor.
+- **A successful ANP run is a research signal, not certification that the model
+  is clean or that a backdoor was removed.** Validate clean accuracy and attack
+  success rate separately if labeled evaluation data are available.
+- ANP does not change the `audit` or `detect` commands.
+
+### Quick tests (no full ResNet training)
+
+```bash
+python3 -m pytest tests/unit/test_anp.py -v
+python3 -m pytest tests/smoke/test_cli_smoke.py -v
+```
+
+The unit tests use a small fake module to check mask bounds, perturbation limits,
+pruning behavior, and state dict loading. The CLI smoke tests exercise command dispatch
+and overwrite protection. Neither test requires a 60-epoch training run.
+
+## Citations
+
+- **ANP**: Dongxian Wu and Yisen Wang. "Adversarial Neuron Pruning Purifies Backdoored Deep Models." *Advances in Neural Information Processing Systems (NeurIPS)*, 34:16913–16925, 2021. ([Paper](https://proceedings.neurips.cc/paper/2021/file/8cbe9ce23f42628c98f80fa0fac8b19a-Paper.pdf))
+- **CLP**: Runkai Zheng, Rongjun Tang, Jianze Li, and Li Liu. "Data-free Backdoor Removal based on Channel Lipschitzness." *European Conference on Computer Vision (ECCV)*, 2022. ([Paper](https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136650171.pdf))
+- **LMR**: Zhenting Wang, Hailun Ding, Juan Zhai, and Shiqing Ma. "Logit-Margin Repulsion for Post-Training Backdoor Removal." *Computer Vision and Pattern Recognition (CVPR)*, 2026.
+
+
 

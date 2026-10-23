@@ -24,6 +24,12 @@ def _repair_kwargs(
 
     #clp parameters
     clp_threshold_mult: float = 3.0,
+
+    #anp parameters
+    anp_eps: float = 0.4,
+    anp_alpha: float = 0.2,
+    anp_steps: int = 10,
+    anp_prune_threshold: float = 0.2,
 ) -> dict[str, Any]:
     stem = Path(model).stem
     return {
@@ -40,6 +46,11 @@ def _repair_kwargs(
         "lmr_prune_ratio": lmr_prune_ratio,
         #clp parameters
         "clp_threshold_mult": clp_threshold_mult,
+        #anp parameters
+        "anp_eps": anp_eps,
+        "anp_alpha": anp_alpha,
+        "anp_steps": anp_steps,
+        "anp_prune_threshold": anp_prune_threshold,
     }
 
 def _run_repair(repair_kwargs: dict[str, Any]) -> dict[str, Any]:

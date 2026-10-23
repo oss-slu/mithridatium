@@ -26,7 +26,7 @@ from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
-#from mithridatium.repair.anp import run_anp
+from mithridatium.repair.anp import run_anp
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.repair import run_lmr
@@ -45,7 +45,7 @@ EXIT_IO_ERROR = 74        # input exists but can't be opened/read
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
-REPAIR_METHODS = {"lmr", "clp"}
+REPAIR_METHODS = {"lmr", "clp", "anp"}
 
 DETECT_METHODS = {"scaleup", "ted"}
 
@@ -774,7 +774,7 @@ def repair(
     ),
     method: str = typer.Option(
         "lmr", "--method", "-M",
-        help="The repair method to run: 'lmr' or 'clp'.",
+        help="The repair method to run: 'lmr', 'clp', or 'anp'.",
     ),
     data: str = typer.Option(
         "cifar10", "--data", "-d",
@@ -1012,17 +1012,44 @@ def repair(
             typer.secho(f"Error: failed to run CLP repair on model '{model_path}'.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
     elif method == "anp":
-        # Placeholder for ANP repair dispatch
-        # Reuse output and report handling like CLP
-        if out.exists() and not force:
-            typer.secho(f"Error: output file already exists: {out}. Use --force to overwrite.", err=True)
-            raise typer.Exit(code=EXIT_CANT_CREATE)
-        if report_path != Path("-") and report_path.exists() and not force:
-            typer.secho(f"Error: report file already exists: {report_path}. Use --force to overwrite.", err=True)
-            raise typer.Exit(code=EXIT_CANT_CREATE)
+        # Checks ANP parameters
+        if not (math.isfinite(anp_eps) and anp_eps >= 0):
+            typer.secho("Error: --anp-eps must be finite and nonnegative.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not (math.isfinite(anp_alpha) and 0 <= anp_alpha <= 1):
+            typer.secho("Error: --anp-alpha must be between 0 and 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_steps < 1:
+            typer.secho("Error: --anp-steps must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not (math.isfinite(anp_prune_threshold) and 0 <= anp_prune_threshold <= 1):
+            typer.secho("Error: --anp-prune-threshold must be between 0 and 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if clean_samples <= 0:
+            typer.secho("Error: --clean-samples must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+        model_path = Path(model)
+        if not model_path.exists() or not model_path.is_file():
+            typer.secho(f"Error: model path not found or not a file: {model_path}", err=True)
+            raise typer.Exit(code=EXIT_NO_INPUT)
+
+        report_path = report if report is not None else out.with_suffix(".json")
+        destinations = [out]
+        if str(report_path) != "-":
+            destinations.append(report_path)
+            if out.resolve() == report_path.resolve():
+                typer.secho("Error: checkpoint and report must have different paths.", err=True)
+                raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+        for path in destinations:
+            if path.exists() and not force:
+                typer.secho(f"Error: output file already exists: {path}. Use --force to overwrite.", err=True)
+                raise typer.Exit(code=EXIT_CANT_CREATE)
+
         try:
             run_anp(
-                model_path=model,
+                model_path=str(model_path),
                 out=str(out),
                 report=str(report_path),
                 eps=anp_eps,
