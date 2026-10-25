@@ -45,6 +45,7 @@ dev = [
     "pytest-cov",
     "build",
     "twine",
+    "codespell",
 ]
 all = [
     "transformers>=4.40",
@@ -57,6 +58,7 @@ all = [
     "pytest-cov",
     "build",
     "twine",
+    "codespell",
     "fastmcp>=3.4,<4",
     "langchain",
     "langchain-mcp-adapters==0.3.2",
@@ -72,6 +74,8 @@ mithridatium-mcp = "mithridatium.mcp:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Test dirs have no __init__.py; importlib mode lets same-named files coexist.
+addopts = "--import-mode=importlib"
 markers = [
     "unit: fast tests for isolated functions/classes",
     "integration: tests that exercise multiple modules together",
@@ -81,3 +85,9 @@ markers = [
     "requires_model: tests that require local checkpoint files",
     "requires_hf: tests that require Hugging Face model downloads or cached HF models",
 ]
+
+[tool.codespell]
+skip = "*.pth,*.npy,data,models,reports,*/docs/assets,*.egg-info"
+
+# Test-dataset variable in scripts/verify_scaleup.py.
+ignore-words-list = "te"

@@ -31,7 +31,7 @@ def _uclc_score(weight: torch.Tensor, bn: nn.BatchNorm2d) -> torch.Tensor:
     return sigma * scale.abs()
 
 
-# Turns off the channels that score way above the rest and returns indexs of the possliby backdoored channels
+# Turns off the channels that score way above the rest and returns indices of the possibly backdoored channels
 def _prune_channels(bn: nn.BatchNorm2d, score: torch.Tensor, threshold_mult: float) -> list[int]:
     if score.numel() != bn.num_features:
         raise ValueError(f"score has {score.numel()} channels but BN has {bn.num_features}")

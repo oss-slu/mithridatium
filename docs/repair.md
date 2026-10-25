@@ -29,6 +29,22 @@ Currently supported:
 | **LMR** | **Small clean set** (~500 images) | **Yes** (`--lmr-target-class`) | Linear output layer | Moderate (~1–2 minutes) | You already identified the suspected target class (e.g. from an audit) and want targeted logit suppression. |
 
 
+## Useful flags
+
+| Flag | Role |
+|---|---|
+| `--model` / `-m` | Local checkpoint (`.pth` / `.pt`) to repair. |
+| `--method` / `-M` | Repair method (`lmr` or `clp`). |
+| `--data` / `-d` | LMR: dataset name for clean samples (e.g. `cifar10`). |
+| `--clean-samples` / `-c` | LMR: maximum number of clean samples to use (positive integer; default `500`). |
+| `--seed` / `-s` | LMR: random seed for reproducibility. |
+| `--out` / `-o` | Path for the repaired output checkpoint (`.pth` / `.pt`). |
+| `--report` / `-r` | Path for the JSON report, or `-` for stdout. Defaults to a sidecar beside `--out`. |
+| `--force` / `-f` | Overwrite the checkpoint or report if it already exists. |
+| `--lmr-target-class` | LMR: zero-based target class to repair (required; must be below the model's class count). |
+| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (required; at least `0` and less than `1`). |
+| `--clp-threshold-mult` | CLP: finite, nonnegative pruning threshold multiplier (default `3.0`). |
+
 ## LMR (Logit-Margin Repulsion)
 
 The repair command is designed so additional repair methods can be added in the future through the `--method` option.
@@ -131,6 +147,8 @@ The unit tests use a small fake ResNet-like module to check scoring, pruning,
 and report/checkpoint output. The CLI smoke tests exercise command dispatch
 and overwrite protection. Neither test requires a 60-epoch training run.
 
+More copy-paste examples: [Sample commands](testing/sample-commands.md).
+
 ## ANP (Adversarial Neuron Pruning)
 
 ANP is a **white-box, optimization-based** model repair method (Wu & Wang, NeurIPS 2021).
@@ -205,6 +223,3 @@ and overwrite protection. Neither test requires a 60-epoch training run.
 - **ANP**: Dongxian Wu and Yisen Wang. "Adversarial Neuron Pruning Purifies Backdoored Deep Models." *Advances in Neural Information Processing Systems (NeurIPS)*, 34:16913–16925, 2021. ([Paper](https://proceedings.neurips.cc/paper/2021/file/8cbe9ce23f42628c98f80fa0fac8b19a-Paper.pdf))
 - **CLP**: Runkai Zheng, Rongjun Tang, Jianze Li, and Li Liu. "Data-free Backdoor Removal based on Channel Lipschitzness." *European Conference on Computer Vision (ECCV)*, 2022. ([Paper](https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136650171.pdf))
 - **LMR**: Zhenting Wang, Hailun Ding, Juan Zhai, and Shiqing Ma. "Logit-Margin Repulsion for Post-Training Backdoor Removal." *Computer Vision and Pattern Recognition (CVPR)*, 2026.
-
-
-

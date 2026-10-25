@@ -74,6 +74,10 @@ We use labels to organize contributions:
 
 - Work on your branch locally. Implement your changes and test them thoroughly to ensure they work correctly.
 - For any CLI or defense module changes, please include examples of expected input/output in the pull request.
+- Run `codespell` locally before committing or opening a PR to catch any typos in code, comments, or documentation:
+  ```bash
+  codespell
+  ```
 
 ### 3. Commit Your Changes
 
@@ -95,9 +99,10 @@ We use labels to organize contributions:
 - Navigate to your fork on GitHub and click the **Pull Request** button.
 - Ensure your PR:
   - References the related issue number (e.g., `Fixes #123`).
+  - Passes all tests and the `codespell` check locally.
   - Provides a clear description of what was changed and why.
   - Includes relevant tests or screenshots where applicable.
-  - follow the Pull Request template.
+  - Follows the Pull Request template.
 
 ---
 
@@ -109,10 +114,18 @@ We use labels to organize contributions:
 
 - Update documentation as necessary. If your change impacts functionality, be sure to update the corresponding documentation in the **Help** or **README** files.
 
-### 1. Structure
+### 2. Structure
 
 - New defenses should be added inside the defenses/ folder with their own module.
 - Tests for new features should be placed in the tests/ folder.
+
+### 3. Code Quality and Spell Checking
+
+- Ensure that all code, help strings, and documentation are free of typos. You can install the development dependencies and run the spell checker locally with:
+  ```bash
+  pip install -e ".[dev]"
+  codespell
+  ```
 
 ---
 
@@ -124,7 +137,7 @@ We use labels to organize contributions:
 
 ### 2. Reporting Bugs
 
-- IFile a GitHub issue labeled bug and describe how to reproduce the problem, expected vs. actual behavior, and environment details.
+- File a GitHub issue labeled bug and describe how to reproduce the problem, expected vs. actual behavior, and environment details.
 
 ---
 
