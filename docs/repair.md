@@ -44,6 +44,11 @@ Currently supported:
 | `--lmr-target-class` | LMR: zero-based target class to repair (required; must be below the model's class count). |
 | `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (required; at least `0` and less than `1`). |
 | `--clp-threshold-mult` | CLP: finite, nonnegative pruning threshold multiplier (default `3.0`). |
+| `--anp-eps` | ANP: perturbation bound ε (finite, nonnegative; default `0.4`). |
+| `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
+| `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `10`). |
+| `--anp-prune-threshold` | ANP: prune channels whose mask is at or below this value (between `0` and `1`; default `0.2`). |
+
 
 ## LMR (Logit-Margin Repulsion)
 
