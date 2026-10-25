@@ -34,10 +34,10 @@ Currently supported:
 | Flag | Role |
 |---|---|
 | `--model` / `-m` | Local checkpoint (`.pth` / `.pt`) to repair. |
-| `--method` / `-M` | Repair method (`lmr` or `clp`). |
-| `--data` / `-d` | LMR: dataset name for clean samples (e.g. `cifar10`). |
+| `--method` / `-M` | Repair method (`lmr`, `clp`, or `anp`). |
+| `--data` / `-d` | LMR/ANP: dataset name for clean samples (e.g. `cifar10`). |
 | `--clean-samples` / `-c` | LMR: maximum number of clean samples to use (positive integer; default `500`). |
-| `--seed` / `-s` | LMR: random seed for reproducibility. |
+| `--seed` / `-s` | LMR/ANP: random seed for reproducibility. |
 | `--out` / `-o` | Path for the repaired output checkpoint (`.pth` / `.pt`). |
 | `--report` / `-r` | Path for the JSON report, or `-` for stdout. Defaults to a sidecar beside `--out`. |
 | `--force` / `-f` | Overwrite the checkpoint or report if it already exists. |
