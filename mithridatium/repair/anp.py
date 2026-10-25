@@ -6,8 +6,6 @@
 # Research: Dongxian Wu and Yisen Wang, NeurIPS 2021.
 # Changes: Mithridatium model loading, BN pruning, checkpoint export,
 # clean/triggered evaluation, and report generation.
-# NOTE: The upstream license restricts commercial use. Confirm license
-# compatibility with the Mithridatium maintainers before merging.
 
 """Repair a backdoored ResNet-18 using Adversarial Neuron Pruning (ANP)."""
 
