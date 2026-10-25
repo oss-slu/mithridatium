@@ -20,6 +20,22 @@ Currently supported:
 - 'clp' - Channel Lipschitzness-based Pruning repair
 
 
+## Useful flags
+
+| Flag | Role |
+|---|---|
+| `--model` / `-m` | Local checkpoint (`.pth` / `.pt`) to repair. |
+| `--method` / `-M` | Repair method (`lmr` or `clp`). |
+| `--data` / `-d` | LMR: dataset name for clean samples (e.g. `cifar10`). |
+| `--clean-samples` / `-c` | LMR: maximum number of clean samples to use (positive integer; default `500`). |
+| `--seed` / `-s` | LMR: random seed for reproducibility. |
+| `--out` / `-o` | Path for the repaired output checkpoint (`.pth` / `.pt`). |
+| `--report` / `-r` | Path for the JSON report, or `-` for stdout. Defaults to a sidecar beside `--out`. |
+| `--force` / `-f` | Overwrite the checkpoint or report if it already exists. |
+| `--lmr-target-class` | LMR: zero-based target class to repair (required; must be below the model's class count). |
+| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (required; at least `0` and less than `1`). |
+| `--clp-threshold-mult` | CLP: finite, nonnegative pruning threshold multiplier (default `3.0`). |
+
 ## LMR (Logit-Margin Repulsion)
 
 The repair command is designed so additional repair methods can be added in the future through the `--method` option.
@@ -122,3 +138,4 @@ The unit tests use a small fake ResNet-like module to check scoring, pruning,
 and report/checkpoint output. The CLI smoke tests exercise command dispatch
 and overwrite protection. Neither test requires a 60-epoch training run.
 
+More copy-paste examples: [Sample commands](testing/sample-commands.md).
