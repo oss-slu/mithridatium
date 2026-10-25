@@ -1052,6 +1052,7 @@ def repair(
                 model_path=str(model_path),
                 out=str(out),
                 report=str(report_path),
+                data=data,
                 eps=anp_eps,
                 alpha=anp_alpha,
                 steps=anp_steps,
