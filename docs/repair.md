@@ -156,6 +156,8 @@ More copy-paste examples: [Sample commands](testing/sample-commands.md).
 
 ## ANP (Adversarial Neuron Pruning)
 
+**DO NOT USE ANP IN ITS CURRENT STATE IT CURRENTLY HAS SEVERAL BUGS**
+
 ANP is a **white-box, optimization-based** model repair method (Wu & Wang, NeurIPS 2021).
 It identifies and suppresses backdoor neurons by exploiting their disproportionate sensitivity
 to adversarial perturbations. It wraps each BatchNorm layer with a learned continuous mask and
