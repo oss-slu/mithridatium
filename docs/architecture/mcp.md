@@ -34,6 +34,15 @@ Run the server and the agent on a machine where PyTorch imports successfully.
 | `run_freeeagle` | FreeEagle |
 
 
+
+### Repair 
+| Tool       | Method |
+| ---------- | ------ |
+| `run_clp`  | CLP    |
+| `run_lmr`  | LMR    |
+| `run_anp`  | ANP    |
+
+
 Each tool takes the same general inputs as the CLI: `model`, `data`, `arch`, `provider`, and `hf_model_id`. Defense-specific options use the same names as the CLI flags, with underscores instead of hyphens (`freeeagle_anomaly_threshold`, `strip_mad_scale`, and so on).
 
 Defaults match a local CIFAR-10 ResNet-18 checkpoint at `models/resnet18.pth`. Pass the checkpoint path you actually want to audit.
@@ -79,9 +88,10 @@ The detect and repair agents work the same way:
 ```bash
 python -m mithridatium.mcp.detect_agent "Run TED on models/resnet18_poison.pth"
 python -m mithridatium.mcp.repair_agent "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
+python -m mithridatium.mcp.repair_agent "Run ANP on models/resnet18_poison.pth"
 ```
 
-With no prompt, the detect agent runs SCALE-UP and the repair agent runs CLP on `models/resnet18_poison.pth`. Each agent only receives its own tools. The detect agent's tools are `run_scaleup`, `run_ted` and `run_ibdpsc`, and their options use the CLI flag names with underscores (`ibdpsc_scale`, `ibdpsc_num_models`, and so on). From Python, call `audit_agent()`, `detect_agent()` or `repair_agent()` with the prompt string.
+With no prompt, the detect agent runs SCALE-UP and the repair agent runs CLP on `models/resnet18_poison.pth`. Each agent only receives its own tools. The repair agent supports `run_clp`, `run_lmr`, and `run_anp`. The detect agent's tools are `run_scaleup`, `run_ted` and `run_ibdpsc`, and their options use the CLI flag names with underscores (`ibdpsc_scale`, `ibdpsc_num_models`, and so on). From Python, call `audit_agent()`, `detect_agent()` or `repair_agent()` with the prompt string.
 
 The printed reply is a short verdict summary. The full report is the JSON file under `reports/`.
 

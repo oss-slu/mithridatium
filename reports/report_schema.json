@@ -217,6 +217,50 @@
 				}
 			}
 		},
+
+		{
+			"if": {
+				"properties": { "method": { "const": "anp" } },
+				"required": ["method"]
+			},
+			"then": {
+				"properties": {
+					"results": {
+						"required": [
+							"method", "status", "total_channels_pruned",
+							"clean_accuracy_before", "clean_accuracy_after"
+						],
+						"properties": {
+							"method": { "const": "anp" },
+							"status": { "type": "string" },
+							"total_channels_pruned": { "type": "integer", "minimum": 0 },
+							"layer_breakdown": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"required": ["layer", "channels_pruned"],
+									"properties": {
+										"layer": { "type": "string" },
+										"channels_pruned": { "type": "integer", "minimum": 1 },
+										"indices": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+									}
+								}
+							},
+							"clean_accuracy_before": { "type": "number", "minimum": 0, "maximum": 1 },
+							"clean_accuracy_after": { "type": "number", "minimum": 0, "maximum": 1 },
+							"asr_before": { "type": "number", "minimum": 0, "maximum": 1 },
+							"asr_after": { "type": "number", "minimum": 0, "maximum": 1 },
+							"asr_evaluation_samples": { "type": "integer", "minimum": 1 }
+						},
+						"dependencies": {
+							"asr_before": ["asr_after", "asr_evaluation_samples"],
+							"asr_after": ["asr_before", "asr_evaluation_samples"],
+							"asr_evaluation_samples": ["asr_before", "asr_after"]
+						}
+					}
+				}
+			}
+		},
     		{
 			"if": {
 				"properties": {

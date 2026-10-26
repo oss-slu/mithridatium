@@ -52,6 +52,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 ## Handoff
 
 - [Tech lead handoff](handoff/tech-lead-handoff.md)
+- [Add a capability](handoff/add-a-capability.md): files to touch for a new defense, detect/repair method, or CLI verb
 - [Known issues](handoff/known-issues.md)
 - [Future work](handoff/future-work.md)
 
