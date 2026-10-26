@@ -9,11 +9,11 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from mithridatium.mcp.audit_agent import _load_mithridatium_mcp
 
-DETECT_TOOLS = {"run_scaleup", "run_ted"}
+DETECT_TOOLS = {"run_scaleup", "run_ted", "run_ibdpsc"}
 
 DETECT_SYSTEM_PROMPT = """
 You run poisoning detection on image-classification checkpoints.
-Tools: run_scaleup, run_ted.
+Tools: run_scaleup, run_ted, run_ibdpsc (IBD-PSC).
 Pass the model path the user gives. Unless they say otherwise, use
 data='cifar10'.
 Run only the methods they name. If they name none, run run_scaleup.

@@ -199,6 +199,119 @@ def test_cli_detect_scaleup_writes_schema_valid_report(tmp_path, monkeypatch):
     assert results["parameters"]["scales"] == [3.0, 5.0, 7.0, 9.0, 11.0]
 
 
+def _patch_detect_inputs(monkeypatch, toy, data):
+    from torch.utils.data import DataLoader
+
+    from mithridatium import cli
+    from mithridatium.utils import get_preprocess_config
+
+    cfg = get_preprocess_config("cifar10")
+    monkeypatch.setattr(cli.loader, "detect_and_build", lambda *a, **k: (toy, None))
+    monkeypatch.setattr(cli.utils, "dataloader_for", lambda *a, **k: (DataLoader(data, batch_size=16), cfg))
+
+
+def test_cli_detect_ibdpsc_writes_schema_valid_report(tmp_path, monkeypatch):
+    import torch
+    from torch.utils.data import TensorDataset
+
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+    out_path = tmp_path / "detect_ibdpsc.json"
+
+    class Flip(torch.nn.Module):
+        """Predicts class 1 until its one BN layer is amplified by 1.5, then class 0, so layer selection stops at k = 1."""
+
+        def __init__(self):
+            super().__init__()
+            self.bn = torch.nn.BatchNorm2d(1)
+            torch.nn.init.ones_(self.bn.bias)
+
+        def forward(self, x):
+            z = self.bn(x[:, :1]).mean((1, 2, 3))
+            return torch.stack([z, torch.full_like(z, 1.25)], 1)
+
+    x = 0.01 * torch.randn(32, 3, 32, 32, generator=torch.Generator().manual_seed(0))
+    _patch_detect_inputs(monkeypatch, Flip(), TensorDataset(x, torch.ones(32, dtype=torch.long)))
+
+    result = runner.invoke(
+        app,
+        [
+            "detect",
+            "--model",
+            str(fake_model),
+            "--method",
+            "ibdpsc",
+            "--data",
+            "cifar10",
+            "--ibdpsc-num-samples",
+            "8",
+            "--ibdpsc-clean-samples",
+            "16",
+            "--out",
+            str(out_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    rpt.validate_report_data(payload)
+
+    results = payload["results"]
+    assert results["mode"] == "input-level"
+    assert results["method"] == "ibdpsc"
+    assert results["num_inputs"] == 8
+    assert len(results["per_sample"]) == 8
+    assert results["parameters"]["scale"] == 1.5
+    assert results["parameters"]["start_layer"] == 1
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        {"ibdpsc_scale": float("nan")},
+        {"ibdpsc_scale": float("inf")},
+        {"ibdpsc_num_models": 0},
+        {"ibdpsc_clean_samples": 0},
+        {"ibdpsc_num_samples": -1},
+        {"ibdpsc_threshold": 1.0},
+        {"ibdpsc_threshold": float("nan")},
+    ],
+)
+def test_cli_detect_ibdpsc_rejects_bad_options_when_called_directly(tmp_path, option):
+    """The MCP tool calls detect() as a function, where typer's own range checks never run."""
+    import typer
+
+    from mithridatium.cli import detect
+
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+    defaults = {p.name: p.default for p in get_command(app).commands["detect"].params}
+
+    with pytest.raises(typer.Exit) as exited:
+        detect(**{**defaults, "model": str(fake_model), "method": "ibdpsc", "out": str(tmp_path / "r.json"), **option})
+
+    assert exited.value.exit_code == EXIT_USAGE_ERROR
+
+
+def test_cli_detect_ibdpsc_rejects_model_without_batchnorm(tmp_path, monkeypatch):
+    import torch
+    from torch.utils.data import TensorDataset
+
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+
+    toy = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(3 * 32 * 32, 10))
+    _patch_detect_inputs(monkeypatch, toy, TensorDataset(torch.randn(4, 3, 32, 32), torch.zeros(4, dtype=torch.long)))
+
+    result = runner.invoke(
+        app,
+        ["detect", "--model", str(fake_model), "--method", "ibdpsc", "--out", str(tmp_path / "r.json")],
+    )
+
+    assert result.exit_code == EXIT_USAGE_ERROR
+    assert "batchnorm" in result.stderr.lower()
+
+
 
 def test_cli_detect_refuses_overwrite_without_force(tmp_path):
     fake_model = tmp_path / "fake.pth"
