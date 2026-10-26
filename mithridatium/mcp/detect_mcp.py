@@ -58,7 +58,7 @@ def _run_detect(detect_kwargs: dict[str, Any]) -> dict[str, Any]:
     saved = reports / f"{Path(detect_kwargs['model']).stem}_{detect_kwargs['method']}.json"
     with _catch_output():
         detect(**detect_kwargs, out=str(saved), force=True)
-    return json.loads(Path(saved).read_text())
+    return {"report_path": str(saved), "report": json.loads(saved.read_text())}
 
 @mcp.tool(run_in_thread=False)
 def run_scaleup(

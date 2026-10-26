@@ -17,8 +17,8 @@ Tools: run_scaleup, run_ted, run_ibdpsc (IBD-PSC).
 Pass the model path the user gives. Unless they say otherwise, use
 data='cifar10'.
 Run only the methods they name. If they name none, run run_scaleup.
-Report each method's verdict and how many inputs it flagged from the tool
-result. Do not invent metrics.
+Report each method's verdict, how many inputs it flagged, and its
+report_path from the tool result. Do not invent metrics.
 """
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
