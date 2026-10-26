@@ -16,7 +16,8 @@ Tools: run_mmbd, run_strip, run_aeva, run_freeeagle.
 Pass the model path the user gives. Unless they say otherwise, use
 data='cifar10', arch='resnet18', provider='torchvision'.
 Run only the defenses they name. If they name none, run run_mmbd.
-Report each defense's verdict from the tool result. Do not invent metrics.
+Report each defense's verdict, its suspected_target if the report has one,
+and its report_path from the tool result. Do not invent metrics.
 """
 
 def _server_env() -> dict[str, str]:

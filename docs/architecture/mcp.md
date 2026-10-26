@@ -49,7 +49,7 @@ Defaults match a local CIFAR-10 ResNet-18 checkpoint at `models/resnet18.pth`. P
 
 ## Reports
 
-A tool writes the report before it returns the JSON to the caller:
+A tool writes the report before it returns `{"report_path": ..., "report": ...}` to the caller:
 
 ```text
 reports/<checkpoint-stem>_<defense>.json
