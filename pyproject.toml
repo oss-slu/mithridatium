@@ -18,6 +18,7 @@ dependencies = [
     "pyod>=1.1",
     "scikit-learn",
     "torchmetrics",
+    "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
