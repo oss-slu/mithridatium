@@ -111,7 +111,7 @@ def run_mmbd(
     provider: str = "torchvision",
     hf_model_id: str = "microsoft/resnet-50",
 ):
-    """Run a MBBD audit and return the mithridatium audit report."""
+    """Run an MMBD audit and return the mithridatium audit report."""
     return _run_audit(_audit_kwargs(
         "mmbd", 
         model=model,
