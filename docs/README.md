@@ -35,6 +35,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [AEVA](defenses/aeva.md)
 - [TED](defenses/ted.md) (`detect`, input-level)
 - [SCALE-UP](defenses/scaleup.md) (`detect`, input-level)
+- [IBD-PSC](defenses/ibdpsc.md) (`detect`, input-level)
 
 ## Detect and repair
 
