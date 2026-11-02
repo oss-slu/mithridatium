@@ -308,6 +308,7 @@ def test_cli_repair_clp_overwrite_requires_force(tmp_path, monkeypatch):
     assert len(calls) == 1
     assert out.read_bytes() == b"new"
     assert report.read_text(encoding="utf-8") == "new"
+    
 def test_cli_detect_ted_writes_schema_valid_report(tmp_path, monkeypatch):
     import torch
     from torch.utils.data import DataLoader, TensorDataset
