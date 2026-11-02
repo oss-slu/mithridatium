@@ -1,54 +1,37 @@
 # This is the test code of TED defense.
 # Robust Backdoor Detection for Deep Learning via Topological Evolution Dynamics [IEEE, 2024] (https://arxiv.org/abs/2312.02673)
 
-from torchvision.utils import save_image
 import os
-import random
 from collections import Counter, defaultdict
 from tqdm import tqdm
 import numpy as np
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import pickle
 from sklearn import metrics
 from sklearn.decomposition import PCA as sklearn_PCA
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from pyod.models.pca import PCA
-from umap import UMAP
-from numpy.random import choice
 import torch
 torch.cuda.empty_cache()
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.data as data
 from torchmetrics.functional import pairwise_euclidean_distance
 import plotly.express as px
-import config
-from utils import supervisor, tools
-from utils.resnet import ResNet18, ResNet34
-from utils.supervisor import get_transforms
-from other_defenses_tool_box.tools import generate_dataloader
-from other_defenses_tool_box.backdoor_defense import BackdoorDefense
-from networks.models import Generator, NetC_MNIST
-from defense_dataloader import get_dataset, get_dataloader
-import seaborn as sns
 import math
-import seaborn as sns
-from matplotlib.lines import Line2D
 import time
-import matplotlib.font_manager as fm
+
 
 # ------------------------------
 # Seed settings for reproducibility
 # ------------------------------
-# Set seed for Python
-random.seed(42)
-# Set seed for NumPy
-np.random.seed(42)
-# Set seed for PyTorch
-torch.manual_seed(42)
+# # Set seed for Python
+# random.seed(42)
+# # Set seed for NumPy
+# np.random.seed(42)
+# # Set seed for PyTorch
+# torch.manual_seed(42)
 # Optionally set the CUDA seed if a GPU is used
 if torch.cuda.is_available():
     torch.cuda.manual_seed(42)
@@ -57,117 +40,60 @@ if torch.cuda.is_available():
 
 # ------------------------------
 
-class TEDPLUS(BackdoorDefense):
-    def __init__(self, args):
-        super().__init__(args)  # Call the constructor of the parent class, BackdoorDefense
-        self.args = args
-
+class TEDPLUS():
+    def __init__(self, 
+                 model, 
+                 reference_data, 
+                 suspect_data, 
+                 reference_size=1000,
+                 contamination=0.01,
+                 batch_size=100,
+                 device="cpu"):
+        
         # 1) Model configuration
+        self.model = model
+        self.ref_dat = reference_data
+        self.sus_dat = suspect_data
+        self.ref_size = reference_size
+        self.contam = contamination
+        self.batch_size = batch_size
+        self.device = device
+
         self.model.eval()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
-        print(self.poison_type)
 
-        # 2) Define the backdoor target class
-        self.target = self.target_class
-        print(f"Target Class: {self.target}")
-
-        # 3) Load the full test set
-        if self.poison_type == 'SSDT':
-            self.test_loader = get_dataloader(args, train=False)
-            self.testset = get_dataset(args, train=False)
-        else:
-            self.test_loader = generate_dataloader(
-                dataset=self.dataset,
-                dataset_path=config.data_dir,
-                batch_size=50,
-                split='test',
-                data_transform=None,
-                shuffle=False,
-                drop_last=False,
-                noisy_test=False
-            )
-            self.testset = self.test_loader.dataset
-
-        print(f"Number of samples in full test set: {len(self.testset)}")
 
         # 4) Split the full test set into 10% (defense/validation) and 90% (final test)
-        all_indices = np.arange(len(self.testset))
-        defense_indices, test_indices = train_test_split(all_indices, test_size=0.1, random_state=42)
+        self.reference_loader = data.DataLoader(
+            reference_data, batch_size=batch_size, shuffle=False
+        )
 
-        # Create subsets for defense and test sets
-        self.defense_subset = data.Subset(self.testset, defense_indices)
-        self.testset = data.Subset(self.testset, test_indices)
+        self.suspect_loader = data.DataLoader(
+            suspect_data, batch_size=batch_size, shuffle=False
+        )
 
-        # Create DataLoaders for defense and test sets
-        self.defense_loader = data.DataLoader(self.defense_subset, batch_size=50, shuffle=True, num_workers=0)
-        self.test_loader = data.DataLoader(self.testset, batch_size=50, shuffle=False, num_workers=0)
-
-        print(f"Number of samples in defense set (90% of test): {len(self.defense_subset)}")
-        print(f"Number of samples in final test set (10% of test): {len(self.testset)}")
-
-        # 5) Determine unique classes by scanning the defense set
-        all_labels = []
-        for _, labels in self.defense_loader:
-            all_labels.extend(labels.tolist())
-        unique_classes = set(all_labels)
-        num_classes = len(unique_classes)
-        print(f"Number of unique classes (from defense set): {num_classes}")
-        print(f"Expected number of classes from args: {self.num_classes}")
-
-        # 6) Set defense training parameters
-        self.SAMPLES_PER_CLASS = args.validation_per_class
-        self.DEFENSE_TRAIN_SIZE = self.num_classes * self.SAMPLES_PER_CLASS
-        self.ALPHA = 0.5
-        self.CLASS_RATIO = args.class_ratio
-        self.NUM_MISSING_CLASS = math.ceil(self.CLASS_RATIO * self.num_classes)
-        # 7) Define number of neighbors and samples for constructing poison/clean sets
-        self.NUM_SAMPLES = args.num_test_samples
-
-        # 8) Create defense subset from the defense set using only correctly predicted samples
-        # Use the defense_subset (10% of test) instead of the training set
-        defense_set = self.defense_subset  # Alias for clarity
-        if isinstance(defense_set, data.Subset):
-            underlying_dataset = defense_set.dataset
-            subset_indices = defense_set.indices
-        else:
-            underlying_dataset = defense_set
-            subset_indices = np.arange(len(defense_set))
-
-        from collections import defaultdict
-        label_to_indices = defaultdict(list)
-        for idx in subset_indices:
-            try:
-                _, label = underlying_dataset[idx]
-                label_to_indices[label].append(idx)
-            except FileNotFoundError:
-                print(f"Warning: File {idx}.png does not exist.")
 
         # Dictionary to store correctly predicted indices per class
-        correct_indices_per_class = defaultdict(list)
-        # Create a DataLoader for the defense set without shuffling to maintain index order
-        defense_loader_no_shuffle = data.DataLoader(defense_set, batch_size=50, num_workers=0, shuffle=False)
-        current_idx = 0
+        correct_positions = []
+        position = 0
 
-        # Evaluate the defense set to collect correctly predicted samples
         with torch.no_grad():
-            for inputs, labels in tqdm(defense_loader_no_shuffle,
-                                       desc="Evaluating defense set for correct predictions"):
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = self.model(inputs)
-                preds = torch.argmax(outputs, dim=1)
-                correct_mask = preds == labels
+            for images, labels in self.reference_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device)
+                predictions = self.model(images).argmax(dim=1)
 
-                # Loop over batch and record correct sample indices
-                for i in range(len(labels)):
-                    if correct_mask[i].item():
-                        if isinstance(defense_set, data.Subset):
-                            sample_idx = subset_indices[current_idx]
-                        else:
-                            sample_idx = current_idx
-                        label = labels[i].item()
-                        correct_indices_per_class[label].append(sample_idx)
-                    current_idx += 1
+                for is_correct in (predictions == labels).cpu().tolist():
+                    if is_correct:
+                        correct_positions.append(position)
+                    position += 1
+
+        filtered_reference = data.Subset(reference_data, correct_positions)
+        self.reference_loader = data.DataLoader(
+            filtered_reference,
+            batch_size=batch_size,
+            shuffle=False,
+        )
 
         # For each class, sample SAMPLES_PER_CLASS correctly predicted samples
         # FIX HERE (1) to remove 2 classes and CREATE self.all_classes (without 2 labels)
@@ -186,13 +112,13 @@ class TEDPLUS(BackdoorDefense):
 
         # Create a new defense subset using the sampled indices and update the defense_loader
         final_defense_subset = data.Subset(underlying_dataset, defense_indices_final)
-        self.defense_loader = data.DataLoader(final_defense_subset, batch_size=50, shuffle=True, num_workers=0)
+        self.reference_loader = data.DataLoader(final_defense_subset, batch_size=50, shuffle=True, num_workers=0)
 
         # 9) Optionally, filter the defense set further to retain only correctly predicted samples
         h_benign_preds = []
         h_benign_ori_labels = []
         with torch.no_grad():
-            for inputs, labels in self.defense_loader:
+            for inputs, labels in self.reference_loader:
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 outputs = self.model(inputs)
                 preds = torch.argmax(outputs, dim=1)
@@ -205,14 +131,12 @@ class TEDPLUS(BackdoorDefense):
         if len(benign_indices) > self.DEFENSE_TRAIN_SIZE:
             benign_indices = np.random.choice(benign_indices, self.DEFENSE_TRAIN_SIZE, replace=False)
         final_defense_subset = data.Subset(underlying_dataset, benign_indices)
-        self.defense_loader = data.DataLoader(final_defense_subset, batch_size=50, shuffle=True, num_workers=0)
+        self.reference_loader = data.DataLoader(final_defense_subset, batch_size=50, shuffle=True, num_workers=0)
 
         # 10) Define temporary labels for Poison and Clean samples
-        self.POISON_TEMP_LABEL = "Poison"
-        self.CLEAN_TEMP_LABEL = "Clean"
+        self.suspect_label = "Suspect"
         self.label_mapping = {
-            "Poison": 101,
-            "Clean": 102
+            "Suspect": 300,
         }
 
         # Initialize counters and temporary containers for Poison and Clean sets
@@ -275,15 +199,6 @@ class TEDPLUS(BackdoorDefense):
                 )
                 index += 1
 
-    def create_bd(self, inputs):
-        """
-        Create backdoor inputs for SSDT
-        """
-        patterns = self.netG(inputs)
-        patterns = self.netG.normalize_pattern(patterns)
-        masks_output = self.netM.threshold(self.netM(inputs))
-        bd_inputs = inputs + (patterns - inputs) * masks_output
-        return bd_inputs
 
     def create_targets(self, targets, label):
         """
@@ -292,178 +207,6 @@ class TEDPLUS(BackdoorDefense):
         new_targets = torch.ones_like(targets) * label
         return new_targets.to(self.device)
 
-    # ==============================
-    #   CREATE POISON & CLEAN SETS
-    # ==============================
-    def generate_poison_clean_sets(self):
-        if self.poison_type == 'TaCT' or self.poison_type == 'SSDT':
-            print(self.poison_type)
-
-            while self.poison_count < self.NUM_SAMPLES or self.clean_count < self.NUM_SAMPLES:
-                for batch_idx, (inputs, labels) in enumerate(self.test_loader):
-                    inputs, labels = inputs.to(self.device), labels.to(self.device)
-
-                    if self.poison_count < self.NUM_SAMPLES:
-                        victim_indices = (labels == config.source_class)
-                        if victim_indices.sum().item() > 0:
-                            victim_inputs = inputs[victim_indices]
-                            victim_labels = labels[victim_indices]
-
-                            if self.poison_type == 'SSDT':
-                                bd_inputs = self.create_bd(victim_inputs)
-                            else:
-                                bd_inputs, _ = self.poison_transform.transform(
-                                    victim_inputs, victim_labels
-                                )
-
-                            preds_bd = torch.argmax(self.model(bd_inputs), dim=1)
-
-                            correct_pred_indices = (preds_bd == self.target)
-                            if correct_pred_indices.sum().item() > 0:
-                                final_poison = bd_inputs[correct_pred_indices]
-                                label_value = self.label_mapping[self.POISON_TEMP_LABEL]
-                                final_poison_targets = self.create_targets(
-                                    victim_labels[correct_pred_indices],
-                                    label_value
-                                )
-                                final_poison_preds = preds_bd[correct_pred_indices]
-
-                                self.temp_poison_inputs_set.append(final_poison.cpu())
-                                self.temp_poison_labels_set.append(final_poison_targets.cpu())
-                                self.temp_poison_pred_set.append(final_poison_preds.cpu())
-
-                                self.poison_count += final_poison.shape[0]
-
-                    if self.clean_count < self.NUM_SAMPLES:
-                        non_victim_indices = (labels != config.source_class)
-                        if non_victim_indices.sum().item() > 0:
-                            clean_inputs = inputs[non_victim_indices]
-                            clean_labels_ori = labels[non_victim_indices]
-                            preds_clean = torch.argmax(self.model(clean_inputs), dim=1)
-
-                            label_value = self.label_mapping[self.CLEAN_TEMP_LABEL]
-                            clean_targets = self.create_targets(
-                                clean_labels_ori, label_value
-                            )
-
-                            self.temp_clean_inputs_set.append(clean_inputs.cpu())
-                            self.temp_clean_labels_set.append(clean_targets.cpu())
-                            self.temp_clean_pred_set.append(preds_clean.cpu())
-                            self.clean_count += clean_inputs.shape[0]
-
-                    if self.poison_count >= self.NUM_SAMPLES and self.clean_count >= self.NUM_SAMPLES:
-                        break
-
-                if self.poison_count >= self.NUM_SAMPLES and self.clean_count >= self.NUM_SAMPLES:
-                    break
-
-            if self.poison_count > self.NUM_SAMPLES:
-                combined_inputs = torch.cat(self.temp_poison_inputs_set, dim=0)[:self.NUM_SAMPLES]
-                combined_labels = torch.cat(self.temp_poison_labels_set, dim=0)[:self.NUM_SAMPLES]
-                combined_preds = torch.cat(self.temp_poison_pred_set, dim=0)[:self.NUM_SAMPLES]
-                self.temp_poison_inputs_set = [combined_inputs]
-                self.temp_poison_labels_set = [combined_labels]
-                self.temp_poison_pred_set = [combined_preds]
-                self.poison_count = self.NUM_SAMPLES
-
-            if self.clean_count > self.NUM_SAMPLES:
-                combined_inputs = torch.cat(self.temp_clean_inputs_set, dim=0)[:self.NUM_SAMPLES]
-                combined_labels = torch.cat(self.temp_clean_labels_set, dim=0)[:self.NUM_SAMPLES]
-                combined_preds = torch.cat(self.temp_clean_pred_set, dim=0)[:self.NUM_SAMPLES]
-                self.temp_clean_inputs_set = [combined_inputs]
-                self.temp_clean_labels_set = [combined_labels]
-                self.temp_clean_pred_set = [combined_preds]
-                self.clean_count = self.NUM_SAMPLES
-
-            torch.cuda.empty_cache()
-
-        else:
-            all_indices = np.arange(len(self.testset))
-            if len(all_indices) < self.NUM_SAMPLES:
-                print(f"Warning: testset size < {self.NUM_SAMPLES}, adjusting.")
-                chosen = all_indices
-            else:
-                chosen = np.random.choice(all_indices, size=self.NUM_SAMPLES, replace=False)
-
-            clean_subset = data.Subset(self.testset, chosen)
-            clean_loader = data.DataLoader(clean_subset, batch_size=50, shuffle=False)
-
-            poison_subset = data.Subset(self.testset, chosen)
-            poison_loader = data.DataLoader(poison_subset, batch_size=50, shuffle=False)
-
-            for (inputs, labels) in clean_loader:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                label_value = self.label_mapping[self.CLEAN_TEMP_LABEL]
-                targets_clean = self.create_targets(labels, label_value)
-                preds = torch.argmax(self.model(inputs), dim=1)
-
-                self.temp_clean_inputs_set.append(inputs.cpu())
-                self.temp_clean_labels_set.append(targets_clean.cpu())
-                self.temp_clean_pred_set.append(preds.cpu())
-                # print(f'self.temp_clean_pred_set: {self.temp_clean_pred_set}')
-                self.clean_count += labels.size(0)
-
-            for (inputs, labels) in poison_loader:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                poisoned_inputs, poisoned_labels = self.poison_transform.transform(inputs, labels)
-                preds_bd = torch.argmax(self.model(poisoned_inputs), dim=1)
-
-                label_value = self.label_mapping[self.POISON_TEMP_LABEL]
-                targets_poison = self.create_targets(labels, label_value)
-
-                self.temp_poison_inputs_set.append(poisoned_inputs.cpu())
-                self.temp_poison_labels_set.append(targets_poison.cpu())
-                self.temp_poison_pred_set.append(preds_bd.cpu())
-
-                self.poison_count += labels.size(0)
-            torch.cuda.empty_cache()
-
-        print(
-            f"Finished generate_poison_clean_sets. Clean_count = {self.clean_count}, Poison_count = {self.poison_count}"
-        )
-
-    def create_poison_clean_dataloaders(self):
-        """
-        Build DataLoaders for both Poison and Clean sets.
-        """
-        # Poison set
-        bd_inputs_set = torch.cat(self.temp_poison_inputs_set, dim=0)
-        bd_labels_set = np.hstack(self.temp_poison_labels_set)
-        bd_pred_set = np.hstack(self.temp_poison_pred_set)
-
-        # Clean set
-        clean_inputs_set = torch.cat(self.temp_clean_inputs_set, dim=0)
-        clean_labels_set = np.hstack(self.temp_clean_labels_set)
-        clean_pred_set = np.hstack(self.temp_clean_pred_set)
-
-        # Define a custom Dataset
-        class CustomDataset(data.Dataset):
-            def __init__(self, data_, labels_):
-                super(CustomDataset, self).__init__()
-                self.images = data_
-                self.labels = labels_
-
-            def __len__(self):
-                return len(self.images)
-
-            def __getitem__(self, index):
-                img = self.images[index]
-                label = self.labels[index]
-                return img, label
-
-        # Create poison_loader
-        poison_set = CustomDataset(bd_inputs_set, bd_labels_set)
-        self.poison_loader = data.DataLoader(poison_set, batch_size=50, num_workers=0, shuffle=True)
-        print("Poison set size:", len(self.poison_loader))
-        print("Poison samples:", len(self.poison_loader.dataset))
-        # Create clean_loader
-        clean_set = CustomDataset(clean_inputs_set, clean_labels_set)
-        self.clean_loader = data.DataLoader(clean_set, batch_size=50, num_workers=0, shuffle=True)
-        print("Clean set size:", len(self.clean_loader))
-        print("Clean samples:", len(self.clean_loader.dataset))
-        # Remove temporary variables
-        del bd_inputs_set, bd_labels_set, bd_pred_set
-        del clean_inputs_set, clean_labels_set, clean_pred_set
 
     # ==============================
     #       HOOK & MAIN TEST
@@ -658,26 +401,18 @@ class TEDPLUS(BackdoorDefense):
           4) Compute topological representations.
           5) (Optional) Visualization and outlier detection steps.
         """
-        print('STEP 1')
-        self.generate_poison_clean_sets()
-
-        print('STEP 2')
-        self.create_poison_clean_dataloaders()
 
         print('STEP 4')
 
-        self.h_defense_ori_labels, self.h_defense_activations, self.h_defense_preds = self.fetch_activation(
-            self.defense_loader)
+        self.h_defense_ori_labels, self.h_defense_activations, self.h_defense_preds = (
+            self.fetch_activation(self.reference_loader)
+        )
         torch.cuda.synchronize()
         begin1 = time.time()
-        self.h_poison_ori_labels, self.h_poison_activations, self.h_poison_preds = self.fetch_activation(
-            self.poison_loader)
-        self.h_clean_ori_labels, self.h_clean_activations, self.h_clean_preds = self.fetch_activation(
-            self.clean_loader)
 
-        print(self.h_defense_preds.size())
-        print(self.h_poison_preds.size())
-        print(self.h_clean_preds.size())
+        self.h_suspect_ori_labels, self.h_suspect_activations, self.h_suspect_preds = self.fetch_activation(
+            self.suspect_loader)
+
 
         unique_defense = []
         unique_poison = []
@@ -699,16 +434,6 @@ class TEDPLUS(BackdoorDefense):
 
         time1 = end1 - begin1
 
-        print('STEP 5')
-        accuracy_defense = self.calculate_accuracy(self.h_defense_ori_labels, self.h_defense_preds)
-
-        poison_GT = torch.ones_like(self.h_poison_preds) * self.target
-        correct_poison = torch.sum(poison_GT == self.h_poison_preds).item()
-        total_poison = len(self.h_poison_preds)
-        accuracy_poison = (correct_poison / total_poison) * 100
-
-        print(f"\nAccuracy on defense_loader (Clean): {accuracy_defense:.2f}%")
-        print(f"Accuracy on poison_loader (Poison) : {accuracy_poison:.2f}%")
 
         print('STEP 7')
         class_names = np.unique(self.h_defense_ori_labels.cpu().numpy())
