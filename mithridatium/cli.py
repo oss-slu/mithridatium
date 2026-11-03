@@ -29,6 +29,7 @@ from mithridatium.repair.clp import repair_clp
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.repair import run_lmr
+from mithridatium.detect import tedpp
 
 try:
     VERSION = package_version("mithridatium")
@@ -46,7 +47,7 @@ app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp"}
 
-DETECT_METHODS = {"scaleup", "ted"}
+DETECT_METHODS = {"scaleup", "ted", "tedpp"}
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
@@ -340,23 +341,6 @@ def audit(
             err=True,
         )
         raise typer.Exit(code=EXIT_IO_ERROR)
-
-    # try:
-    #     detection = run_detection(
-    #         model=model,
-    #         data=data,
-    #         defense=defense,
-    #         progress=print,
-    #     )
-    # except DetectionUsageError as ex:
-    #     typer.secho(f"Error: {ex}", err=True)
-    #     raise typer.Exit(code=EXIT_USAGE_ERROR)
-    # except DetectionNoInputError as ex:
-    #     typer.secho(f"Error: {ex}", err=True)
-    #     raise typer.Exit(code=EXIT_NO_INPUT)
-    # except (DetectionIOError, DetectionExecutionError) as ex:
-    #     typer.secho(f"Error: {ex}", err=True)
-    #     raise typer.Exit(code=EXIT_IO_ERROR)
 
     print("[cli] building dataloader…")
     try:
@@ -682,7 +666,29 @@ def detect(
                 contamination=ted_contamination,
                 device=get_device(0),
             )
+        elif m =="tedpp":
+            test_ds, train_ds = test_loader.dataset, train_loader.dataset
+
+            tedpp_object = tedpp.TEDPLUS(mdl,
+                                         reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+                                         suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
+                                         reference_size=ted_reference_size,
+                                         contamination=ted_contamination,
+                                         device="cpu"       # TODO: Support for running algorithm on gpu/cuda 
+                                 )
+
+            results = tedpp(
+                mdl,
+                # 2x headroom for the misclassified images ted() drops from the reference set
+                reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+                suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
+                reference_size=ted_reference_size,
+                contamination=ted_contamination,
+                device=get_device(0),
+            )
         else:
+
+
             results = run_scaleup(
                 mdl,
                 config,
