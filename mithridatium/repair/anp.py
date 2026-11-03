@@ -226,6 +226,8 @@ def prune_by_threshold(model, scores, threshold):
             continue
         if name not in scores:
             continue
+        if name == "bn1" or "downsample" in name:
+            continue
         indices = torch.where(scores[name] <= threshold)[0]
         with torch.no_grad():
             # Changed so the upstream zeroes ONLY the BN weight
