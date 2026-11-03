@@ -25,7 +25,7 @@ Currently supported:
 | Method | Extra Clean Data Needed? | Target Class Required? | Architecture Requirements | Typical Runtime | Best When... |
 |---|---|---|---|---|---|
 | **CLP** | **None** (Data-free) | **No** | Conv2d + BatchNorm2d (ResNet-18) | Fast (< 5 seconds) | You have zero clean images and want an immediate weight-based pruning baseline. |
-| **ANP** | **Small clean set** (~500 images) | **No** | BatchNorm2d (ResNet-18) | Moderate (~1–2 minutes) | You have a small clean validation set, but do not know the backdoor trigger or target class. |
+| **ANP** | **Small clean set** (~500 images) | **No** | BatchNorm2d (ResNet-18) | ~1–2 min (GPU) / ~10–15 min (CPU, 2000 iter) | You have a small clean validation set, but do not know the backdoor trigger or target class. |
 | **LMR** | **Small clean set** (~500 images) | **Yes** (`--lmr-target-class`) | Linear output layer | Moderate (~1–2 minutes) | You already identified the suspected target class (e.g. from an audit) and want targeted logit suppression. |
 
 
@@ -47,7 +47,9 @@ Currently supported:
 | `--anp-eps` | ANP: perturbation bound ε (finite, nonnegative; default `0.4`). |
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
 | `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `10`). |
+| `--anp-iterations` | ANP: number of iterations cycling clean data during mask optimization (positive integer; default `2000`). |
 | `--anp-prune-threshold` | ANP: prune channels whose mask is at or below this value (between `0` and `1`; default `0.2`). |
+| `--anp-prune-fraction` | ANP: prune the lowest-scoring fraction of channels (between `0` and `1`; optional). |
 
 
 ## LMR (Logit-Margin Repulsion)
@@ -156,26 +158,24 @@ More copy-paste examples: [Sample commands](testing/sample-commands.md).
 
 ## ANP (Adversarial Neuron Pruning)
 
-**DO NOT USE ANP IN ITS CURRENT STATE IT CURRENTLY HAS SEVERAL BUGS**
-
 ANP is a **white-box, optimization-based** model repair method (Wu & Wang, NeurIPS 2021).
 It identifies and suppresses backdoor neurons by exploiting their disproportionate sensitivity
-to adversarial perturbations. It wraps each BatchNorm layer with a learned continuous mask and
-applies bounded noise, then zeroes the weights and biases of channels whose learned mask falls
-below a threshold. It requires a small set of clean images (e.g. ~500 CIFAR-10 images), but
+to adversarial perturbations. It wraps each BatchNorm layer with a learned continuous mask on weights
+and applies bounded multiplicative noise, then zeroes the weights of channels whose learned mask falls
+below a threshold (or lowest fraction). It requires a small set of clean images (e.g. ~500 CIFAR-10 images), but
 does **not** require knowing the trigger or backdoor target class.
 
-For each batch of clean images, ANP alternates between maximizing noise within $[-\epsilon, \epsilon]$
+For clean images cycling over `--anp-iterations` (default `2000`), ANP alternates between maximizing noise within $[-\epsilon, \epsilon]$
 and minimizing the combined loss:
 
 `alpha * clean_loss + (1 - alpha) * noisy_loss`
 
-Channels with learned mask values `score <= threshold` are pruned.
+Channels with learned mask values `score <= threshold` (or within `--anp-prune-fraction`) are pruned by zeroing their BatchNorm weight, leaving bias intact to prevent feature drift.
 The `--clean-samples` option sets the number of clean images used (shared, default: `500`),
 `--anp-eps` controls the perturbation bound (default: `0.4`), `--anp-alpha` balances
 clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps
-(default: `10`), and `--anp-prune-threshold` sets the cutoff below which channels are pruned
-(default: `0.2`).
+(default: `10`), `--anp-iterations` controls the total optimization steps (default: `2000`),
+and `--anp-prune-threshold` sets the cutoff below which channels are pruned (default: `0.2`).
 
 ### Run ANP
 

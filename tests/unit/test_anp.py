@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from mithridatium.repair.anp import (
     _replace_bn,
+    prune_by_fraction,
     prune_by_threshold,
     train_masks,
 )
@@ -34,7 +35,7 @@ def test_masks_stay_within_zero_to_one():
     model = TinyModel()
     loader = get_fake_loader()
 
-    scores = train_masks(model, loader, eps=0.2, alpha=0.2, steps=2)
+    scores = train_masks(model, loader, eps=0.2, alpha=0.2, steps=2, iterations=4)
 
     # Masks should stay between 0 and 1
     for name, mask in scores.items():
@@ -46,12 +47,14 @@ def test_perturbations_respect_epsilon():
     loader = get_fake_loader()
     eps = 0.25
 
-    train_masks(model, loader, eps=eps, steps=2)
+    train_masks(model, loader, eps=eps, steps=2, iterations=4)
 
-    # Noise added to the BatchNorm
+    # Noise added to the BatchNorm (checking both weight and bias noise)
     noise = model.bn.neuron_noise
     assert (noise >= -eps).all()
     assert (noise <= eps).all()
+    assert (model.bn.bias_noise >= -eps).all()
+    assert (model.bn.bias_noise <= eps).all()
 
 
 def test_pruning_zeroes_selected_neurons():
@@ -71,17 +74,32 @@ def test_pruning_zeroes_selected_neurons():
     assert pruned[0]["layer"] == "bn"
     assert pruned[0]["indices"] == [0, 2]
 
-    # Selected neurons are zeroed
+    # Selected neurons have weight zeroed, but bias remains intact (upstream ANP design)
     assert model.bn.weight[0] == 0.0
     assert model.bn.weight[2] == 0.0
-    assert model.bn.bias[0] == 0.0
-    assert model.bn.bias[2] == 0.0
+    assert model.bn.bias[0] == 0.1
+    assert model.bn.bias[2] == 0.3
 
     # Unselected neurons keep their values
     assert model.bn.weight[1] == 2.0
     assert model.bn.weight[3] == 4.0
     assert model.bn.bias[1] == 0.2
     assert model.bn.bias[3] == 0.4
+
+
+def test_prune_by_fraction():
+    model = TinyModel()
+    model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    _replace_bn(model)
+
+    # Lowest 25% (1 out of 4) is channel 0 (score 0.05)
+    scores = {"bn": torch.tensor([0.05, 0.8, 0.2, 0.9])}
+    pruned = prune_by_fraction(model, scores, fraction=0.25)
+
+    assert len(pruned) == 1
+    assert pruned[0]["indices"] == [0]
+    assert model.bn.weight[0] == 0.0
+    assert model.bn.weight[1] == 2.0
 
 
 def test_exported_state_dict_loads_into_plain_resnet18():

@@ -866,6 +866,14 @@ def repair(
         0.2, "--anp-prune-threshold",
         help="Threshold for pruning neurons in ANP."
     ),
+    anp_iterations: int = typer.Option(
+        2000, "--anp-iterations",
+        help="Number of iterations cycling the clean set during ANP mask training."
+    ),
+    anp_prune_fraction: float = typer.Option(
+        None, "--anp-prune-fraction",
+        help="ANP: fraction of lowest-scoring channels to prune (0 to 1). Overrides --anp-prune-threshold."
+    ),
     seed: int = typer.Option(
         None, "--seed", "-s",
         help="Random seed for reproducibility.",
@@ -1091,6 +1099,12 @@ def repair(
         if not (math.isfinite(anp_prune_threshold) and 0 <= anp_prune_threshold <= 1):
             typer.secho("Error: --anp-prune-threshold must be between 0 and 1.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_iterations < 1:
+            typer.secho("Error: --anp-iterations must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_prune_fraction is not None and not (math.isfinite(anp_prune_fraction) and 0 <= anp_prune_fraction <= 1):
+            typer.secho("Error: --anp-prune-fraction must be between 0 and 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
         if clean_samples <= 0:
             typer.secho("Error: --clean-samples must be a positive integer.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
@@ -1122,7 +1136,9 @@ def repair(
                 eps=anp_eps,
                 alpha=anp_alpha,
                 steps=anp_steps,
+                iterations=anp_iterations,
                 prune_threshold=anp_prune_threshold,
+                prune_fraction=anp_prune_fraction,
                 clean_samples=clean_samples,
                 seed=seed if seed is not None else 0,
                 version=VERSION,

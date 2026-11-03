@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import copy
+import itertools
 import json
 import math
 import sys
@@ -26,7 +28,7 @@ from mithridatium import loader, report as rpt, utils
 
 
 class NoisyBatchNorm2d(nn.BatchNorm2d):
-    """BatchNorm with a learned mask and adversarial noise per channel."""
+    """BatchNorm with a learned mask on weights and adversarial noise per channel."""
 
     def __init__(self, original: nn.BatchNorm2d):
         if not original.affine:
@@ -42,26 +44,38 @@ class NoisyBatchNorm2d(nn.BatchNorm2d):
         )
         self.load_state_dict(original.state_dict())
         self.neuron_mask = nn.Parameter(torch.ones_like(self.weight))
-        self.neuron_noise = nn.Parameter(torch.zeros_like(self.weight))
+        # Changed ANP to provide separate noise parameters for weight and bias. 
+        self.weight_noise = nn.Parameter(torch.zeros_like(self.weight))
+        self.bias_noise = nn.Parameter(torch.zeros_like(self.bias))
         self.noise_enabled = False
         self.noise_limit = 0.0
         self.weight.requires_grad_(False)
         self.bias.requires_grad_(False)
 
-    def forward(self, images):
-        noise = 0
-        if self.noise_enabled:
-            noise = self.neuron_noise.clamp(-self.noise_limit, self.noise_limit)
+    @property
+    def neuron_noise(self):
+        """Backward-compatibility alias pointing to weight_noise."""
+        return self.weight_noise
 
-        mask = self.neuron_mask + noise
+    def forward(self, images):
+        if self.noise_enabled:
+            w_noise = self.weight_noise.clamp(-self.noise_limit, self.noise_limit)
+            b_noise = self.bias_noise.clamp(-self.noise_limit, self.noise_limit)
+            weight = self.weight * self.neuron_mask * (1 + w_noise)
+            bias = self.bias * (1 + b_noise)
+        else:
+            weight = self.weight * self.neuron_mask
+            bias = self.bias
+
+        # Changed ANP to optimize masks using batch stats
         return F.batch_norm(
             images,
             self.running_mean,
             self.running_var,
-            self.weight * mask,
-            self.bias * mask,
-            self.training or not self.track_running_stats,
-            self.momentum if self.momentum is not None else 0.0,
+            weight,
+            bias,
+            True,
+            0.0,
             self.eps,
         )
 
@@ -74,9 +88,12 @@ def _replace_bn(model):
         for name, layer in list(parent.named_children()):
             path = f"{prefix}.{name}" if prefix else name
             if isinstance(layer, nn.BatchNorm2d):
-                new_layer = NoisyBatchNorm2d(layer)
-                setattr(parent, name, new_layer)
-                wrapped[path] = new_layer
+                if isinstance(layer, NoisyBatchNorm2d):
+                    wrapped[path] = layer
+                else:
+                    new_layer = NoisyBatchNorm2d(layer)
+                    setattr(parent, name, new_layer)
+                    wrapped[path] = new_layer
             else:
                 visit(layer, path)
 
@@ -108,7 +125,7 @@ def _restore_bn(model):
             setattr(parent, name, plain)
 
 
-def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10):
+def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10, iterations=2000):
     """Alternate noise maximization and mask minimization on clean images."""
     if not (math.isfinite(eps) and eps >= 0):
         raise ValueError("eps must be finite and nonnegative")
@@ -116,23 +133,35 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10):
         raise ValueError("alpha must be between 0 and 1")
     if not isinstance(steps, int) or steps < 1:
         raise ValueError("steps must be a positive integer")
+    # Added iterations validation 
+    if not isinstance(iterations, int) or iterations < 1:
+        raise ValueError("iterations must be a positive integer")
 
+    # Changed the model's BN layers with NoisyBatchNorm2d. It freezes running stats protecting running_mean and running_var 
     layers = _replace_bn(model)
     for parameter in model.parameters():
         parameter.requires_grad_(False)
 
     masks = [bn.neuron_mask for bn in layers.values()]
-    noises = [bn.neuron_noise for bn in layers.values()]
+    noises = []
+    for bn in layers.values():
+        noises.append(bn.weight_noise)
+        noises.append(bn.bias_noise)
+
     for parameter in masks + noises:
         parameter.requires_grad_(True)
 
-    mask_optimizer = torch.optim.SGD(masks, lr=0.1)
-    noise_optimizer = torch.optim.SGD(noises, lr=0.1)
+    noise_lr = (eps / steps) if (steps > 0 and eps > 0) else 0.1
+    noise_optimizer = torch.optim.SGD(noises, lr=noise_lr)
+    mask_optimizer = torch.optim.SGD(masks, lr=0.2, momentum=0.9)
+
     device = next(model.parameters()).device
-    model.eval()
+    # Cycle through the clean loader for the requested number of iterations.
+    clean_iter = itertools.cycle(clean_loader)
     seen = 0
 
-    for images, labels, *_ in clean_loader:
+    for _ in range(iterations):
+        images, labels, *_ = next(clean_iter)
         images, labels = images.to(device), labels.to(device)
         seen += len(labels)
 
@@ -141,12 +170,14 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10):
             bn.noise_limit = eps
             bn.noise_enabled = eps > 0
             with torch.no_grad():
-                bn.neuron_noise.uniform_(-eps, eps)
+                bn.weight_noise.uniform_(-eps, eps)
+                bn.bias_noise.uniform_(-eps, eps)
 
         if eps > 0:
             for _ in range(steps):
                 noise_optimizer.zero_grad()
                 mask_optimizer.zero_grad()
+                # Forward pass on model
                 (-F.cross_entropy(model(images), labels)).backward()
                 for noise in noises:
                     if noise.grad is not None:
@@ -185,24 +216,40 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10):
 
 
 def prune_by_threshold(model, scores, threshold):
-    """Zero low-scoring BatchNorm channels and remove ANP wrappers."""
+    """Zero low-scoring BatchNorm channel weights and remove ANP wrappers."""
     if not (math.isfinite(threshold) and 0 <= threshold <= 1):
         raise ValueError("prune threshold must be between 0 and 1")
 
     pruned = []
     for name, bn in model.named_modules():
-        if not isinstance(bn, NoisyBatchNorm2d):
+        if not isinstance(bn, (NoisyBatchNorm2d, nn.BatchNorm2d)):
+            continue
+        if name not in scores:
             continue
         indices = torch.where(scores[name] <= threshold)[0]
         with torch.no_grad():
+            # Changed so the upstream zeroes ONLY the BN weight
             bn.weight[indices] = 0
-            bn.bias[indices] = 0
         if len(indices):
             pruned.append({"layer": name, "indices": indices.cpu().tolist(),
                            "count": len(indices)})
 
     _restore_bn(model)
     return pruned
+
+
+# Added prune_by_fraction to support pruning by fraction alongside threshold
+def prune_by_fraction(model, scores, fraction):
+    """Prune the lowest-scoring fraction of BatchNorm channels across all layers."""
+    if not (math.isfinite(fraction) and 0 <= fraction <= 1):
+        raise ValueError("prune fraction must be between 0 and 1")
+    if fraction == 0.0:
+        return prune_by_threshold(model, scores, threshold=-1.0)
+
+    all_scores = torch.cat([v.flatten() for v in scores.values()])
+    k = max(1, int(len(all_scores) * fraction))
+    threshold = torch.kthvalue(all_scores, k).values.item()
+    return prune_by_threshold(model, scores, threshold=threshold)
 
 
 @torch.no_grad()
@@ -247,9 +294,9 @@ def _sample(dataset, count, generator):
 
 
 def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
-            steps=10, prune_threshold=0.2, clean_samples=500,
-            seed=0, version="0.1.2", data="cifar10", eval_samples=500,
-            triggered_eval_dataset=None, attack_target=None):
+            steps=10, iterations=2000, prune_threshold=0.2, prune_fraction=None,
+            clean_samples=500, seed=0, version="0.1.2", data="cifar10",
+            eval_samples=500, triggered_eval_dataset=None, attack_target=None):
     """Train masks, prune neurons, and write a checkpoint and repair report."""
     source, destination = Path(model_path).resolve(), Path(out).resolve()
     if source == destination:
@@ -284,9 +331,22 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
     if triggered_eval_dataset is not None:
         asr_before, _ = evaluate_targeted_asr(model, triggered_eval_dataset, attack_target)
 
-    scores = train_masks(model, DataLoader(clean, batch_size=64),
-                         eps=eps, alpha=alpha, steps=steps)
-    pruned = prune_by_threshold(model, scores, prune_threshold)
+    # FIX: Pass iterations into train_masks (which runs on a copy in train mode).
+    scores = train_masks(
+        model,
+        DataLoader(clean, batch_size=64),
+        eps=eps,
+        alpha=alpha,
+        steps=steps,
+        iterations=iterations,
+    )
+
+    # Prune on the original model
+    _replace_bn(model)
+    if prune_fraction is not None:
+        pruned = prune_by_fraction(model, scores, prune_fraction)
+    else:
+        pruned = prune_by_threshold(model, scores, prune_threshold)
 
     clean_after = evaluate_clean(model, evaluation)
     asr_after = None
@@ -301,8 +361,9 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
         "status": "completed",
         "verdict": "repair_applied",
         "parameters": {
-            "eps": eps, "alpha": alpha, "steps": steps,
-            "prune_threshold": prune_threshold, "clean_samples": len(clean),
+            "eps": eps, "alpha": alpha, "steps": steps, "iterations": iterations,
+            "prune_threshold": prune_threshold if prune_fraction is None else None,
+            "prune_fraction": prune_fraction, "clean_samples": len(clean),
             "eval_samples": len(evaluation), "seed": seed,
         },
         "total_channels_pruned": sum(item["count"] for item in pruned),
