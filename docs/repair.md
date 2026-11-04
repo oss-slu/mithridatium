@@ -213,12 +213,17 @@ configuration in `scripts/train_resnet18.py`, use:
 ```bash
 mithridatium repair \
   --model models/resnet18_poison.pth \
-  --method anp --data cifar10 \
+  --method anp \
+  --data cifar10 \
+  --clean-samples 500 \
+  --seed 0 \
   --anp-attack-target 0 \
-  --anp-trigger-size 4 --anp-trigger-pos bottom-right \
+  --anp-trigger-type white-square \
+  --anp-trigger-size 4 \
+  --anp-trigger-pos bottom-right \
   --anp-asr-samples 500 \
-  --out models/resnet18_anp.pth \
-  --report reports/repair_anp.json
+  --out models/resnet18_anp_repaired.pth \
+  --report reports/anp_asr.json
 ```
 
 To evaluate a *different known backdoor*, choose the matching generator:
@@ -272,10 +277,49 @@ not remove the current ANP model-loader restriction to ResNet-18, and other
 repair methods are not automatically wired to ASR yet. Incorrect trigger
 metadata produces misleading ASR results.
 
-**Measured demo results:** pending a verified run against the intended
-`resnet18_poison.pth` checkpoint with confirmed trigger metadata and the
-ANP pruning corrections in issue #170. The prior ~90% → 88% clean accuracy
-and ~95% → 10% ASR figures were placeholders, *not measurements*.
+**Measured demo results:** 
+#### ANP ASR DEMO Evaluation Results
+
+ANP was evaluated on a poisoned ResNet-18 model trained on
+CIFAR-10 for 5 epochs with a 10% poisoning rate. The attack
+used a 4×4 white-square trigger in the bottom-right corner
+and targeted class 0 (airplane).
+
+The evaluation used 500 clean repair samples, 500 clean
+evaluation samples, and 500 triggered evaluation samples,
+with random seed 0 and the default ANP parameters.
+
+| Metric | Before Repair | After Repair |
+|---|---:|---:|
+| Clean Accuracy | 60.2% | 22.6% |
+| Attack Success Rate (ASR) | 90.8% | 0.0% |
+
+**Repair Configuration:**
+- Pruning threshold: 0.2
+- Epsilon: 0.4
+- Alpha: 0.2
+- Steps: 10
+- Total channels pruned: 903
+
+**Results and Limitations:**
+
+ANP reduced the measured ASR from 90.8% to 0.0%, but
+clean accuracy also decreased from 60.2% to 22.6%,
+a loss of 37.6 percentage points.
+
+Although the attack was no longer successful on the
+evaluated triggered samples, the significant reduction
+in clean accuracy indicates that the repair damaged
+normal model performance.
+
+These results demonstrate that ASR reporting is functioning,
+but the current pruning behavior requires improvement.
+The excessive clean accuracy loss is being investigated
+separately in Issue #170.
+
+This experiment is a preliminary evaluation using a
+5-epoch checkpoint. Results may differ with a more
+fully trained model or revised pruning implementation.
 
 By default, existing output files are protected; use `--force` if overwriting
 is intentional. You can omit `--report` for a JSON sidecar or use
