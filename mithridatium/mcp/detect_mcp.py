@@ -23,6 +23,8 @@ def _detect_kwargs(
     ted_num_samples: int = 128,
     ted_reference_size: int = 250,
     ted_contamination: float = 0.01,
+    tedpp_samples_per_class: int = 5,
+    tedpp_beta: float = 0.5,
 ) -> dict[str, Any]:
     scales = tuple(scaleup_scales) if scaleup_scales else (3, 5, 7, 9, 11)
     return {
@@ -37,6 +39,8 @@ def _detect_kwargs(
         "ted_num_samples": ted_num_samples,
         "ted_reference_size": ted_reference_size,
         "ted_contamination": ted_contamination,
+        "tedpp_samples_per_class": tedpp_samples_per_class,
+        "tedpp_beta": tedpp_beta,
     }
 
 def _run_detect(detect_kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -81,4 +85,26 @@ def run_ted(
         ted_num_samples=ted_num_samples,
         ted_reference_size=ted_reference_size,
         ted_contamination=ted_contamination,
+    ))
+
+@mcp.tool(run_in_thread=False)
+def run_tedpp(
+    model: str = "models/resnet18.pth",
+    data: str = "cifar10",
+    ted_num_samples: int = 128,
+    ted_reference_size: int = 250,
+    ted_contamination: float = 0.01,
+    tedpp_samples_per_class: int = 5,
+    tedpp_beta: float = 0.5,
+):
+    """Run TED++ detection and return the mithridatium detect report."""
+    return _run_detect(_detect_kwargs(
+        "ted++",
+        model=model,
+        data=data,
+        ted_num_samples=ted_num_samples,
+        ted_reference_size=ted_reference_size,
+        ted_contamination=ted_contamination,
+        tedpp_samples_per_class=tedpp_samples_per_class,
+        tedpp_beta=tedpp_beta,
     ))
