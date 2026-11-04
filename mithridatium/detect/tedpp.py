@@ -48,6 +48,9 @@ class TEDPLUS():
                  reference_size=1000,
                  contamination=0.01,
                  batch_size=100,
+                 samples_per_class=5,
+                 beta=0.5,
+                 seed=None,
                  device="cpu"):
         
         # 1) Model configuration
@@ -57,81 +60,85 @@ class TEDPLUS():
         self.ref_size = reference_size
         self.contam = contamination
         self.batch_size = batch_size
+        self.seed = seed
         self.device = device
 
+        if not 0 < contamination <= 0.5:
+            raise ValueError("contamination must satisfy 0 < contamination <= 0.5.")
+        if samples_per_class < 2:
+            raise ValueError("samples_per_class must be at least 2.")
+        if not 0 < beta <= 1 or math.ceil(samples_per_class * beta) >= samples_per_class:
+            raise ValueError(
+                "beta must satisfy 0 < beta <= 1 and produce fewer neighbors "
+                "than samples_per_class."
+            )
+
+        self.beta = beta
         self.model.eval()
         self.model.to(self.device)
 
-
-        # 4) Split the full test set into 10% (defense/validation) and 90% (final test)
         self.reference_loader = data.DataLoader(
             reference_data, batch_size=batch_size, shuffle=False
         )
-
         self.suspect_loader = data.DataLoader(
             suspect_data, batch_size=batch_size, shuffle=False
         )
 
+        self.SAMPLES_PER_CLASS = samples_per_class
+        self.hook_handles = []
+        self.activations = {}
 
-        # Dictionary to store correctly predicted indices per class
-        correct_positions = []
+        correct_indices_per_class = None
+        self.num_classes = None
         position = 0
-
         with torch.no_grad():
             for images, labels in self.reference_loader:
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                predictions = self.model(images).argmax(dim=1)
+                logits = self.model(images)
+                if logits.ndim != 2:
+                    raise ValueError("Model must return [batch, num_classes] logits.")
 
-                for is_correct in (predictions == labels).cpu().tolist():
-                    if is_correct:
-                        correct_positions.append(position)
-                    position += 1
+                if self.num_classes is None:
+                    self.num_classes = logits.shape[1]
+                    correct_indices_per_class = [
+                        [] for _ in range(self.num_classes)
+                    ]
+                elif logits.shape[1] != self.num_classes:
+                    raise ValueError("Model output class count changed between batches.")
 
-        filtered_reference = data.Subset(reference_data, correct_positions)
+                predictions = logits.argmax(dim=1)
+                for offset, (prediction, label) in enumerate(
+                    zip(predictions.cpu().tolist(), labels.cpu().tolist())
+                ):
+                    if prediction == label:
+                        correct_indices_per_class[prediction].append(position + offset)
+                position += len(labels)
+
+        if self.num_classes is None:
+            raise ValueError("Clean reference data is empty.")
+        if samples_per_class < 1:
+            raise ValueError("samples_per_class must be positive.")
+
+        rng = np.random.default_rng(seed)
+        defense_indices = []
+        for class_id, class_indices in enumerate(correct_indices_per_class):
+            if len(class_indices) < samples_per_class:
+                raise ValueError(
+                    f"Class {class_id} has {len(class_indices)} correctly classified "
+                    f"clean references; {samples_per_class} are required."
+                )
+            defense_indices.extend(
+                rng.choice(class_indices, samples_per_class, replace=False).tolist()
+            )
+
+        self.all_labels = list(range(self.num_classes))
+        self.DEFENSE_TRAIN_SIZE = len(defense_indices)
         self.reference_loader = data.DataLoader(
-            filtered_reference,
+            data.Subset(reference_data, defense_indices),
             batch_size=batch_size,
             shuffle=False,
         )
-
-        # For each class, sample SAMPLES_PER_CLASS correctly predicted samples
-        # FIX HERE (1) to remove 2 classes and CREATE self.all_classes (without 2 labels)
-        defense_indices_final = []
-        self.all_labels = []
-        for label in range(self.num_classes - self.NUM_MISSING_CLASS):
-            self.all_labels.append(label)
-            correct_indices = correct_indices_per_class[label]
-            num_correct = len(correct_indices)
-            if num_correct >= self.SAMPLES_PER_CLASS:
-                sampled = np.random.choice(correct_indices, self.SAMPLES_PER_CLASS, replace=False)
-            else:
-                sampled = np.random.choice(correct_indices, self.SAMPLES_PER_CLASS, replace=True)
-                print(f"Warning: Not enough correctly predicted samples for class {label}. Sampling with replacement.")
-            defense_indices_final.extend(sampled)
-
-        # Create a new defense subset using the sampled indices and update the defense_loader
-        final_defense_subset = data.Subset(underlying_dataset, defense_indices_final)
-        self.reference_loader = data.DataLoader(final_defense_subset, batch_size=50, shuffle=True, num_workers=0)
-
-        # 9) Optionally, filter the defense set further to retain only correctly predicted samples
-        h_benign_preds = []
-        h_benign_ori_labels = []
-        with torch.no_grad():
-            for inputs, labels in self.reference_loader:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = self.model(inputs)
-                preds = torch.argmax(outputs, dim=1)
-                h_benign_preds.extend(preds.cpu().numpy())
-                h_benign_ori_labels.extend(labels.cpu().numpy())
-        h_benign_preds = np.array(h_benign_preds)
-        h_benign_ori_labels = np.array(h_benign_ori_labels)
-        benign_mask = h_benign_ori_labels == h_benign_preds
-        benign_indices = np.array(defense_indices_final)[benign_mask]
-        if len(benign_indices) > self.DEFENSE_TRAIN_SIZE:
-            benign_indices = np.random.choice(benign_indices, self.DEFENSE_TRAIN_SIZE, replace=False)
-        final_defense_subset = data.Subset(underlying_dataset, benign_indices)
-        self.reference_loader = data.DataLoader(final_defense_subset, batch_size=50, shuffle=True, num_workers=0)
 
         # 10) Define temporary labels for Poison and Clean samples
         self.suspect_label = "Suspect"
@@ -149,17 +156,12 @@ class TEDPLUS():
         self.temp_clean_labels_set = []
         self.temp_clean_pred_set = []
 
-        # 11) Set up hooks for activation extraction
-        self.hook_handles = []
-        self.activations = {}
+        # Set up hooks for activation extraction
         self.register_hooks()
 
-        # 12) Additional intermediate variables and directory for saving visualizations
-        self.Test_C = self.num_classes + 2
+        self.Test_C = self.num_classes
         self.topological_representation = {}
         self.candidate_ = {}
-        self.save_dir = f"TED/{self.dataset}/{self.poison_type}"
-        os.makedirs(self.save_dir, exist_ok=True)
 
     # ==============================
     #     HELPER FUNCTIONS
@@ -323,73 +325,89 @@ class TEDPLUS():
         sorted_dis, indices_individual = torch.sort(new_dis.squeeze(0))  # sort theo chiều 1-D
         return sorted_dis.to("cpu"), indices_individual.to("cpu")
 
-    def getDefenseRegion(self, final_prediction, h_defense_activation, processing_label, layer,
-                         layer_test_region_individual):
+    def getTubeRadius(self, h_defense_prediction, h_defense_activation, layer):
+        neighbor_count = math.ceil(self.SAMPLES_PER_CLASS * self.beta)
+        class_radii = []
 
-        processing_label_indices = torch.where(final_prediction == processing_label)[0]
-        processing_label_h_defense_activation = h_defense_activation[processing_label_indices]
+        for class_id in torch.unique(h_defense_prediction):
+            class_activations = h_defense_activation[
+                h_defense_prediction == class_id
+            ]
+            if class_activations.shape[0] <= neighbor_count:
+                raise ValueError(
+                    f"Layer {layer}: class {class_id.item()} needs more than "
+                    f"{neighbor_count} clean references to estimate its tube."
+                )
+
+            for center_index, center in enumerate(class_activations):
+                distances = torch.linalg.vector_norm(
+                    class_activations - center, dim=1
+                )
+                distances[center_index] = torch.inf
+                neighbor_indices = torch.argsort(distances)[:neighbor_count]
+                neighborhood = torch.cat(
+                    (center.unsqueeze(0), class_activations[neighbor_indices]),
+                    dim=0,
+                )
+                diameter = torch.cdist(neighborhood, neighborhood).max()
+                class_radii.append(diameter)
+
+        if not class_radii:
+            raise ValueError(f"Layer {layer}: no clean reference activations available.")
+        return float(torch.stack(class_radii).max().item())
+
+    def getLayerRegionDistance(
+        self,
+        new_prediction,
+        new_activation,
+        new_temp_label,
+        h_defense_prediction,
+        h_defense_activation,
+        layer,
+        layer_test_region_individual,
+        tube_radius,
+        exclude_self=False,
+    ):
+        if len(new_prediction) != len(new_activation):
+            raise ValueError(
+                f"Layer {layer}: got {len(new_prediction)} predictions "
+                f"for {len(new_activation)} activations."
+            )
+        if exclude_self and len(new_prediction) != len(h_defense_prediction):
+            raise ValueError("Self-exclusion requires aligned reference inputs.")
+
+        ranks = []
+        for sample_index, (prediction, activation) in enumerate(
+            zip(new_prediction, new_activation)
+        ):
+            distances = torch.linalg.vector_norm(
+                h_defense_activation - activation, dim=1
+            )
+            same_class = h_defense_prediction == prediction
+            if exclude_self:
+                same_class[sample_index] = False
+            if not torch.any(same_class):
+                raise ValueError(
+                    f"No clean reference samples were predicted as class "
+                    f"{prediction.item()}; cannot calculate rank for layer {layer}."
+                )
+
+            if distances[same_class].min() > tube_radius:
+                ranks.append(len(h_defense_prediction))
+                continue
+
+            rank_distances = distances.clone()
+            if exclude_self:
+                rank_distances[sample_index] = torch.inf
+            sorted_indices = torch.argsort(rank_distances)
+            same_class_ranks = torch.where(
+                h_defense_prediction[sorted_indices] == prediction
+            )[0]
+            ranks.append(int(same_class_ranks[0].item()))
 
         if layer not in layer_test_region_individual:
             layer_test_region_individual[layer] = {}
-        layer_test_region_individual[layer][processing_label] = []
-
-        self.candidate_[layer] = self.gather_activation_into_class(final_prediction, h_defense_activation)
-
-
-        if np.ndim(self.candidate_[layer][processing_label]) == 0:
-            print("No sample in this class for label =", processing_label)
-        else:
-            for index, item in enumerate(self.candidate_[layer][processing_label]):
-
-                sorted_dis, sorted_indices = self.get_dis_sort(item, h_defense_activation)
-
-                for i, idx in enumerate(sorted_indices[1:], start=1):
-                    if final_prediction[idx] == processing_label:
-                        mask = ~torch.all(processing_label_h_defense_activation == h_defense_activation[idx], dim=1)
-                        sorted_dis_validation, sorted_indices_validation = self.get_dis_sort(h_defense_activation[idx], processing_label_h_defense_activation[mask])
-                        threshold = torch.max(sorted_dis_validation[:math.ceil(self.SAMPLES_PER_CLASS * self.ALPHA)])
-                        distance_value = sorted_dis[i].item()
-
-                        if distance_value > threshold:
-                            distance_value_index = self.DEFENSE_TRAIN_SIZE - 1
-                        else:
-                            distance_value_index = i - 1
-                        layer_test_region_individual[layer][processing_label].append(distance_value_index)
-                        break
-        return layer_test_region_individual
-
-    def getLayerRegionDistance(self, new_prediction, new_activation, new_temp_label,
-                               h_defense_prediction, h_defense_activation,
-                               layer, layer_test_region_individual):
-        if layer not in layer_test_region_individual:
-            layer_test_region_individual[layer] = {}
-        layer_test_region_individual[layer][new_temp_label] = []
-
-        candidate__ = self.gather_activation_into_class(new_prediction, new_activation)
-        labels = torch.unique(new_prediction)
-
-        for processing_label in labels:
-
-            processing_label_indices = torch.where(h_defense_prediction == processing_label)[0]
-            processing_label_h_defense_activation = h_defense_activation[processing_label_indices]
-            for index, item in enumerate(candidate__[processing_label]):
-
-                sorted_dis, sorted_indices = self.get_dis_sort(item, h_defense_activation)
-
-                for i, idx in enumerate(sorted_indices):
-                    if h_defense_prediction[idx] == processing_label:
-                        mask = ~torch.all(processing_label_h_defense_activation == h_defense_activation[idx], dim=1)
-                        sorted_dis_validation, sorted_indices_validation = self.get_dis_sort(h_defense_activation[idx], processing_label_h_defense_activation[mask])
-                        threshold = torch.max(sorted_dis_validation[:math.ceil(self.SAMPLES_PER_CLASS * self.ALPHA)])
-                        distance_value = sorted_dis[i].item()
-
-                        if distance_value > threshold:
-                            distance_value_index = self.DEFENSE_TRAIN_SIZE - 1
-                        else:
-                            distance_value_index = i
-                        layer_test_region_individual[layer][new_temp_label].append(distance_value_index)
-                        break
-
+        layer_test_region_individual[layer][new_temp_label] = ranks
         return layer_test_region_individual
 
     def test(self):
@@ -407,180 +425,161 @@ class TEDPLUS():
         self.h_defense_ori_labels, self.h_defense_activations, self.h_defense_preds = (
             self.fetch_activation(self.reference_loader)
         )
-        torch.cuda.synchronize()
-        begin1 = time.time()
-
         self.h_suspect_ori_labels, self.h_suspect_activations, self.h_suspect_preds = self.fetch_activation(
             self.suspect_loader)
 
+        self.tube_radii = {}
+        suspect_label = "Suspect"
+        clean_label = "CleanValidation"
+        for layer_ in self.h_defense_activations:
+            tube_radius = self.getTubeRadius(
+                self.h_defense_preds,
+                self.h_defense_activations[layer_],
+                layer_,
+            )
+            self.tube_radii[layer_] = tube_radius
+            self.topological_representation = self.getLayerRegionDistance(
+                new_prediction=self.h_defense_preds,
+                new_activation=self.h_defense_activations[layer_],
+                new_temp_label=clean_label,
+                h_defense_prediction=self.h_defense_preds,
+                h_defense_activation=self.h_defense_activations[layer_],
+                layer=layer_,
+                layer_test_region_individual=self.topological_representation,
+                tube_radius=tube_radius,
+                exclude_self=True,
+            )
+            self.topological_representation = self.getLayerRegionDistance(
+                new_prediction=self.h_suspect_preds,
+                new_activation=self.h_suspect_activations[layer_],
+                new_temp_label=suspect_label,
+                h_defense_prediction=self.h_defense_preds,
+                h_defense_activation=self.h_defense_activations[layer_],
+                layer=layer_,
+                layer_test_region_individual=self.topological_representation,
+                tube_radius=tube_radius,
+            )
 
-        unique_defense = []
-        unique_poison = []
-        unique_clean = []
-        for label in self.h_defense_preds:
-            unique_defense.append(label.item())
-        print(set(unique_defense))
+        expected_count = len(self.h_suspect_preds)
+        layer_names = list(self.h_defense_activations)
+        if not layer_names:
+            raise RuntimeError("No activations were captured for TED++.")
 
-        for label in self.h_poison_preds:
-            unique_poison.append(label.item())
-        print(set(unique_poison))
-
-        for label in self.h_clean_preds:
-            unique_clean.append(label.item())
-        print(set(unique_clean))
-
-        torch.cuda.synchronize()
-        end1 = time.time()
-
-        time1 = end1 - begin1
-
-
-        print('STEP 7')
-        class_names = np.unique(self.h_defense_ori_labels.cpu().numpy())
-        for index, label in enumerate(class_names):
-            for layer in self.h_defense_activations:
-                self.topological_representation = self.getDefenseRegion(
-                    final_prediction=self.h_defense_preds,
-                    h_defense_activation=self.h_defense_activations[layer],
-                    processing_label=label,
-                    layer=layer,
-                    layer_test_region_individual=self.topological_representation
+        for layer in layer_names:
+            layer_results = self.topological_representation[layer]
+            if len(layer_results[suspect_label]) != expected_count:
+                raise RuntimeError(
+                    f"{layer}: expected {expected_count} suspect ranks, "
+                    f"got {len(layer_results[suspect_label])}."
                 )
-                topo_rep_array = np.array(self.topological_representation[layer][label])
-                print(f"Topological Representation Label [{label}] & layer [{layer}]: {topo_rep_array}")
-                print(f"Mean: {np.mean(topo_rep_array)}\n")
-        torch.cuda.synchronize()
-        begin2 = time.time()
-        for layer_ in self.h_poison_activations:
-            self.topological_representation = self.getLayerRegionDistance(
-                new_prediction=self.h_poison_preds,
-                new_activation=self.h_poison_activations[layer_],
-                new_temp_label=self.POISON_TEMP_LABEL,
-                h_defense_prediction=self.h_defense_preds,
-                h_defense_activation=self.h_defense_activations[layer_],
-                layer=layer_,
-                layer_test_region_individual=self.topological_representation,
-            )
-            topo_rep_array_poison = np.array(self.topological_representation[layer_][self.POISON_TEMP_LABEL])
-            print(
-                f"Topological Representation Label [{self.POISON_TEMP_LABEL}] & layer [{layer_}]: {topo_rep_array_poison}")
-            print(f"Mean: {np.mean(topo_rep_array_poison)}\n")
+            if len(layer_results[clean_label]) != len(self.h_defense_preds):
+                raise RuntimeError(
+                    f"{layer}: clean rank count does not match reference count."
+                )
 
-        for layer_ in self.h_clean_activations:
-            self.topological_representation = self.getLayerRegionDistance(
-                new_prediction=self.h_clean_preds,
-                new_activation=self.h_clean_activations[layer_],
-                new_temp_label=self.CLEAN_TEMP_LABEL,
-                h_defense_prediction=self.h_defense_preds,
-                h_defense_activation=self.h_defense_activations[layer_],
-                layer=layer_,
-                layer_test_region_individual=self.topological_representation,
-            )
-            topo_rep_array_clean = np.array(self.topological_representation[layer_][self.CLEAN_TEMP_LABEL])
-            print(
-                f"Topological Representation Label [{self.CLEAN_TEMP_LABEL}] - layer [{layer_}]: {topo_rep_array_clean}")
-            print(f"Mean: {np.mean(topo_rep_array_clean)}\n")
-        torch.cuda.synchronize()
-        end2 = time.time()
-        time2 = end2 - begin2
-        print('STEP 8')
-
-        def aggregate_by_all_layers(output_label):
-            inputs_container = []
-            first_key = list(self.topological_representation.keys())[0]
-            labels_container = np.repeat(output_label,
-                                         len(self.topological_representation[first_key][output_label]))
-            for l in self.topological_representation.keys():
-                temp = []
-                for j in range(len(self.topological_representation[l][output_label])):
-                    temp.append(self.topological_representation[l][output_label][j])
-                if temp:
-                    inputs_container.append(np.array(temp))
-            return np.array(inputs_container).T, np.array(labels_container)
-
-        inputs_all_benign = []
-        labels_all_benign = []
-        inputs_all_unknown = []
-        labels_all_unknown = []
-
-        first_key = list(self.topological_representation.keys())[0]
-        class_name = list(self.topological_representation[first_key])
-
-        for inx in class_name:
-            inputs, labels = aggregate_by_all_layers(output_label=inx)
-            if inx != self.POISON_TEMP_LABEL and inx != self.CLEAN_TEMP_LABEL:
-                inputs_all_benign.append(np.array(inputs))
-                labels_all_benign.append(np.array(labels))
-            else:
-                inputs_all_unknown.append(np.array(inputs))
-                labels_all_unknown.append(np.array(labels))
-
-        inputs_all_benign = np.concatenate(inputs_all_benign)
-        labels_all_benign = np.concatenate(labels_all_benign)
-
-        inputs_all_unknown = np.concatenate(inputs_all_unknown)
-        labels_all_unknown = np.concatenate(labels_all_unknown)
-
-        print('STEP 9')
-        torch.cuda.synchronize()
-        begin3 = time.time()
-        pca_t = sklearn_PCA(n_components=2)
-        pca_fit = pca_t.fit(inputs_all_benign)
-
-        benign_trajectories = pca_fit.transform(inputs_all_benign)
-        trajectories = pca_fit.transform(np.concatenate((inputs_all_unknown, inputs_all_benign), axis=0))
-
-        df_classes = pd.DataFrame(np.concatenate((labels_all_unknown, labels_all_benign), axis=0))
-
-        fig_ = px.scatter(
-            trajectories, x=0, y=1, color=df_classes[0].astype(str), labels={'color': 'digit'},
-            color_discrete_sequence=px.colors.qualitative.Dark24,
+        clean_vectors = np.asarray(
+            [
+                [
+                    self.topological_representation[layer][clean_label][index]
+                    for layer in layer_names
+                ]
+                for index in range(len(self.h_defense_preds))
+            ],
+            dtype=np.float64,
         )
+        suspect_vectors = np.asarray(
+            [
+                [
+                    self.topological_representation[layer][suspect_label][index]
+                    for layer in layer_names
+                ]
+                for index in range(expected_count)
+            ],
+            dtype=np.float64,
+        )
+        if expected_count == 0:
+            raise ValueError("suspect_data must contain at least one input.")
 
-        pca = PCA(contamination=0.1, n_components=2)
-        pca.fit(inputs_all_benign)
+        n_components = min(clean_vectors.shape[1] - 1, clean_vectors.shape[0] - 1)
+        if n_components < 1:
+            raise ValueError(
+                "PCA reconstruction detection needs at least two clean rank vectors "
+                "and two captured layers."
+            )
+        detector = PCA(contamination=self.contam, n_components=n_components)
+        detector.fit(clean_vectors)
+        scores = detector.decision_function(suspect_vectors)
+        predictions = detector.predict(suspect_vectors)
+        flagged = predictions == 1
+        num_flagged = int(np.count_nonzero(flagged))
+        flagged_fraction = num_flagged / expected_count
 
-        y_train_scores = pca.decision_function(inputs_all_benign)
-        y_test_scores = pca.decision_function(inputs_all_unknown)
-        y_test_pred = pca.predict(inputs_all_unknown)
-        prediction_mask = (y_test_pred == 1)
-        prediction_labels = labels_all_unknown[prediction_mask]
-        label_counts = Counter(prediction_labels)
-
-        print("\n----------- DETECTION RESULTS -----------")
-        for label, count in label_counts.items():
-            print(f'Label {label}: {count}')
-
-        is_poison_mask = (labels_all_unknown == self.POISON_TEMP_LABEL).astype(int)
-        fpr, tpr, thresholds = metrics.roc_curve(is_poison_mask, y_test_scores, pos_label=1)
-        auc_val = metrics.auc(fpr, tpr)
-
-        tn, fp, fn, tp = confusion_matrix(is_poison_mask, y_test_pred).ravel()
-        TPR = tp / (tp + fn) if (tp + fn) > 0 else 0
-        FPR = fp / (fp + tn) if (fp + tn) > 0 else 0
-        f1 = metrics.f1_score(is_poison_mask, y_test_pred)
-        torch.cuda.synchronize()
-        end3 = time.time()
-        time3 = end3 - begin3
-        print(f"Inference time: {time1 + time2 + time3}")
-        print("TPR: {:.2f}%".format(TPR * 100))
-        print("FPR: {:.2f}%".format(FPR * 100))
-        print("AUC: {:.4f}".format(auc_val))
-        print(f"F1 score: {f1:.4f}")
-        print("True Positives (TP):", tp)
-        print("False Positives (FP):", fp)
-        print("True Negatives (TN):", tn)
-        print("False Negatives (FN):", fn)
-
-        print("\n[INFO] TED run completed.")
+        return {
+            "mode": "input-level",
+            "method": "ted++",
+            "verdict": (
+                "likely backdoored"
+                if flagged_fraction > self.contam
+                else "likely clean"
+            ),
+            "num_inputs": expected_count,
+            "num_flagged": num_flagged,
+            "threshold": float(detector.threshold_),
+            "parameters": {
+                "reference_size": len(self.h_defense_preds),
+                "samples_per_class": self.SAMPLES_PER_CLASS,
+                "beta": self.beta,
+                "contamination": self.contam,
+                "batch_size": self.batch_size,
+                "seed": self.seed,
+            },
+            "per_sample": [
+                {
+                    "index": index,
+                    "predicted_label": int(self.h_suspect_preds[index].item()),
+                    "score": float(score),
+                    "flagged": bool(is_flagged),
+                }
+                for index, (score, is_flagged) in enumerate(zip(scores, flagged))
+            ],
+        }
 
     def detect(self):
         """
         Entry point for the detection procedure.
         """
-        self.test()
+        return self.test()
 
     def __del__(self):
         for h in self.hook_handles:
             h.remove()
         torch.cuda.empty_cache()
+
+
+def tedpp(
+    model,
+    reference_data,
+    suspect_data,
+    contamination=0.01,
+    batch_size=100,
+    samples_per_class=5,
+    beta=0.5,
+    seed=None,
+    device="cpu",
+):
+    detector = TEDPLUS(
+        model,
+        reference_data,
+        suspect_data,
+        contamination=contamination,
+        batch_size=batch_size,
+        samples_per_class=samples_per_class,
+        beta=beta,
+        seed=seed,
+        device=device,
+    )
+    try:
+        return detector.detect()
+    finally:
+        for handle in detector.hook_handles:
+            handle.remove()

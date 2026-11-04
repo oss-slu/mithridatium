@@ -109,7 +109,18 @@ def test_cli_detect_declares_expected_options():
     detect_command = get_command(app).commands["detect"]
     declared = {opt for param in detect_command.params for opt in param.opts}
 
-    assert {"--model", "--data", "--method", "--out", "--scaleup-num-samples"} <= declared
+    assert {
+        "--model",
+        "--data",
+        "--method",
+        "--out",
+        "--scaleup-num-samples",
+        "--ted-num-samples",
+        "--ted-reference-size",
+        "--ted-contamination",
+        "--tedpp-samples-per-class",
+        "--tedpp-beta",
+    } <= declared
 
 
 def test_cli_detect_rejects_missing_model():
@@ -348,4 +359,71 @@ def test_cli_detect_ted_writes_schema_valid_report(tmp_path, monkeypatch):
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     rpt.validate_report_data(payload)
     assert payload["results"]["method"] == "ted"
+    assert payload["results"]["num_inputs"] == 10
+
+
+def test_cli_detect_tedpp_writes_schema_valid_report(tmp_path, monkeypatch):
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from mithridatium import cli
+    from mithridatium.utils import get_preprocess_config
+
+    monkeypatch.setattr(cli, "VERSION", "test")
+    fake_model = tmp_path / "fake.pth"
+    fake_model.write_bytes(b"not a real checkpoint")
+    out_path = tmp_path / "detect_tedpp.json"
+
+    toy = torch.nn.Sequential(
+        torch.nn.Conv2d(3, 4, 3, padding=1),
+        torch.nn.ReLU(),
+        torch.nn.Flatten(),
+        torch.nn.Linear(4 * 8 * 8, 3),
+    ).eval()
+    x = torch.randn(150, 3, 8, 8, generator=torch.Generator().manual_seed(0))
+
+    with torch.no_grad():
+        y = toy(x).argmax(1)
+        keep = torch.bincount(y, minlength=3)[y] >= 5
+        x, y = x[keep], y[keep]
+
+    dataset = TensorDataset(x, y)
+    cfg = get_preprocess_config("cifar10")
+
+    monkeypatch.setattr(cli.loader, "detect_and_build", lambda *a, **k: (toy, None))
+    monkeypatch.setattr(
+        cli.utils,
+        "dataloader_for",
+        lambda *a, **k: (DataLoader(dataset, batch_size=16), cfg),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "detect",
+            "--model",
+            str(fake_model),
+            "--method",
+            "ted++",
+            "--data",
+            "cifar10",
+            "--ted-num-samples",
+            "10",
+            "--ted-reference-size",
+            "50",
+            "--ted-contamination",
+            "0.1",
+            "--tedpp-samples-per-class",
+            "5",
+            "--tedpp-beta",
+            "0.5",
+            "--out",
+            str(out_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    rpt.validate_report_data(payload)
+    assert payload["results"]["method"] == "ted++"
     assert payload["results"]["num_inputs"] == 10
