@@ -44,6 +44,16 @@ Important `results` fields:
 | `source_target_mean_l2` | Source-target matrix of perturbation distances |
 | `output_dir` | Cache directory for perturbation files |
 
+## Progress Output
+
+For interactive terminal runs, AEVA displays a progress bar for source-target class pairs. The total is
+`(ep - sp) * (num_classes - 1)`: each selected source class is compared with every other target class.
+The class range follows the exclusive `--aeva-ep` end value.
+
+The progress bar is disabled when either standard output or standard error is not attached to a terminal.
+This keeps CI logs, redirected output, and MCP's stdio transport free of terminal control sequences.
+The existing `--aeva-verbose` HSJA iteration messages remain available.
+
 ## Example CLI Command
 
 Start with a small smoke test:
