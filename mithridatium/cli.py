@@ -27,6 +27,7 @@ from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
 from mithridatium.repair.anp import run_anp
+from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_TYPES, POSITIONS
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
@@ -866,6 +867,30 @@ def repair(
         0.2, "--anp-prune-threshold",
         help="Threshold for pruning neurons in ANP."
     ),
+    anp_attack_target: int = typer.Option(
+        None, "--anp-attack-target",
+        help="ANP ASR: target class for known CIFAR-10 backdoor (0-9). Omit to skip ASR.",
+    ),
+    anp_trigger_type: str = typer.Option(
+        None, "--anp-trigger-type",
+        help="ANP ASR: white-square, checkerboard, cross, or blend (default: white-square).",
+    ),
+    anp_trigger_alpha: float = typer.Option(
+        None, "--anp-trigger-alpha",
+        help="ANP ASR: whole-image white blend strength in (0, 1] (default: 0.2). Only for blend.",
+    ),
+    anp_trigger_size: int = typer.Option(
+        None, "--anp-trigger-size",
+        help="ANP ASR: patch width/height in pixels (default: 4). Not for blend.",
+    ),
+    anp_trigger_pos: str = typer.Option(
+        None, "--anp-trigger-pos",
+        help="ANP ASR: patch corner (default: bottom-right). Not for blend.",
+    ),
+    anp_asr_samples: int = typer.Option(
+        None, "--anp-asr-samples",
+        help="ANP ASR: number of non-target CIFAR-10 test samples to evaluate (default: 500).",
+    ),
     seed: int = typer.Option(
         None, "--seed", "-s",
         help="Random seed for reproducibility.",
@@ -1094,6 +1119,38 @@ def repair(
         if clean_samples <= 0:
             typer.secho("Error: --clean-samples must be a positive integer.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
+        asr_options = (anp_trigger_type, anp_trigger_alpha, anp_trigger_size, anp_trigger_pos, anp_asr_samples)
+        if anp_attack_target is None and any(option is not None for option in asr_options):
+            typer.secho("Error: --anp-attack-target is required when providing ANP trigger/ASR options.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_attack_target is not None and data.lower().strip() != "cifar10":
+            typer.secho("Error: ANP CLI ASR evaluation currently supports only --data cifar10.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_attack_target is not None and not 0 <= anp_attack_target < 10:
+            typer.secho("Error: --anp-attack-target must be a CIFAR-10 class from 0 to 9.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_type is not None and anp_trigger_type not in TRIGGER_TYPES:
+            typer.secho(f"Error: --anp-trigger-type must be one of: {', '.join(TRIGGER_TYPES)}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        trigger_kind = anp_trigger_type if anp_trigger_type is not None else "white-square"
+        if trigger_kind == "blend" and (anp_trigger_size is not None or anp_trigger_pos is not None):
+            typer.secho("Error: patch size/position options do not apply to blend triggers.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if trigger_kind != "blend" and anp_trigger_alpha is not None:
+            typer.secho("Error: --anp-trigger-alpha is only valid for blend triggers.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_alpha is not None and not (math.isfinite(anp_trigger_alpha) and 0 < anp_trigger_alpha <= 1):
+            typer.secho("Error: --anp-trigger-alpha must be finite and in (0, 1].", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_size is not None and not 1 <= anp_trigger_size <= 32:
+            typer.secho("Error: --anp-trigger-size must be between 1 and 32.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_pos is not None and anp_trigger_pos not in POSITIONS:
+            typer.secho("Error: invalid --anp-trigger-pos.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_asr_samples is not None and anp_asr_samples < 1:
+            typer.secho("Error: --anp-asr-samples must be positive.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
 
         model_path = Path(model)
         if not model_path.exists() or not model_path.is_file():
@@ -1114,6 +1171,20 @@ def repair(
                 raise typer.Exit(code=EXIT_CANT_CREATE)
 
         try:
+            triggered_eval_dataset = None
+            if anp_attack_target is not None:
+                test_loader, test_config = utils.dataloader_for("cifar10", "test", 64)
+                triggered_eval_dataset = build_triggered_dataset(
+                    test_loader.dataset,
+                    attack_target=anp_attack_target,
+                    config=test_config,
+                    trigger_type=trigger_kind,
+                    trigger_size=anp_trigger_size if anp_trigger_size is not None else 4,
+                    trigger_pos=anp_trigger_pos if anp_trigger_pos is not None else "bottom-right",
+                    blend_alpha=anp_trigger_alpha if anp_trigger_alpha is not None else 0.2,
+                    samples=anp_asr_samples if anp_asr_samples is not None else 500,
+                    seed=seed if seed is not None else 0,
+                )
             run_anp(
                 model_path=str(model_path),
                 out=str(out),
@@ -1126,6 +1197,8 @@ def repair(
                 clean_samples=clean_samples,
                 seed=seed if seed is not None else 0,
                 version=VERSION,
+                triggered_eval_dataset=triggered_eval_dataset,
+                attack_target=anp_attack_target,
             )
         except Exception as ex:
             typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)

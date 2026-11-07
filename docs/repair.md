@@ -48,6 +48,12 @@ Currently supported:
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
 | `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `10`). |
 | `--anp-prune-threshold` | ANP: prune channels whose mask is at or below this value (between `0` and `1`; default `0.2`). |
+| `--anp-attack-target` | ANP ASR: known backdoor target class (CIFAR-10 label 0–9). Omit to skip ASR. |
+| `--anp-trigger-type` | ANP ASR: `white-square` (default), `checkerboard`, `cross`, or `blend`. |
+| `--anp-trigger-alpha` | ANP ASR: white whole-image blend strength in `(0, 1]`; only for `blend` (default `0.2`). |
+| `--anp-trigger-size` | ANP ASR: patch width/height in pixels (default `4` when target supplied). |
+| `--anp-trigger-pos` | ANP ASR: patch position: `bottom-right`, `bottom-left`, `top-right`, or `top-left` (default `bottom-right`). |
+| `--anp-asr-samples` | ANP ASR: non-target CIFAR-10 test images for ASR (default `500`). |
 
 
 ## LMR (Logit-Margin Repulsion)
@@ -196,10 +202,127 @@ mithridatium repair \
 This saves a new `.pth` checkpoint and a JSON report. The report's `results`
 include `method: "anp"`, parameter values, `total_channels_pruned`, a per-layer
 breakdown, `clean_accuracy_before`, `clean_accuracy_after`, and optional ASR metrics.
-On the demo poisoned ResNet-18 model, clean accuracy is preserved (approx 90.0% before
-vs 88.0% after) while attack success rate (ASR) drops significantly (approx 95.0% before
-down to 10.0% after). By default, existing output files are protected; use `--force`
-if overwriting is intentional. You can omit `--report` for a JSON sidecar or use
+
+### Optional ASR evaluation (known backdoor trigger)
+
+ANP itself needs only clean data. To measure **targeted attack success rate**
+before and after pruning, provide the *actual* trigger details and target class
+from the model's poisoning procedure. For the default white-square BadNet
+configuration in `scripts/train_resnet18.py`, use:
+
+```bash
+mithridatium repair \
+  --model models/resnet18_poison.pth \
+  --method anp \
+  --data cifar10 \
+  --clean-samples 500 \
+  --seed 0 \
+  --anp-attack-target 0 \
+  --anp-trigger-type white-square \
+  --anp-trigger-size 4 \
+  --anp-trigger-pos bottom-right \
+  --anp-asr-samples 500 \
+  --out models/resnet18_anp_repaired.pth \
+  --report reports/anp_asr.json
+```
+
+To evaluate a *different known backdoor*, choose the matching generator:
+
+```bash
+# An alternating black/white corner checkerboard
+mithridatium repair --method anp --model models/poisoned_checkerboard.pth \
+  --data cifar10 --anp-attack-target 0 --anp-trigger-type checkerboard \
+  --anp-trigger-size 4 --anp-trigger-pos bottom-right
+
+# A central-row/column white cross in a corner patch
+mithridatium repair --method anp --model models/poisoned_cross.pth \
+  --data cifar10 --anp-attack-target 0 --anp-trigger-type cross \
+  --anp-trigger-size 4 --anp-trigger-pos top-left
+
+# Uniform whole-image white blending
+mithridatium repair --method anp --model models/poisoned_blend.pth \
+  --data cifar10 --anp-attack-target 0 --anp-trigger-type blend \
+  --anp-trigger-alpha 0.2
+```
+
+These examples are *configurations*, not verified checkpoints or evidence that
+those attacks occurred. Do not change trigger type merely to obtain a better ASR:
+accurate ASR requires recreating the actual poison trigger (including shape,
+location, color, and blending strength). The `blend` generator blends uniform
+white into every pixel, not an arbitrary image overlay. For other patterns,
+`TriggeredDataset` accepts a custom Python trigger callable.
+
+The shared `mithridatium.evaluation.triggered` module implements the trigger
+and dataset wrapper independently of ANP. It supports caller-supplied trigger
+functions and compatible RGB input sizes for reuse by other repair methods.
+`mithridatium.evaluation.asr` provides an architecture-independent targeted
+ASR metric. ANP keeps its previous `evaluate_targeted_asr` import for backwards
+compatibility.
+
+The white-square builder applies the white patch **before normalization in pixel-space
+terms**, just as the training script does, then preserves the original clean
+label. Samples already in the target class are excluded. ASR = triggered
+non-target images predicted as the target / total triggered non-target images.
+All triggered evaluation images are selected deterministically using `--seed`.
+The same triggered set is evaluated on the model before and after repair.
+
+The MCP `run_anp` tool accepts the corresponding arguments
+`anp_attack_target`, `anp_trigger_type`, `anp_trigger_alpha`,
+`anp_trigger_size`, `anp_trigger_pos`, and `anp_asr_samples`, with the same defaults and validation. ASR arguments must
+be supplied with the attack target; leaving all ASR arguments out retains the
+old behavior, and all three ASR fields are absent from the JSON report.
+These CLI/MCP options support **CIFAR-10 with the four defined trigger types**,
+not arbitrary semantic or invisible triggers. The shared Python helpers do
+not remove the current ANP model-loader restriction to ResNet-18, and other
+repair methods are not automatically wired to ASR yet. Incorrect trigger
+metadata produces misleading ASR results.
+
+**Measured demo results:** 
+#### ANP ASR DEMO Evaluation Results
+
+ANP was evaluated on a poisoned ResNet-18 model trained on
+CIFAR-10 for 5 epochs with a 10% poisoning rate. The attack
+used a 4×4 white-square trigger in the bottom-right corner
+and targeted class 0 (airplane).
+
+The evaluation used 500 clean repair samples, 500 clean
+evaluation samples, and 500 triggered evaluation samples,
+with random seed 0 and the default ANP parameters.
+
+| Metric | Before Repair | After Repair |
+|---|---:|---:|
+| Clean Accuracy | 60.2% | 22.6% |
+| Attack Success Rate (ASR) | 90.8% | 0.0% |
+
+**Repair Configuration:**
+- Pruning threshold: 0.2
+- Epsilon: 0.4
+- Alpha: 0.2
+- Steps: 10
+- Total channels pruned: 903
+
+**Results and Limitations:**
+
+ANP reduced the measured ASR from 90.8% to 0.0%, but
+clean accuracy also decreased from 60.2% to 22.6%,
+a loss of 37.6 percentage points.
+
+Although the attack was no longer successful on the
+evaluated triggered samples, the significant reduction
+in clean accuracy indicates that the repair damaged
+normal model performance.
+
+These results demonstrate that ASR reporting is functioning,
+but the current pruning behavior requires improvement.
+The excessive clean accuracy loss is being investigated
+separately in Issue #170.
+
+This experiment is a preliminary evaluation using a
+5-epoch checkpoint. Results may differ with a more
+fully trained model or revised pruning implementation.
+
+By default, existing output files are protected; use `--force` if overwriting
+is intentional. You can omit `--report` for a JSON sidecar or use
 `--report -` to print the JSON to stdout.
 
 ### Limitations and interpretation
