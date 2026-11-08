@@ -25,6 +25,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Subset
 
 from mithridatium import loader, report as rpt, utils
+from mithridatium.evaluation.asr import evaluate_targeted_asr
 
 
 class NoisyBatchNorm2d(nn.BatchNorm2d):
@@ -266,25 +267,6 @@ def evaluate_clean(model, dataset):
         predictions = model(images.to(device)).argmax(1)
         correct += (predictions == labels.to(device)).sum().item()
     return correct / len(dataset)
-
-
-@torch.no_grad()
-def evaluate_targeted_asr(model, dataset, target_label):
-    """Targeted ASR on triggered images paired with original clean labels."""
-    if len(dataset) == 0:
-        raise ValueError("Triggered evaluation dataset is empty")
-    device = next(model.parameters()).device
-    model.eval()
-    hits = total = 0
-    for images, labels, *_ in DataLoader(dataset, batch_size=64):
-        labels = labels.to(device)
-        eligible = labels != target_label
-        predictions = model(images.to(device)).argmax(1)
-        hits += ((predictions == target_label) & eligible).sum().item()
-        total += eligible.sum().item()
-    if total == 0:
-        raise ValueError("Triggered evaluation requires non-target-class examples")
-    return hits / total, total
 
 
 def _sample(dataset, count, generator):
