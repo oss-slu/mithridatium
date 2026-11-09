@@ -888,6 +888,55 @@ def ui(
     launch_ui(host=host, port=port, share=share)
 
 
+AGENTS = ("supervisor", "audit", "detect", "repair")
+
+
+@app.command()
+def agent(
+    prompt: str = typer.Argument(
+        None,
+        help="Plain-English request. Defaults to the chosen agent's built-in prompt.",
+    ),
+    agent_name: str = typer.Option(
+        "supervisor",
+        "--agent",
+        "-a",
+        help=f"Agent to run: {', '.join(AGENTS)}.",
+    ),
+):
+    """
+    Run an LLM agent that calls Mithridatium through the MCP server.
+    """
+    if agent_name not in AGENTS:
+        typer.secho(
+            f"Error: unknown agent '{agent_name}'. Choose from: {', '.join(AGENTS)}.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    import asyncio
+    import importlib
+    import os
+
+    try:
+        module = importlib.import_module(f"mithridatium.mcp.{agent_name}_agent")
+    except ImportError:
+        typer.secho(
+            "Error: agents require the optional 'agent' dependencies. "
+            "Install with: pip install -e '.[agent]'",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    # the agent module loads .env on import, so check after importing it
+    if not os.environ.get("OPENAI_API_KEY"):
+        typer.secho("Error: OPENAI_API_KEY is not set (export it or add it to .env).", err=True)
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    run = getattr(module, f"{agent_name}_agent")
+    typer.echo(asyncio.run(run(prompt or module.DEFAULT_PROMPT)))
+
+
 @app.command("repair")
 def repair(
     model: str = typer.Option(
