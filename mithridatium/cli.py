@@ -30,6 +30,7 @@ from mithridatium.repair.anp import run_anp
 from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_TYPES, POSITIONS
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
+from mithridatium.detect.tedpp import tedpp
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
 from mithridatium.repair import run_lmr
 
@@ -49,7 +50,7 @@ app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp", "anp"}
 
-DETECT_METHODS = {"scaleup", "ted", "ibdpsc"}
+DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++"}
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
@@ -487,7 +488,7 @@ def detect(
             "scaleup",
             "--method",
             "-M",
-            help="The method name: 'scaleup', 'ted' or 'ibdpsc'.",
+            help="The method name: 'scaleup', 'ted', 'ted++', or 'ibdpsc'.",
         ),
         num_samples: str = typer.Option(
             "256",
@@ -545,6 +546,22 @@ def detect(
             0.01,
             "--ted-contamination",
             help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
+        ),
+        tedpp_samples_per_class: int = typer.Option(
+            5,
+            "--tedpp-samples-per-class",
+            min=2,
+            help="TED++: number of correctly classified clean reference inputs selected per class.",
+        ),
+        tedpp_beta: float = typer.Option(
+            0.5,
+            "--tedpp-beta",
+            help=(
+                "TED++ tube-neighbor fraction. For each clean activation, k = "
+                "ceil(samples_per_class * beta) nearest same-class neighbors are used "
+                "to estimate the layer's tube radius; require 0 < beta <= 1 and "
+                "k < samples_per_class."
+            ),
         ),
         ibdpsc_num_samples: int = typer.Option(
             256,
@@ -672,9 +689,21 @@ def detect(
     """
     Validate TED options.
     """
-    if m == "ted":
+    if m in {"ted", "ted++"}:
         if not 0 < ted_contamination <= 0.5:
             typer.secho(f"Error: --ted-contamination must be within 0 < alpha <= 0.5, got {ted_contamination}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+    if m == "ted++":
+        if (
+            not 0 < tedpp_beta <= 1
+            or math.ceil(tedpp_samples_per_class * tedpp_beta)
+            >= tedpp_samples_per_class
+        ):
+            typer.secho(
+                "Error: --tedpp-beta must satisfy 0 < beta <= 1 and "
+                "ceil(samples_per_class * beta) < samples_per_class.",
+                err=True,
+            )
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     """
@@ -699,13 +728,23 @@ def detect(
     except ValueError as ex:
         typer.secho(f"Error: {ex}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
+    if (
+        m == "ted++"
+        and cfg.get_num_classes() * tedpp_samples_per_class > ted_reference_size
+    ):
+        typer.secho(
+            "Error: --ted-reference-size must be at least the number of classes "
+            "times --tedpp-samples-per-class.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] loading model from {p}…")
 
     try:
         mdl, _ = loader.detect_and_build(str(p), num_classes=cfg.get_num_classes())
         test_loader, config = utils.dataloader_for(data, "test", 128)
-        if m == "ted":
+        if m in {"ted", "ted++"}:
             train_loader, _ = utils.dataloader_for(data, "train", 128)
         if m == "ibdpsc":
             train_loader, _ = utils.dataloader_for(data, "train", 128)
@@ -735,6 +774,20 @@ def detect(
                 suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
                 reference_size=ted_reference_size,
                 contamination=ted_contamination,
+                device=get_device(0),
+            )
+        elif m == "ted++":
+            test_ds, train_ds = test_loader.dataset, train_loader.dataset
+            results = tedpp(
+                mdl,
+                # same 2x headroom as TED for misclassified images dropped from the reference set
+                reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+                suspect_data=torch.utils.data.Subset(
+                    test_ds, range(min(len(test_ds), ted_num_samples))
+                ),
+                contamination=ted_contamination,
+                samples_per_class=tedpp_samples_per_class,
+                beta=tedpp_beta,
                 device=get_device(0),
             )
         elif m == "ibdpsc":
@@ -785,6 +838,8 @@ def detect(
     _write_json(rep, out, force)
     if m == "ted":
         rule = f"TED score > {results['threshold']:.4g}"
+    elif m == "ted++":
+        rule = f"TED++ PCA score > {results['threshold']:.4g}"
     elif m == "ibdpsc":
         rule = f"PSC > {ibdpsc_threshold}"
     else:
