@@ -35,6 +35,14 @@ Run the server and the agent on a machine where PyTorch imports successfully.
 
 
 
+### Detect
+| Tool          | Method   |
+| ------------- | -------- |
+| `run_scaleup` | SCALE-UP |
+| `run_ted`     | TED      |
+| `run_tedpp`   | TED++    |
+| `run_ibdpsc`  | IBD-PSC  |
+
 ### Repair 
 | Tool       | Method |
 | ---------- | ------ |
@@ -87,11 +95,12 @@ The detect and repair agents work the same way:
 
 ```bash
 python -m mithridatium.mcp.detect_agent "Run TED on models/resnet18_poison.pth"
+python -m mithridatium.mcp.detect_agent "Run TED++ on models/resnet18_poison.pth"
 python -m mithridatium.mcp.repair_agent "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
 python -m mithridatium.mcp.repair_agent "Run ANP on models/resnet18_poison.pth"
 ```
 
-With no prompt, the detect agent runs SCALE-UP and the repair agent runs CLP on `models/resnet18_poison.pth`. Each agent only receives its own tools. The repair agent supports `run_clp`, `run_lmr`, and `run_anp`. The detect agent's tools are `run_scaleup`, `run_ted` and `run_ibdpsc`, and their options use the CLI flag names with underscores (`ibdpsc_scale`, `ibdpsc_num_models`, and so on). From Python, call `audit_agent()`, `detect_agent()` or `repair_agent()` with the prompt string.
+With no prompt, the detect agent runs SCALE-UP and the repair agent runs CLP on `models/resnet18_poison.pth`. Each agent only receives its own tools. The repair agent supports `run_clp`, `run_lmr`, and `run_anp`. The detect agent's tools are `run_scaleup`, `run_ted`, `run_tedpp` and `run_ibdpsc`, and their options use the CLI flag names with underscores (`ibdpsc_scale`, `ibdpsc_num_models`, and so on). From Python, call `audit_agent()`, `detect_agent()` or `repair_agent()` with the prompt string.
 
 The printed reply is a short verdict summary. The full report is the JSON file under `reports/`.
 

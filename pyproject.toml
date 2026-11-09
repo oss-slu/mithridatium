@@ -90,5 +90,6 @@ markers = [
 [tool.codespell]
 skip = "*.pth,*.npy,data,models,reports,*/docs/assets,*.egg-info"
 
-# Test-dataset variable in scripts/verify_scaleup.py.
-ignore-words-list = "te"
+# te: test-dataset variable in scripts/verify_scaleup.py.
+# nam: first name of TED++'s first author, in docs/defenses/tedpp.md.
+ignore-words-list = "te,nam"
