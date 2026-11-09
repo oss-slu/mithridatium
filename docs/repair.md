@@ -176,7 +176,9 @@ and minimizing the combined loss:
 
 `alpha * clean_loss + (1 - alpha) * noisy_loss`
 
-Channels with learned mask values `score <= threshold` (or within `--anp-prune-fraction`) are pruned by zeroing their BatchNorm weight, leaving bias intact to prevent feature drift.
+Channels with learned mask values `score <= threshold` are pruned by zeroing their BatchNorm weight, leaving bias intact to prevent feature drift.
+With `--anp-prune-fraction`, exactly that fraction of the lowest-scoring channels is pruned instead (ties broken by position).
+The stem BatchNorm (`bn1`) and shortcut (`downsample`) BatchNorm layers are never pruned and do not count toward the fraction.
 The `--clean-samples` option sets the number of clean images used (shared, default: `500`),
 `--anp-eps` controls the perturbation bound (default: `0.4`), `--anp-alpha` balances
 clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps

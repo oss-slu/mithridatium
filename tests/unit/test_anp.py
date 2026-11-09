@@ -102,6 +102,35 @@ def test_prune_by_fraction():
     assert model.bn.weight[1] == 2.0
 
 
+def test_prune_by_fraction_prunes_exactly_k_with_ties():
+    model = TinyModel()
+    model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    _replace_bn(model)
+
+    # Three masks clamped to 0; a threshold would prune all three, but 25% is one
+    scores = {"bn": torch.tensor([0.0, 0.0, 1.0, 0.0])}
+    pruned = prune_by_fraction(model, scores, fraction=0.25)
+
+    assert pruned[0]["count"] == 1
+    assert pruned[0]["indices"] == [0]
+    assert torch.equal(model.bn.weight, torch.tensor([0.0, 2.0, 3.0, 4.0]))
+
+
+def test_prune_by_fraction_ignores_skipped_layers():
+    model = TinyModel()
+    model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    _replace_bn(model)
+
+    # Scores for a skipped layer must not use up the pruning budget
+    scores = {
+        "bn": torch.tensor([0.5, 0.8, 0.2, 0.9]),
+        "bn1": torch.tensor([0.0, 0.0, 0.0, 0.0]),
+    }
+    pruned = prune_by_fraction(model, scores, fraction=0.25)
+
+    assert pruned == [{"layer": "bn", "indices": [2], "count": 1}]
+
+
 def test_prune_by_fraction_zero_prunes_nothing():
     model = TinyModel()
     model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])

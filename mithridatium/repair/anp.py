@@ -216,20 +216,24 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10, iterations
     return {name: bn.neuron_mask.detach().clone() for name, bn in layers.items()}
 
 
-def prune_by_threshold(model, scores, threshold):
-    """Zero low-scoring BatchNorm channel weights and remove ANP wrappers."""
-    if not (math.isfinite(threshold) and 0 <= threshold <= 1):
-        raise ValueError("prune threshold must be between 0 and 1")
-
-    pruned = []
+def _prunable_layers(model, scores):
+    """BatchNorm layers that have scores and are eligible for pruning."""
+    layers = []
     for name, bn in model.named_modules():
-        if not isinstance(bn, (NoisyBatchNorm2d, nn.BatchNorm2d)):
+        if not isinstance(bn, nn.BatchNorm2d):
             continue
         if name not in scores:
             continue
         if name == "bn1" or "downsample" in name:
             continue
-        indices = torch.where(scores[name] <= threshold)[0]
+        layers.append((name, bn))
+    return layers
+
+
+def _zero_channels(model, selected):
+    """Zero the selected BatchNorm channel weights and remove ANP wrappers."""
+    pruned = []
+    for name, bn, indices in selected:
         with torch.no_grad():
             # Changed so the upstream zeroes ONLY the BN weight
             bn.weight[indices] = 0
@@ -241,20 +245,44 @@ def prune_by_threshold(model, scores, threshold):
     return pruned
 
 
+def prune_by_threshold(model, scores, threshold):
+    """Zero low-scoring BatchNorm channel weights and remove ANP wrappers."""
+    if not (math.isfinite(threshold) and 0 <= threshold <= 1):
+        raise ValueError("prune threshold must be between 0 and 1")
+
+    selected = [
+        (name, bn, torch.where(scores[name] <= threshold)[0])
+        for name, bn in _prunable_layers(model, scores)
+    ]
+    return _zero_channels(model, selected)
+
+
 # Added prune_by_fraction to support pruning by fraction alongside threshold
 def prune_by_fraction(model, scores, fraction):
-    """Prune the lowest-scoring fraction of BatchNorm channels across all layers."""
+    """Prune exactly the lowest-scoring fraction of prunable BatchNorm channels."""
     if not (math.isfinite(fraction) and 0 <= fraction <= 1):
         raise ValueError("prune fraction must be between 0 and 1")
-    if fraction == 0:
-        # nothing to prune, but still unwrap the ANP layers like prune_by_threshold does
-        _restore_bn(model)
-        return []
 
-    all_scores = torch.cat([v.flatten() for v in scores.values()])
+    layers = _prunable_layers(model, scores)
+    if fraction == 0 or not layers:
+        # nothing to prune, but still unwrap the ANP layers
+        return _zero_channels(model, [])
+
+    # Rank channels globally; a stable sort breaks ties (e.g. masks clamped to
+    # 0 or 1) by position so exactly k channels are pruned
+    all_scores = torch.cat([scores[name].flatten().cpu() for name, _ in layers])
     k = max(1, int(len(all_scores) * fraction))
-    threshold = torch.kthvalue(all_scores, k).values.item()
-    return prune_by_threshold(model, scores, threshold=threshold)
+    chosen = torch.zeros(len(all_scores), dtype=torch.bool)
+    chosen[torch.argsort(all_scores, stable=True)[:k]] = True
+
+    selected = []
+    offset = 0
+    for name, bn in layers:
+        size = scores[name].numel()
+        indices = torch.where(chosen[offset:offset + size])[0].to(bn.weight.device)
+        selected.append((name, bn, indices))
+        offset += size
+    return _zero_channels(model, selected)
 
 
 @torch.no_grad()
