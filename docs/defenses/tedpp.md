@@ -80,11 +80,11 @@ TED++ has two flags of its own and shares three with TED.
 m = 5 and beta = 0.5 are the paper's settings. The `0.01` contamination is TED's
 default; the authors' TED++ code uses `0.1`.
 
-**Cost.** Choosing the references classifies the whole training split once. Each
-scored input is then compared with every reference image at every hooked layer,
-so the per-input cost grows with network depth. On an Apple-silicon GPU, a full
-run over 256 inputs took 24-29 seconds on our ResNet-18, including that setup
-pass.
+**Cost.** Choosing the references classifies at most 2 x `--ted-reference-size`
+training images (2000 by default) once. Each scored input is then compared with
+every reference image at every hooked layer, so the per-input cost grows with
+network depth.
+
 
 ## Example reports
 
