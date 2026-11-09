@@ -1130,6 +1130,50 @@ def repair(
         except Exception as ex:
             typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
+@app.command()
+def agent(prompt: str = typer.Argument(
+    ...,
+    help = "Prompt to send to the supervisor agent.",
+),
+report: Path = typer.Option(
+    None,
+    "--report",
+    "-r",
+    help="Path to save the agent run JSON summary.",
+), 
+force: bool = typer.Option(
+    False,
+    "--force",
+    "-f",
+    help="Overwrite existing files without asking.",
+),
+model: str = typer.Option(
+    "gpt-4o-mini",
+    "--model",
+    help = "Chat model use for agent",
+    ),
+) -> None:
+    if report is not None:
+        _check_out_writable(str(report), force)
+    import asyncio
+    try:
+        from mithridatium.mcp.supervisor_agent import supervisor_agent
+    except ImportError as ex:
+        typer.secho(
+            f"Error: agent dependencies not available. Install with 'pip install -e \".[agent]\"'.\nReason: {ex}",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+    try:
+        final_message, summary = asyncio.run(
+            supervisor_agent(prompt, model_name=model, return_summary=True)
+        )
+    except Exception as ex:
+        typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+        raise typer.Exit(code=EXIT_IO_ERROR)
+    typer.echo(final_message)
+    if report is not None:
+        _write_json(summary, str(report), force)
 
 if __name__ == "__main__":
     app()
