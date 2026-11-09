@@ -246,8 +246,10 @@ def prune_by_fraction(model, scores, fraction):
     """Prune the lowest-scoring fraction of BatchNorm channels across all layers."""
     if not (math.isfinite(fraction) and 0 <= fraction <= 1):
         raise ValueError("prune fraction must be between 0 and 1")
-    if fraction <= 0.0:
-        return prune_by_threshold(model, scores, threshold=-1.0)
+    if fraction == 0:
+        # nothing to prune, but still unwrap the ANP layers like prune_by_threshold does
+        _restore_bn(model)
+        return []
 
     all_scores = torch.cat([v.flatten() for v in scores.values()])
     k = max(1, int(len(all_scores) * fraction))

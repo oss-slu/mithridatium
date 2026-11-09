@@ -102,6 +102,20 @@ def test_prune_by_fraction():
     assert model.bn.weight[1] == 2.0
 
 
+def test_prune_by_fraction_zero_prunes_nothing():
+    model = TinyModel()
+    model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    _replace_bn(model)
+
+    scores = {"bn": torch.tensor([0.05, 0.8, 0.2, 0.9])}
+    pruned = prune_by_fraction(model, scores, fraction=0)
+
+    assert pruned == []
+    assert torch.equal(model.bn.weight, torch.tensor([1.0, 2.0, 3.0, 4.0]))
+    # ANP wrappers are still removed
+    assert type(model.bn) is nn.BatchNorm2d
+
+
 def test_exported_state_dict_loads_into_plain_resnet18():
     # Plain ResNet-18
     model = models.resnet18(weights=None)
