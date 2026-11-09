@@ -75,7 +75,7 @@ TED++ has two flags of its own and shares three with TED.
 | `--tedpp-beta` | `0.5` | Tube neighbour factor: k = ceil(m x beta). Needs 0 < beta <= 1 and k < m |
 | `--ted-num-samples` | `256` | Test inputs to score |
 | `--ted-contamination` | `0.01` | Fraction of reference trajectories the threshold rejects, within (0, 0.5] |
-| `--ted-reference-size` | `1000` | Only checked here: must be at least the number of classes times m |
+| `--ted-reference-size` | `1000` | Must be at least the number of classes times m |
 
 m = 5 and beta = 0.5 are the paper's settings. The `0.01` contamination is TED's
 default; the authors' TED++ code uses `0.1`.
