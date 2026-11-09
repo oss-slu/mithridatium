@@ -9,11 +9,11 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from mithridatium.mcp.audit_agent import _load_mithridatium_mcp
 
-REPAIR_TOOLS = {"run_clp", "run_lmr"}
+REPAIR_TOOLS = {"run_clp", "run_lmr", "run_anp"}
 
 REPAIR_SYSTEM_PROMPT = """
 You repair backdoored image-classification checkpoints.
-Tools: run_clp, run_lmr.
+Tools: run_clp, run_lmr, run_anp.
 Pass the model path the user gives. Never set out to the input model path.
 Run only the methods they name. If they name none, run run_clp.
 run_lmr needs lmr_target_class and lmr_prune_ratio. If the user did not give

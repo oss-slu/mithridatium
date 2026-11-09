@@ -26,9 +26,12 @@ from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
+from mithridatium.repair.anp import run_anp
+from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_TYPES, POSITIONS
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
+from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
 from mithridatium.repair import run_lmr
 
 try:
@@ -45,9 +48,9 @@ EXIT_IO_ERROR = 74        # input exists but can't be opened/read
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
-REPAIR_METHODS = {"lmr", "clp"}
+REPAIR_METHODS = {"lmr", "clp", "anp"}
 
-DETECT_METHODS = {"scaleup", "ted", "ted++"}
+DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++}
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
@@ -86,7 +89,7 @@ def _write_json(obj: dict, out_path: str, force: bool) -> None:
 
 @app.callback(invoke_without_command=True)
 def _root(
-    # This is a calback that prints the version whenever it is ran.
+    # This is a callback that prints the version whenever it is ran.
     version: bool = typer.Option(
         False,
         "--version",
@@ -485,7 +488,7 @@ def detect(
             "scaleup",
             "--method",
             "-M",
-            help="The method name: 'scaleup', 'ted', or 'ted++'.",
+            help="The method name: 'scaleup', 'ted', 'ted++', or 'ibdpsc'.",
         ),
         num_samples: str = typer.Option(
             "256",
@@ -501,7 +504,7 @@ def detect(
         scaleup_threshold: str = typer.Option(
             "0.5",
             "--scaleup-threshold",
-            help="The percent threshhold of distortion scalars an image must pass through to be declared poisoned.",
+            help="The percent threshold of distortion scalars an image must pass through to be declared poisoned.",
         ),
         # seed: str = typer.Option(
         #     "",
@@ -559,6 +562,33 @@ def detect(
                 "to estimate the layer's tube radius; require 0 < beta <= 1 and "
                 "k < samples_per_class."
             ),
+        ibdpsc_num_samples: int = typer.Option(
+            256,
+            "--ibdpsc-num-samples",
+            min=1,
+            help="IBD-PSC: the number of test images to score.",
+        ),
+        ibdpsc_clean_samples: int = typer.Option(
+            100,
+            "--ibdpsc-clean-samples",
+            min=1,
+            help="IBD-PSC: known-clean images from the training split used to choose which BN layers to amplify.",
+        ),
+        ibdpsc_scale: float = typer.Option(
+            1.5,
+            "--ibdpsc-scale",
+            help="IBD-PSC: the factor (omega) applied to gamma and beta of the amplified BN layers, above 1.",
+        ),
+        ibdpsc_num_models: int = typer.Option(
+            5,
+            "--ibdpsc-num-models",
+            min=1,
+            help="IBD-PSC: the number of amplified models (n) averaged per input.",
+        ),
+        ibdpsc_threshold: float = typer.Option(
+            0.9,
+            "--ibdpsc-threshold",
+            help="IBD-PSC: flag an input when its PSC score exceeds this, within 0 < T < 1.",
         ),
 
 
@@ -622,7 +652,7 @@ def detect(
 
 
     """
-    Validate SCALE-UP treshold.
+    Validate SCALE-UP threshold.
     """
     try:
         scaleup_threshold_converted = float(scaleup_threshold)
@@ -648,7 +678,7 @@ def detect(
                 raise TypeError
 
     except (TypeError, ValueError, SyntaxError):
-        typer.secho(f"Error: --scaleup-scales must be a parenthesis enclosed, comma seperated list of numbers, got {scaleup_scales}", err=True)
+        typer.secho(f"Error: --scaleup-scales must be a parenthesis enclosed, comma separated list of numbers, got {scaleup_scales}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     if all(scalar > 0 for scalar in scaleup_scales_converted) is False:
@@ -673,6 +703,21 @@ def detect(
                 "ceil(samples_per_class * beta) < samples_per_class.",
                 err=True,
             )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    """
+    Validate IBD-PSC options.
+    """
+    if m == "ibdpsc":
+        # typer's min=1 only runs when parsing the command line; the MCP tool calls detect() directly.
+        if min(ibdpsc_num_samples, ibdpsc_clean_samples, ibdpsc_num_models) < 1:
+            typer.secho("Error: --ibdpsc-num-samples, --ibdpsc-clean-samples and --ibdpsc-num-models must be at least 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not 1 < ibdpsc_scale < float("inf"):   # also rejects nan
+            typer.secho(f"Error: --ibdpsc-scale must be a finite number greater than 1, got {ibdpsc_scale}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not 0 < ibdpsc_threshold < 1:
+            typer.secho(f"Error: --ibdpsc-threshold must be within 0 < T < 1, got {ibdpsc_threshold}.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     _check_out_writable(out, force)
@@ -700,12 +745,21 @@ def detect(
         test_loader, config = utils.dataloader_for(data, "test", 128)
         if m in {"ted", "ted++"}:
             train_loader, _ = utils.dataloader_for(data, "train", 128)
+        if m == "ibdpsc":
+            train_loader, _ = utils.dataloader_for(data, "train", 128)
     except Exception as ex:
         typer.secho(
             f"Error: failed to load model '{p}'.\nReason: {ex}",
             err=True,
         )
         raise typer.Exit(code=EXIT_IO_ERROR)
+
+    if m == "ibdpsc" and not bn_layers(mdl):
+        typer.secho(
+            f"Error: --method ibdpsc amplifies affine BatchNorm2d layers, and model {p} has none.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] running method={m}…")
 
@@ -732,6 +786,15 @@ def detect(
                 contamination=ted_contamination,
                 samples_per_class=tedpp_samples_per_class,
                 beta=tedpp_beta,
+        elif m == "ibdpsc":
+            test_ds, train_ds = test_loader.dataset, train_loader.dataset
+            results = ibdpsc(
+                mdl,
+                clean_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), ibdpsc_clean_samples))),
+                suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ibdpsc_num_samples))),
+                scale=ibdpsc_scale,
+                num_models=ibdpsc_num_models,
+                threshold=ibdpsc_threshold,
                 device=get_device(0),
             )
         else:
@@ -773,6 +836,8 @@ def detect(
         rule = f"TED score > {results['threshold']:.4g}"
     elif m == "ted++":
         rule = f"TED++ PCA score > {results['threshold']:.4g}"
+    elif m == "ibdpsc":
+        rule = f"PSC > {ibdpsc_threshold}"
     else:
         rule = f"SPC > {scaleup_threshold_converted}"
     print(
@@ -827,7 +892,7 @@ def repair(
     ),
     method: str = typer.Option(
         "lmr", "--method", "-M",
-        help="The repair method to run: 'lmr' or 'clp'.",
+        help="The repair method to run: 'lmr', 'clp', or 'anp'.",
     ),
     data: str = typer.Option(
         "cifar10", "--data", "-d",
@@ -836,6 +901,46 @@ def repair(
     clean_samples: int = typer.Option(
         500, "--clean-samples", "-c",
         help="Number of clean samples the repair method may use.",
+    ),
+    anp_eps: float = typer.Option(
+        0.4, "--anp-eps",
+        help="Epsilon bound for adversarial perturbation in ANP."
+    ),
+    anp_alpha: float = typer.Option(
+        0.2, "--anp-alpha",
+        help="Alpha weighting for natural vs perturbed loss in ANP."
+    ),
+    anp_steps: int = typer.Option(
+        10, "--anp-steps",
+        help="Number of optimization steps for ANP."
+    ),
+    anp_prune_threshold: float = typer.Option(
+        0.2, "--anp-prune-threshold",
+        help="Threshold for pruning neurons in ANP."
+    ),
+    anp_attack_target: int = typer.Option(
+        None, "--anp-attack-target",
+        help="ANP ASR: target class for known CIFAR-10 backdoor (0-9). Omit to skip ASR.",
+    ),
+    anp_trigger_type: str = typer.Option(
+        None, "--anp-trigger-type",
+        help="ANP ASR: white-square, checkerboard, cross, or blend (default: white-square).",
+    ),
+    anp_trigger_alpha: float = typer.Option(
+        None, "--anp-trigger-alpha",
+        help="ANP ASR: whole-image white blend strength in (0, 1] (default: 0.2). Only for blend.",
+    ),
+    anp_trigger_size: int = typer.Option(
+        None, "--anp-trigger-size",
+        help="ANP ASR: patch width/height in pixels (default: 4). Not for blend.",
+    ),
+    anp_trigger_pos: str = typer.Option(
+        None, "--anp-trigger-pos",
+        help="ANP ASR: patch corner (default: bottom-right). Not for blend.",
+    ),
+    anp_asr_samples: int = typer.Option(
+        None, "--anp-asr-samples",
+        help="ANP ASR: number of non-target CIFAR-10 test samples to evaluate (default: 500).",
     ),
     seed: int = typer.Option(
         None, "--seed", "-s",
@@ -1047,6 +1152,107 @@ def repair(
             repair_clp(model_path=model, out=str(out), report=str(report_path), threshold_mult=clp_threshold_mult, version=VERSION)
         except Exception as ex:
             typer.secho(f"Error: failed to run CLP repair on model '{model_path}'.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
+    elif method == "anp":
+        # Checks ANP parameters
+        if not (math.isfinite(anp_eps) and anp_eps >= 0):
+            typer.secho("Error: --anp-eps must be finite and nonnegative.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not (math.isfinite(anp_alpha) and 0 <= anp_alpha <= 1):
+            typer.secho("Error: --anp-alpha must be between 0 and 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_steps < 1:
+            typer.secho("Error: --anp-steps must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if not (math.isfinite(anp_prune_threshold) and 0 <= anp_prune_threshold <= 1):
+            typer.secho("Error: --anp-prune-threshold must be between 0 and 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if clean_samples <= 0:
+            typer.secho("Error: --clean-samples must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        asr_options = (anp_trigger_type, anp_trigger_alpha, anp_trigger_size, anp_trigger_pos, anp_asr_samples)
+        if anp_attack_target is None and any(option is not None for option in asr_options):
+            typer.secho("Error: --anp-attack-target is required when providing ANP trigger/ASR options.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_attack_target is not None and data.lower().strip() != "cifar10":
+            typer.secho("Error: ANP CLI ASR evaluation currently supports only --data cifar10.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_attack_target is not None and not 0 <= anp_attack_target < 10:
+            typer.secho("Error: --anp-attack-target must be a CIFAR-10 class from 0 to 9.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_type is not None and anp_trigger_type not in TRIGGER_TYPES:
+            typer.secho(f"Error: --anp-trigger-type must be one of: {', '.join(TRIGGER_TYPES)}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        trigger_kind = anp_trigger_type if anp_trigger_type is not None else "white-square"
+        if trigger_kind == "blend" and (anp_trigger_size is not None or anp_trigger_pos is not None):
+            typer.secho("Error: patch size/position options do not apply to blend triggers.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if trigger_kind != "blend" and anp_trigger_alpha is not None:
+            typer.secho("Error: --anp-trigger-alpha is only valid for blend triggers.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_alpha is not None and not (math.isfinite(anp_trigger_alpha) and 0 < anp_trigger_alpha <= 1):
+            typer.secho("Error: --anp-trigger-alpha must be finite and in (0, 1].", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_size is not None and not 1 <= anp_trigger_size <= 32:
+            typer.secho("Error: --anp-trigger-size must be between 1 and 32.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_pos is not None and anp_trigger_pos not in POSITIONS:
+            typer.secho("Error: invalid --anp-trigger-pos.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_asr_samples is not None and anp_asr_samples < 1:
+            typer.secho("Error: --anp-asr-samples must be positive.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+        model_path = Path(model)
+        if not model_path.exists() or not model_path.is_file():
+            typer.secho(f"Error: model path not found or not a file: {model_path}", err=True)
+            raise typer.Exit(code=EXIT_NO_INPUT)
+
+        report_path = report if report is not None else out.with_suffix(".json")
+        destinations = [out]
+        if str(report_path) != "-":
+            destinations.append(report_path)
+            if out.resolve() == report_path.resolve():
+                typer.secho("Error: checkpoint and report must have different paths.", err=True)
+                raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+        for path in destinations:
+            if path.exists() and not force:
+                typer.secho(f"Error: output file already exists: {path}. Use --force to overwrite.", err=True)
+                raise typer.Exit(code=EXIT_CANT_CREATE)
+
+        try:
+            triggered_eval_dataset = None
+            if anp_attack_target is not None:
+                test_loader, test_config = utils.dataloader_for("cifar10", "test", 64)
+                triggered_eval_dataset = build_triggered_dataset(
+                    test_loader.dataset,
+                    attack_target=anp_attack_target,
+                    config=test_config,
+                    trigger_type=trigger_kind,
+                    trigger_size=anp_trigger_size if anp_trigger_size is not None else 4,
+                    trigger_pos=anp_trigger_pos if anp_trigger_pos is not None else "bottom-right",
+                    blend_alpha=anp_trigger_alpha if anp_trigger_alpha is not None else 0.2,
+                    samples=anp_asr_samples if anp_asr_samples is not None else 500,
+                    seed=seed if seed is not None else 0,
+                )
+            run_anp(
+                model_path=str(model_path),
+                out=str(out),
+                report=str(report_path),
+                data=data,
+                eps=anp_eps,
+                alpha=anp_alpha,
+                steps=anp_steps,
+                prune_threshold=anp_prune_threshold,
+                clean_samples=clean_samples,
+                seed=seed if seed is not None else 0,
+                version=VERSION,
+                triggered_eval_dataset=triggered_eval_dataset,
+                attack_target=anp_attack_target,
+            )
+        except Exception as ex:
+            typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
 
 if __name__ == "__main__":

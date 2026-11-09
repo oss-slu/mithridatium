@@ -100,6 +100,8 @@ mithridatium audit \
 
 ## Notes for Contributors
 
+- Adding a defense, method, or CLI verb? Follow the [add-a-capability checklist](../handoff/add-a-capability.md).
+
 - Keep `DEFENSES` in `mithridatium/cli.py` aligned with defense docs.
 - When adding CLI flags, update the relevant defense page and [sample commands](../testing/sample-commands.md).
 - The CLI validates generated reports against `reports/report_schema.json`; update the schema when adding new required report fields.

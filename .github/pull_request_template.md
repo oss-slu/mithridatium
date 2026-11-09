@@ -21,3 +21,13 @@ A more technical description of the changes that were made. This is additional i
 # 4. Screenshots (if applicable)
 
 Add the before and after screenshots for UI related changes
+
+# 5. Capability Checklist (new defense, detect method, repair method, or CLI verb only)
+
+See [Add a Capability](../docs/handoff/add-a-capability.md) for the full file list. Delete this section if it doesn't apply.
+
+- [ ] Registered in `mithridatium/cli.py` (`DEFENSES` / `DETECT_METHODS` / `REPAIR_METHODS` / new command) and in `ensure_defense_compatibility` if it's an `audit` defense
+- [ ] `reports/report_schema.json` describes the new `results` shape
+- [ ] Unit test and report-schema contract test added
+- [ ] Docs page added and linked from `docs/README.md`
+- [ ] Example CLI command and its output pasted below

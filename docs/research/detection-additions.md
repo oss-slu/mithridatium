@@ -14,7 +14,7 @@ Effort: **S** \= fits in one sprint, **M** \= new dependency or slow runtime, **
 | TeCo | Liu et al., CVPR 2023 | [CGCL-codes/TeCo](https://github.com/CGCL-codes/TeCo), no license | Black | No | Yes | M | Later |
 | BaDExpert | Xie et al., ICLR 2024 | [vtu81/backdoor-toolbox](https://github.com/vtu81/backdoor-toolbox), no license | White | Yes | Yes | M | Later |
 | TED | Mo et al., IEEE S\&P 2024 | [tedbackdoordefense/ted](https://github.com/tedbackdoordefense/ted), no license | White | Yes | Yes | M/L | Later |
-| IBD-PSC | IBD-PSC: Input-level Backdoor Detection via Parameter-oriented Scaling Consistency (2024) | [https://github.com/THUYimingLi/BackdoorBox](https://github.com/THUYimingLi/BackdoorBox), GNU GENERAL PUBLIC LICENSE Version 2 | White-Box | Yes | Yes; CIFAR 10, ResNet 18 | S/M | Implement |
+| IBD-PSC | IBD-PSC: Input-level Backdoor Detection via Parameter-oriented Scaling Consistency (2024) | [https://github.com/THUYimingLi/BackdoorBox](https://github.com/THUYimingLi/BackdoorBox), GNU GENERAL PUBLIC LICENSE Version 2 | White-Box | Yes | Yes; CIFAR 10, ResNet 18 | S/M | Implemented |
 | SentiNet | SentiNet: Detecting Localized Universal Attacks Against Deep Learning Systems (2020) | No official code repository. An implementation exists. [https://github.com/CassiniHuy/trojan-attacks-and-defenses](https://github.com/CassiniHuy/trojan-attacks-and-defenses) / No given license | White | Yes | No | L | No |
 | STRIP | STRIP: A Defence Against Trojan Attacks on Deep Neural Networks | [https://github.com/garrisongys/STRIP](https://github.com/garrisongys/STRIP) / No formal license, though creators request citations. | Black | Yes | Yes CIFAR10, ResNet20 tested with not CIFAR10 images | M | Later |
 

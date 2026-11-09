@@ -101,7 +101,7 @@ def _run_audit(audit_kwargs: dict[str, Any]) -> dict[str, Any]:
     saved = reports / f"{Path(audit_kwargs['model']).stem}_{audit_kwargs['defense']}.json"
     with _catch_output():
         audit(**audit_kwargs, out=str(saved), force=True)
-    return json.loads(Path(saved).read_text())
+    return {"report_path": str(saved), "report": json.loads(saved.read_text())}
 
 @mcp.tool(run_in_thread=False)
 def run_mmbd(
@@ -111,7 +111,7 @@ def run_mmbd(
     provider: str = "torchvision",
     hf_model_id: str = "microsoft/resnet-50",
 ):
-    """Run a MBBD audit and return the mithridatium audit report."""
+    """Run an MMBD audit and return the mithridatium audit report."""
     return _run_audit(_audit_kwargs(
         "mmbd", 
         model=model,

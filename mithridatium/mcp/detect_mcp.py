@@ -25,6 +25,13 @@ def _detect_kwargs(
     ted_contamination: float = 0.01,
     tedpp_samples_per_class: int = 5,
     tedpp_beta: float = 0.5,
+
+    #ibdpsc parameters (sample count reduced from the CLI's 256 for smoke runs)
+    ibdpsc_num_samples: int = 128,
+    ibdpsc_clean_samples: int = 100,
+    ibdpsc_scale: float = 1.5,
+    ibdpsc_num_models: int = 5,
+    ibdpsc_threshold: float = 0.9,
 ) -> dict[str, Any]:
     scales = tuple(scaleup_scales) if scaleup_scales else (3, 5, 7, 9, 11)
     return {
@@ -41,6 +48,12 @@ def _detect_kwargs(
         "ted_contamination": ted_contamination,
         "tedpp_samples_per_class": tedpp_samples_per_class,
         "tedpp_beta": tedpp_beta,
+        #ibdpsc parameters
+        "ibdpsc_num_samples": ibdpsc_num_samples,
+        "ibdpsc_clean_samples": ibdpsc_clean_samples,
+        "ibdpsc_scale": ibdpsc_scale,
+        "ibdpsc_num_models": ibdpsc_num_models,
+        "ibdpsc_threshold": ibdpsc_threshold,
     }
 
 def _run_detect(detect_kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -49,7 +62,7 @@ def _run_detect(detect_kwargs: dict[str, Any]) -> dict[str, Any]:
     saved = reports / f"{Path(detect_kwargs['model']).stem}_{detect_kwargs['method']}.json"
     with _catch_output():
         detect(**detect_kwargs, out=str(saved), force=True)
-    return json.loads(Path(saved).read_text())
+    return {"report_path": str(saved), "report": json.loads(saved.read_text())}
 
 @mcp.tool(run_in_thread=False)
 def run_scaleup(
@@ -107,4 +120,23 @@ def run_tedpp(
         ted_contamination=ted_contamination,
         tedpp_samples_per_class=tedpp_samples_per_class,
         tedpp_beta=tedpp_beta,
+def run_ibdpsc(
+    model: str = "models/resnet18.pth",
+    data: str = "cifar10",
+    ibdpsc_num_samples: int = 128,
+    ibdpsc_clean_samples: int = 100,
+    ibdpsc_scale: float = 1.5,
+    ibdpsc_num_models: int = 5,
+    ibdpsc_threshold: float = 0.9,
+):
+    """Run IBD-PSC detection and return the mithridatium detect report."""
+    return _run_detect(_detect_kwargs(
+        "ibdpsc",
+        model=model,
+        data=data,
+        ibdpsc_num_samples=ibdpsc_num_samples,
+        ibdpsc_clean_samples=ibdpsc_clean_samples,
+        ibdpsc_scale=ibdpsc_scale,
+        ibdpsc_num_models=ibdpsc_num_models,
+        ibdpsc_threshold=ibdpsc_threshold,
     ))
