@@ -50,7 +50,7 @@ app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp", "anp"}
 
-DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++}
+DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++"}
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
