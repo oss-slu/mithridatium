@@ -25,7 +25,7 @@ Currently supported:
 | Method | Extra Clean Data Needed? | Target Class Required? | Architecture Requirements | Typical Runtime | Best When... |
 |---|---|---|---|---|---|
 | **CLP** | **None** (Data-free) | **No** | Conv2d + BatchNorm2d (ResNet-18) | Fast (< 5 seconds) | You have zero clean images and want an immediate weight-based pruning baseline. |
-| **ANP** | **Small clean set** (~500 images) | **No** | BatchNorm2d (ResNet-18) | ~1–2 min (GPU) / ~10–15 min (CPU, 2000 iter) | You have a small clean validation set, but do not know the backdoor trigger or target class. |
+| **ANP** | **Small clean set** (~500 images) | **No** | BatchNorm2d (ResNet-18) | ~1–2 min (GPU) / ~5 min (CPU, 2000 iter) | You have a small clean validation set, but do not know the backdoor trigger or target class. |
 | **LMR** | **Small clean set** (~500 images) | **Yes** (`--lmr-target-class`) | Linear output layer | Moderate (~1–2 minutes) | You already identified the suspected target class (e.g. from an audit) and want targeted logit suppression. |
 
 
@@ -46,7 +46,7 @@ Currently supported:
 | `--clp-threshold-mult` | CLP: finite, nonnegative pruning threshold multiplier (default `3.0`). |
 | `--anp-eps` | ANP: perturbation bound ε (finite, nonnegative; default `0.4`). |
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
-| `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `10`). |
+| `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `1`, as in upstream ANP). |
 | `--anp-iterations` | ANP: number of iterations cycling clean data during mask optimization (positive integer; default `2000`). |
 | `--anp-prune-threshold` | ANP: prune channels whose mask is at or below this value (between `0` and `1`; default `0.2`). |
 | `--anp-prune-fraction` | ANP: prune the lowest-scoring fraction of channels (between `0` and `1`; optional). |
@@ -176,13 +176,13 @@ and minimizing the combined loss:
 
 `alpha * clean_loss + (1 - alpha) * noisy_loss`
 
+During mask training each batch of 128 clean images is drawn with replacement and randomly cropped and flipped, and the weight noise is additive (`weight * (mask + noise)`), as in the upstream ANP code.
 Channels with learned mask values `score <= threshold` are pruned by zeroing their BatchNorm weight, leaving bias intact to prevent feature drift.
-With `--anp-prune-fraction`, exactly that fraction of the lowest-scoring channels is pruned instead (ties broken by position).
-The stem BatchNorm (`bn1`) and shortcut (`downsample`) BatchNorm layers are never pruned and do not count toward the fraction.
+With `--anp-prune-fraction`, exactly that fraction of the lowest-scoring channels across all BatchNorm layers is pruned instead (ties broken by position).
 The `--clean-samples` option sets the number of clean images used (shared, default: `500`),
 `--anp-eps` controls the perturbation bound (default: `0.4`), `--anp-alpha` balances
 clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps
-(default: `10`), `--anp-iterations` controls the total optimization steps (default: `2000`),
+(default: `1`), `--anp-iterations` controls the total optimization steps (default: `2000`),
 and `--anp-prune-threshold` sets the cutoff below which channels are pruned (default: `0.2`).
 
 ### Run ANP
@@ -195,7 +195,7 @@ mithridatium repair \
   --clean-samples 500 \
   --anp-eps 0.4 \
   --anp-alpha 0.2 \
-  --anp-steps 10 \
+  --anp-steps 1 \
   --anp-prune-threshold 0.2 \
   --out models/resnet18_anp.pth \
   --report reports/repair_anp.json

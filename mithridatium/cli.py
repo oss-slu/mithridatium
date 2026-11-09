@@ -860,7 +860,7 @@ def repair(
         help="Alpha weighting for natural vs perturbed loss in ANP."
     ),
     anp_steps: int = typer.Option(
-        10, "--anp-steps",
+        1, "--anp-steps",
         help="Number of optimization steps for ANP."
     ),
     anp_prune_threshold: float = typer.Option(

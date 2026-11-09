@@ -28,7 +28,7 @@ def _repair_kwargs(
     # anp parameters
     anp_eps: float = 0.4,
     anp_alpha: float = 0.2,
-    anp_steps: int = 10,
+    anp_steps: int = 1,
     anp_prune_threshold: float = 0.2,
     anp_iterations: int = 2000,
     anp_prune_fraction: float | None = None,
@@ -133,7 +133,7 @@ def run_anp(
     seed: int | None = None,
     anp_eps: float = 0.4,
     anp_alpha: float = 0.2,
-    anp_steps: int = 10,
+    anp_steps: int = 1,
     anp_prune_threshold: float = 0.2,
     anp_iterations: int = 2000,
     anp_prune_fraction: float | None = None,

@@ -11,8 +11,6 @@
 
 from __future__ import annotations
 
-import copy
-import itertools
 import json
 import math
 import sys
@@ -22,7 +20,7 @@ from pathlib import Path
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, RandomSampler, Subset
 
 from mithridatium import loader, report as rpt, utils
 from mithridatium.evaluation.asr import evaluate_targeted_asr
@@ -62,7 +60,9 @@ class NoisyBatchNorm2d(nn.BatchNorm2d):
         if self.noise_enabled:
             w_noise = self.weight_noise.clamp(-self.noise_limit, self.noise_limit)
             b_noise = self.bias_noise.clamp(-self.noise_limit, self.noise_limit)
-            weight = self.weight * self.neuron_mask * (1 + w_noise)
+            # Additive weight noise as in upstream ANP, so channels with small
+            # masks are still perturbed
+            weight = self.weight * (self.neuron_mask + w_noise)
             bias = self.bias * (1 + b_noise)
         else:
             weight = self.weight * self.neuron_mask
@@ -126,7 +126,22 @@ def _restore_bn(model):
             setattr(parent, name, plain)
 
 
-def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10, iterations=2000):
+def _augment(images):
+    """Random crop (padding 4) and horizontal flip, matching upstream ANP's clean set."""
+    n, _, h, w = images.shape
+    padded = F.pad(images, (4, 4, 4, 4))
+    rows = torch.randint(0, 9, (n,)).tolist()
+    cols = torch.randint(0, 9, (n,)).tolist()
+    cropped = torch.stack([
+        padded[i, :, r:r + h, c:c + w] for i, (r, c) in enumerate(zip(rows, cols))
+    ])
+    flip = torch.rand(n, device=images.device) < 0.5
+    cropped[flip] = cropped[flip].flip(-1)
+    return cropped
+
+
+def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=1, iterations=2000,
+                augment=True):
     """Alternate noise maximization and mask minimization on clean images."""
     if not (math.isfinite(eps) and eps >= 0):
         raise ValueError("eps must be finite and nonnegative")
@@ -137,6 +152,8 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10, iterations
     # Added iterations validation 
     if not isinstance(iterations, int) or iterations < 1:
         raise ValueError("iterations must be a positive integer")
+    if len(clean_loader) == 0:
+        raise ValueError("Clean training dataset is empty")
 
     # Changed the model's BN layers with NoisyBatchNorm2d. It freezes running stats protecting running_mean and running_var 
     layers = _replace_bn(model)
@@ -152,19 +169,23 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10, iterations
     for parameter in masks + noises:
         parameter.requires_grad_(True)
 
-    noise_lr = (eps / steps) if (steps > 0 and eps > 0) else 0.1
-    noise_optimizer = torch.optim.SGD(noises, lr=noise_lr)
+    noise_optimizer = torch.optim.SGD(noises, lr=eps / steps)
     mask_optimizer = torch.optim.SGD(masks, lr=0.2, momentum=0.9)
 
     device = next(model.parameters()).device
-    # Cycle through the clean loader for the requested number of iterations.
-    clean_iter = itertools.cycle(clean_loader)
-    seen = 0
+    # Loop over the clean loader for the requested number of iterations,
+    # re-iterating it rather than using itertools.cycle, which caches every batch
+    def batches():
+        while True:
+            yield from clean_loader
+
+    clean_iter = batches()
 
     for _ in range(iterations):
         images, labels, *_ = next(clean_iter)
         images, labels = images.to(device), labels.to(device)
-        seen += len(labels)
+        if augment:
+            images = _augment(images)
 
         # Step 1: find noise that makes the model perform worse.
         for bn in layers.values():
@@ -211,23 +232,15 @@ def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=10, iterations
         for bn in layers.values():
             bn.noise_enabled = False
 
-    if seen == 0:
-        raise ValueError("Clean training dataset is empty")
     return {name: bn.neuron_mask.detach().clone() for name, bn in layers.items()}
 
 
 def _prunable_layers(model, scores):
-    """BatchNorm layers that have scores and are eligible for pruning."""
-    layers = []
-    for name, bn in model.named_modules():
-        if not isinstance(bn, nn.BatchNorm2d):
-            continue
-        if name not in scores:
-            continue
-        if name == "bn1" or "downsample" in name:
-            continue
-        layers.append((name, bn))
-    return layers
+    """BatchNorm layers that have learned mask scores (all of them, as in upstream ANP)."""
+    return [
+        (name, bn) for name, bn in model.named_modules()
+        if isinstance(bn, nn.BatchNorm2d) and name in scores
+    ]
 
 
 def _zero_channels(model, selected):
@@ -308,7 +321,7 @@ def _sample(dataset, count, generator):
 
 
 def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
-            steps=10, iterations=2000, prune_threshold=0.2, prune_fraction=None,
+            steps=1, iterations=2000, prune_threshold=0.2, prune_fraction=None,
             clean_samples=500, seed=0, version="0.1.2", data="cifar10",
             eval_samples=500, triggered_eval_dataset=None, attack_target=None):
     """Train masks, prune neurons, and write a checkpoint and repair report."""
@@ -345,18 +358,18 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
     if triggered_eval_dataset is not None:
         asr_before, _ = evaluate_targeted_asr(model, triggered_eval_dataset, attack_target)
 
-    # FIX: Pass iterations into train_masks (which runs on a copy in train mode).
+    # As in upstream ANP: full batches of 128 drawn with replacement, one per iteration.
+    # train_masks wraps and freezes the model in place; only the masks are trained.
     scores = train_masks(
         model,
-        DataLoader(clean, batch_size=64),
+        DataLoader(clean, batch_size=128, sampler=RandomSampler(
+            clean, replacement=True, num_samples=iterations * 128)),
         eps=eps,
         alpha=alpha,
         steps=steps,
         iterations=iterations,
     )
 
-    # Prune on the original model
-    _replace_bn(model)
     if prune_fraction is not None:
         pruned = prune_by_fraction(model, scores, prune_fraction)
     else:

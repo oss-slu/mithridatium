@@ -4,6 +4,7 @@ import torchvision.models as models
 from torch.utils.data import DataLoader, TensorDataset
 
 from mithridatium.repair.anp import (
+    _augment,
     _replace_bn,
     prune_by_fraction,
     prune_by_threshold,
@@ -55,6 +56,34 @@ def test_perturbations_respect_epsilon():
     assert (noise <= eps).all()
     assert (model.bn.bias_noise >= -eps).all()
     assert (model.bn.bias_noise <= eps).all()
+
+
+def test_weight_noise_is_additive():
+    model = TinyModel()
+    model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    bn = _replace_bn(model)["bn"]
+    x = torch.randn(8, 4, 2, 2)
+
+    with torch.no_grad():
+        bn.neuron_mask.zero_()
+        bn.bias.zero_()
+        bn.weight_noise.fill_(0.1)
+        bn.bias_noise.zero_()
+    bn.noise_limit = 0.4
+    bn.noise_enabled = True
+
+    # weight * (mask + noise): a fully masked channel is still perturbed
+    out = bn(x)
+    expected = torch.nn.functional.batch_norm(
+        x, None, None, bn.weight * 0.1, bn.bias, True, 0.0, bn.eps
+    )
+    assert torch.allclose(out, expected)
+    assert out.abs().sum() > 0
+
+
+def test_augment_keeps_shape():
+    images = torch.randn(5, 3, 32, 32)
+    assert _augment(images).shape == images.shape
 
 
 def test_pruning_zeroes_selected_neurons():
@@ -116,19 +145,22 @@ def test_prune_by_fraction_prunes_exactly_k_with_ties():
     assert torch.equal(model.bn.weight, torch.tensor([0.0, 2.0, 3.0, 4.0]))
 
 
-def test_prune_by_fraction_ignores_skipped_layers():
-    model = TinyModel()
-    model.bn.weight.data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+def test_prune_by_threshold_includes_stem_and_shortcut_bn():
+    model = models.resnet18(weights=None)
     _replace_bn(model)
 
-    # Scores for a skipped layer must not use up the pruning budget
+    # Upstream ANP prunes every BatchNorm, including bn1 and the shortcut BNs
     scores = {
-        "bn": torch.tensor([0.5, 0.8, 0.2, 0.9]),
-        "bn1": torch.tensor([0.0, 0.0, 0.0, 0.0]),
+        name: torch.ones(m.num_features)
+        for name, m in model.named_modules() if isinstance(m, nn.BatchNorm2d)
     }
-    pruned = prune_by_fraction(model, scores, fraction=0.25)
+    scores["bn1"][0] = 0.0
+    scores["layer2.0.downsample.1"][0] = 0.0
+    pruned = prune_by_threshold(model, scores, threshold=0.2)
 
-    assert pruned == [{"layer": "bn", "indices": [2], "count": 1}]
+    assert {p["layer"] for p in pruned} == {"bn1", "layer2.0.downsample.1"}
+    assert model.bn1.weight[0] == 0.0
+    assert model.layer2[0].downsample[1].weight[0] == 0.0
 
 
 def test_prune_by_fraction_zero_prunes_nothing():
