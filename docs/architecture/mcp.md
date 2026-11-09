@@ -95,6 +95,47 @@ With no prompt, the detect agent runs SCALE-UP and the repair agent runs CLP on 
 
 The printed reply is a short verdict summary. The full report is the JSON file under `reports/`.
 
+### Supervisor Agent
+
+The supervisor agent coordinates all three specialists (`audit`, `detect`, `repair`) from one prompt:
+
+```bash
+mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned"
+```
+
+Pass `--report` to save a JSON summary of the run:
+
+```bash
+mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned" --report reports/agent_run.json
+```
+
+Without `--report`, nothing extra is written to disk; the agent prints its final reply to stdout. Like `audit` and `repair`, an existing file is not overwritten without `--force`.
+
+The summary is built from the tool calls and tool results in the agent's message history, not parsed from the model's final reply:
+
+```json
+{
+  "prompt": "Check models/resnet18_poison.pth and repair it if it's poisoned",
+  "agent": "supervisor",
+  "chat_model": "gpt-4o-mini",
+  "steps": [
+    {
+      "step": 1,
+      "specialist": "audit",
+      "request": "Audit models/resnet18_poison.pth",
+      "report_paths": ["reports/resnet18_poison_mmbd.json"],
+      "report_path": "reports/resnet18_poison_mmbd.json",
+      "checkpoint_paths": [],
+      "checkpoint_path": null,
+      "verdicts": ["attack"],
+      "verdict": "attack",
+      "result": "..."
+    }
+  ],
+  "final_message": "..."
+}
+```
+
 ## Contributor Notes
 
 - Register new tools on the shared `mcp` object in `mithridatium/mcp/__init__.py`, and import the new module from `main()` before `mcp.run`. Importing a tool module at the top of `__init__.py` cycles, because the tool module imports `mcp` from the package.
