@@ -120,6 +120,8 @@ def run_tedpp(
         ted_contamination=ted_contamination,
         tedpp_samples_per_class=tedpp_samples_per_class,
         tedpp_beta=tedpp_beta,
+    ))
+
 def run_ibdpsc(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
