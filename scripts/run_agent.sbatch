@@ -8,7 +8,8 @@
 
 cd ~/mithridatium
 source .venv/bin/activate
-python -m mithridatium.mcp.detect_agent "Run TED on models/resnet18_poison.pth"
-python -m mithridatium.mcp.detect_agent "Run SCALE-UP and TED on models/resnet18_clean.pth"
-python -m mithridatium.mcp.repair_agent "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
-python -m mithridatium.mcp.audit_agent "Run STRIP and MMBD on models/resnet18_clean.pth"
+mithridatium agent -a detect "Run TED on models/resnet18_poison.pth"
+mithridatium agent -a detect "Run SCALE-UP and TED on models/resnet18_clean.pth"
+mithridatium agent -a repair "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
+mithridatium agent -a audit "Run STRIP and MMBD on models/resnet18_clean.pth"
+mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned"

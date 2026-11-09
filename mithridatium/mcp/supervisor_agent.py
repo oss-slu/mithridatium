@@ -49,6 +49,8 @@ returned. Do not invent metrics. A repaired checkpoint is not proven clean.
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
+DEFAULT_PROMPT = "Run a test suite (audit and detect) as needed on models/resnet18_poison.pth and run repairs if there is sufficient evidence of a backdoor."
+
 async def supervisor_agent(prompt: str):
     model = init_chat_model(model="gpt-4o-mini")
     agent = create_agent(model, [audit, detect, repair], system_prompt=SUPERVISOR_SYSTEM_PROMPT)
@@ -57,5 +59,5 @@ async def supervisor_agent(prompt: str):
 
 
 if __name__ == "__main__":
-    prompt = " ".join(sys.argv[1:]) or "Run a test suite (audit and detect) as needed on models/resnet18_poison.pth and run repairs if there is sufficient evidence of a backdoor."
+    prompt = " ".join(sys.argv[1:]) or DEFAULT_PROMPT
     print(asyncio.run(supervisor_agent(prompt)))

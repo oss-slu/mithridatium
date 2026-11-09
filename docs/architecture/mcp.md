@@ -79,7 +79,15 @@ On a cluster, shell startup functions are sometimes exported as `BASH_FUNC_*` en
 
 ## Run the Agent
 
-The agent connects to the local server, asks the model to call the requested defenses, and prints the model's last message:
+`mithridatium agent` runs the supervisor, which routes the request to the audit, detect, and repair agents. `--agent` / `-a` runs one specialist instead (`supervisor`, `audit`, `detect`, or `repair`). With no prompt, each agent uses its built-in default prompt.
+
+```bash
+mithridatium agent "check models/resnet18_poison.pth and repair it if it's poisoned"
+mithridatium agent --agent detect "Run TED on models/resnet18_poison.pth"
+mithridatium agent -a repair "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
+```
+
+The `python -m` entry points below still work. Each agent connects to the local server, asks the model to call the requested defenses, and prints the model's last message:
 
 ```bash
 python -m mithridatium.mcp.audit_agent
