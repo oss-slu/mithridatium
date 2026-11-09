@@ -488,18 +488,22 @@ def test_cli_detect_tedpp_writes_schema_valid_report(tmp_path, monkeypatch):
     fake_model.write_bytes(b"not a real checkpoint")
     out_path = tmp_path / "detect_tedpp.json"
 
+    torch.manual_seed(0)  # unseeded weights made which classes appear random per run
     toy = torch.nn.Sequential(
         torch.nn.Conv2d(3, 4, 3, padding=1),
         torch.nn.ReLU(),
         torch.nn.Flatten(),
         torch.nn.Linear(4 * 8 * 8, 3),
     ).eval()
-    x = torch.randn(150, 3, 8, 8, generator=torch.Generator().manual_seed(0))
-
+    # TED++ needs >= samples_per_class correctly classified references for every class,
+    # so label by the toy's own predictions and keep exactly 10 per class.
+    x = torch.randn(1000, 3, 8, 8, generator=torch.Generator().manual_seed(0))
     with torch.no_grad():
         y = toy(x).argmax(1)
-        keep = torch.bincount(y, minlength=3)[y] >= 5
-        x, y = x[keep], y[keep]
+    per_class = [torch.where(y == c)[0][:10] for c in range(3)]
+    assert all(len(idx) == 10 for idx in per_class), "toy model never predicts some class"
+    keep = torch.cat(per_class)
+    x, y = x[keep], y[keep]
 
     dataset = TensorDataset(x, y)
     cfg = get_preprocess_config("cifar10")

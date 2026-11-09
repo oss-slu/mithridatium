@@ -1,34 +1,12 @@
-# This is the test code of TED defense.
-# Robust Backdoor Detection for Deep Learning via Topological Evolution Dynamics [IEEE, 2024] (https://arxiv.org/abs/2312.02673)
-
-import os
-import numpy as np
-import numpy as np
-import matplotlib.pyplot as plt
-from pyod.models.pca import PCA
-import torch
-torch.cuda.empty_cache()
-import torch.nn as nn
-import torch.utils.data as data
-from torchmetrics.functional import pairwise_euclidean_distance
 import math
 
-# ------------------------------
-# Seed settings for reproducibility
-# ------------------------------
-# # Set seed for Python
-# random.seed(42)
-# # Set seed for NumPy
-# np.random.seed(42)
-# # Set seed for PyTorch
-# torch.manual_seed(42)
-# Optionally set the CUDA seed if a GPU is used
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.utils.data as data
+from pyod.models.pca import PCA
+from torchmetrics.functional import pairwise_euclidean_distance
 
-
-# ------------------------------
 
 class TEDPLUS():
     def __init__(self, 
@@ -130,28 +108,10 @@ class TEDPLUS():
             shuffle=False,
         )
 
-        # 10) Define temporary labels for Poison and Clean samples
-        self.suspect_label = "Suspect"
-        self.label_mapping = {
-            "Suspect": 300,
-        }
-
-        # Initialize counters and temporary containers for Poison and Clean sets
-        self.poison_count = 0
-        self.clean_count = 0
-        self.temp_poison_inputs_set = []
-        self.temp_poison_labels_set = []
-        self.temp_poison_pred_set = []
-        self.temp_clean_inputs_set = []
-        self.temp_clean_labels_set = []
-        self.temp_clean_pred_set = []
-
         # Set up hooks for activation extraction
         self.register_hooks()
 
-        self.Test_C = self.num_classes
         self.topological_representation = {}
-        self.candidate_ = {}
 
     # ==============================
     #     HELPER FUNCTIONS
@@ -192,26 +152,16 @@ class TEDPLUS():
                 index += 1
 
 
-    def create_targets(self, targets, label):
-        """
-        Assign a new label to targets (e.g., Poison=101, Clean=102).
-        """
-        new_targets = torch.ones_like(targets) * label
-        return new_targets.to(self.device)
-
-
     # ==============================
     #       HOOK & MAIN TEST
     # ==============================
     def fetch_activation(self, loader):
-        print("Starting fetch_activation")
         self.model.eval()
 
         all_h_label, pred_set = [], []
         activation_container = {}
 
         for images, labels in loader:
-            print("Running the first batch to init hooks")
             _ = self.model(images.to(self.device))
             break
         for key in self.activations:
@@ -219,12 +169,7 @@ class TEDPLUS():
         self.activations.clear()
 
         for batch_idx, (images, labels) in enumerate(loader, start=1):
-            print(f"Running batch {batch_idx} - Images shape: {images.shape}, Labels shape: {labels.shape}")
-            try:
-                output = self.model(images.to(self.device))
-            except Exception as e:
-                print(f"Error running model on batch {batch_idx}: {e}")
-                break
+            output = self.model(images.to(self.device))
 
             ########
             probs = torch.softmax(output, dim=1)
@@ -244,69 +189,12 @@ class TEDPLUS():
                 all_h_label.append(label.to(self.device))
             self.activations.clear()
 
-            if batch_idx % 10 == 0:
-                print(f"Processed {batch_idx} batches")
-
         for key in activation_container:
             activation_container[key] = torch.stack(activation_container[key])
         all_h_label = torch.stack(all_h_label)
         pred_set = torch.cat(pred_set)
 
-        print("Finished fetch_activation")
         return all_h_label, activation_container, pred_set
-
-    def calculate_accuracy(self, ori_labels, preds):
-        """
-        Compute classification accuracy given original labels and predictions.
-        """
-        if len(ori_labels) == 0:
-            return 0.0
-        correct = torch.sum(ori_labels == preds).item()
-        total = len(ori_labels)
-        accuracy = (correct / total) * 100
-        return accuracy
-
-    def display_images_grid(self, images, predictions, title_prefix):
-        """
-        Display a small grid of images with their predictions. Saves the figure to self.save_dir.
-        """
-        num_images = len(images)
-        if num_images == 0:
-            return
-        cols = 3
-        rows = (num_images + cols - 1) // cols
-        plt.figure(figsize=(cols * 2, rows * 2))
-
-        for i, (img, prediction) in enumerate(zip(images, predictions)):
-            plt.subplot(rows, cols, i + 1)
-            img = img.squeeze().cpu().numpy()
-
-            if img.ndim == 3:
-                plt.imshow(np.transpose(img, (1, 2, 0)))  # RGB
-            else:
-                plt.imshow(img, cmap='gray')  # Grayscale
-
-            title = f"{title_prefix} {i + 1}\n(Prediction: {prediction.item()})"
-            plt.title(title)
-            plt.axis('off')
-
-        plt.tight_layout()
-        save_path = os.path.join(self.save_dir, f"{title_prefix}_grid.png")
-        plt.savefig(save_path, dpi=300)
-        plt.show()
-
-    def gather_activation_into_class(self, target, h):
-        """
-        Group activations by class index and store them for further analysis.
-        """
-        h_c_c = [0 for _ in range(self.Test_C)]
-        for c in range(self.Test_C):
-            idxs = (target == c).nonzero(as_tuple=True)[0]
-            if len(idxs) == 0:
-                continue
-            h_c = h[idxs, :]
-            h_c_c[c] = h_c
-        return h_c_c
 
     def get_dis_sort(self, item, destinations):
         item_ = item.reshape(1, item.shape[0])
@@ -409,8 +297,6 @@ class TEDPLUS():
           4) Compute topological representations.
           5) (Optional) Visualization and outlier detection steps.
         """
-
-        print('STEP 4')
 
         self.h_defense_ori_labels, self.h_defense_activations, self.h_defense_preds = (
             self.fetch_activation(self.reference_loader)
@@ -543,7 +429,6 @@ class TEDPLUS():
     def __del__(self):
         for h in self.hook_handles:
             h.remove()
-        torch.cuda.empty_cache()
 
 
 def tedpp(

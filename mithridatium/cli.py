@@ -780,14 +780,16 @@ def detect(
             test_ds, train_ds = test_loader.dataset, train_loader.dataset
             results = tedpp(
                 mdl,
-                reference_data=train_ds,
+                # same 2x headroom as TED for misclassified images dropped from the reference set
+                reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
                 suspect_data=torch.utils.data.Subset(
                     test_ds, range(min(len(test_ds), ted_num_samples))
                 ),
                 contamination=ted_contamination,
                 samples_per_class=tedpp_samples_per_class,
                 beta=tedpp_beta,
-            ),
+                device=get_device(0),
+            )
         elif m == "ibdpsc":
             test_ds, train_ds = test_loader.dataset, train_loader.dataset
             results = ibdpsc(
