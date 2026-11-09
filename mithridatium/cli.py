@@ -562,6 +562,7 @@ def detect(
                 "to estimate the layer's tube radius; require 0 < beta <= 1 and "
                 "k < samples_per_class."
             ),
+        ),
         ibdpsc_num_samples: int = typer.Option(
             256,
             "--ibdpsc-num-samples",
