@@ -2,26 +2,16 @@
 # Robust Backdoor Detection for Deep Learning via Topological Evolution Dynamics [IEEE, 2024] (https://arxiv.org/abs/2312.02673)
 
 import os
-from collections import Counter, defaultdict
-from tqdm import tqdm
 import numpy as np
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn import metrics
-from sklearn.decomposition import PCA as sklearn_PCA
-from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import train_test_split
 from pyod.models.pca import PCA
 import torch
 torch.cuda.empty_cache()
 import torch.nn as nn
 import torch.utils.data as data
 from torchmetrics.functional import pairwise_euclidean_distance
-import plotly.express as px
 import math
-import time
-
 
 # ------------------------------
 # Seed settings for reproducibility

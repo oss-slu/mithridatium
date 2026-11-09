@@ -787,6 +787,7 @@ def detect(
                 contamination=ted_contamination,
                 samples_per_class=tedpp_samples_per_class,
                 beta=tedpp_beta,
+            ),
         elif m == "ibdpsc":
             test_ds, train_ds = test_loader.dataset, train_loader.dataset
             results = ibdpsc(
