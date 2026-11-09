@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.utils.data as data
 from pyod.models.pca import PCA
-from torchmetrics.functional import pairwise_euclidean_distance
 
 
 class TEDPLUS():
@@ -199,7 +198,7 @@ class TEDPLUS():
     def get_dis_sort(self, item, destinations):
         item_ = item.reshape(1, item.shape[0])
         dev = self.device
-        new_dis = pairwise_euclidean_distance(item_.to(dev), destinations.to(dev))  # shape: (1, destinations.size(0))
+        new_dis = torch.cdist(item_.to(dev), destinations.to(dev))  # shape: (1, destinations.size(0))
         sorted_dis, indices_individual = torch.sort(new_dis.squeeze(0))  # sort theo chiều 1-D
         return sorted_dis.to("cpu"), indices_individual.to("cpu")
 

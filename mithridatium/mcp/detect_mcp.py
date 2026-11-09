@@ -122,6 +122,7 @@ def run_tedpp(
         tedpp_beta=tedpp_beta,
     ))
 
+@mcp.tool(run_in_thread=False)
 def run_ibdpsc(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
