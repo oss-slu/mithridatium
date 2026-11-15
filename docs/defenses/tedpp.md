@@ -49,9 +49,11 @@ own distribution. `detect` takes them from the `--data` training split.
 
 **Outputs:** `results` carries `mode: "input-level"`, `method: "ted++"`,
 `verdict`, `num_inputs`, `num_flagged`, `threshold`, `parameters`
-(`reference_size`, `samples_per_class`, `beta`, `contamination`, `batch_size`,
-`seed`), and `per_sample` (`index`, `predicted_label`, `score`, `flagged`).
-Read `per_sample`; `verdict` just rolls it up.
+(`reference_size`, `selected_reference_size`, `samples_per_class`, `beta`,
+`contamination`, `batch_size`, `seed`), and `per_sample` (`index`,
+`predicted_label`, `score`, `flagged`). `reference_size` is the configured
+candidate budget; `selected_reference_size` is the class-balanced set used by
+TED++. Read `per_sample`; `verdict` just rolls it up.
 
 ## Running it
 
@@ -75,7 +77,7 @@ TED++ has two flags of its own and shares three with TED.
 | `--tedpp-beta` | `0.5` | Tube neighbour factor: k = ceil(m x beta). Needs 0 < beta <= 1 and k < m |
 | `--ted-num-samples` | `256` | Test inputs to score |
 | `--ted-contamination` | `0.01` | Fraction of reference trajectories the threshold rejects, within (0, 0.5] |
-| `--ted-reference-size` | `1000` | Must be at least the number of classes times m |
+| `--ted-reference-size` | `1000` | Candidate budget; must be at least the number of classes times m |
 
 m = 5 and beta = 0.5 are the paper's settings. The `0.01` contamination is TED's
 default; the authors' TED++ code uses `0.1`.
@@ -86,34 +88,39 @@ every reference image at every hooked layer, so the per-input cost grows with
 network depth.
 
 
-## Example reports
+## Tuned defaults
 
-`models/resnet18_clean.pth`, with the default flags:
+TED++ shares TED's `num_samples=256`, `reference_size=1000`, and
+`contamination=0.01`, and adds `samples_per_class=5` and `beta=0.5`. The CLI and
+MCP tool use these same constants. `tedpp`'s method signature uses the shared
+defaults for `reference_size`, `contamination`, `samples_per_class`, and `beta`;
+the number scored is the length of `suspect_data`. MCP does not use a smaller
+reference set: the available smoke measurements show TED++ is faster than TED,
+but do not justify different defaults or an MCP-specific speed tradeoff.
 
-```json
-{
-  "verdict": "likely backdoored", "num_inputs": 256, "num_flagged": 17, "threshold": 751131.77,
-  "parameters": {"reference_size": 50, "samples_per_class": 5, "beta": 0.5,
-                 "contamination": 0.01, "batch_size": 100, "seed": null},
-  "per_sample": [{"index": 0, "predicted_label": 3, "score": 95153.33, "flagged": false},
-                 {"index": 1, "predicted_label": 8, "score": 110314.94, "flagged": false}, "..."]
-}
-```
+The committed Libra sweep (`scripts/run_ted_tuning.sbatch`) compares TED and
+TED++ on reference sizes 250/500/1000 and contamination 0.01/0.05. For TED++ it
+also varies `samples_per_class` between 5/10 and `beta` between 0.5/0.75, one
+setting at a time from the baseline. Both checkpoints, paired clean and
+white-square triggered CIFAR-10 inputs, and seeds 42/43/44 are included. The
+script emits per-seed metrics and means/stds in `raw.csv` and `summary.csv`.
 
-`models/resnet18_poison.pth`, with the default flags:
+The full Libra search could not be run in this environment (no Slurm or CUDA
+device). This local CPU smoke run is included to verify the measurement path,
+not as final tuning evidence: reference size 250, contamination 0.01, 5
+samples/class, beta 0.5, seed 42, and 16 paired clean/triggered inputs per
+model. Runtime is not representative of the 256-input production setting.
 
-```json
-{
-  "verdict": "likely backdoored", "num_inputs": 256, "num_flagged": 28, "threshold": 222734.83,
-  "parameters": {"reference_size": 50, "samples_per_class": 5, "beta": 0.5,
-                 "contamination": 0.01, "batch_size": 100, "seed": null},
-  "per_sample": [{"index": 0, "predicted_label": 3, "score": 70841.31, "flagged": false},
-                 {"index": 1, "predicted_label": 8, "score": 52097.96, "flagged": false}, "..."]
-}
-```
+| Model | Method | TPR | FPR | Clean-input verdict | Triggered-input verdict | Runtime |
+| --- | --- | ---: | ---: | --- | --- | ---: |
+| `resnet18_clean.pth` | TED | 0.000 | 0.000 | likely clean | likely clean | 17.55 s |
+| `resnet18_clean.pth` | TED++ | 0.000 | 0.000 | likely clean | likely clean | 1.29 s |
+| `resnet18_poison.pth` | TED | 0.563 | 0.000 | likely clean | likely backdoored | 24.14 s |
+| `resnet18_poison.pth` | TED++ | 0.625 | 0.063 | likely backdoored | likely backdoored | 2.91 s |
 
-Both runs score only clean test images, and both say "likely backdoored"; see
-Caveats. The numbers change from run to run.
+The defaults retain the paper's `samples_per_class=5` and `beta=0.5`, plus the
+shared current CLI settings. They remain provisional until the three-seed Libra
+search compares the full grid.
 
 ## Caveats
 

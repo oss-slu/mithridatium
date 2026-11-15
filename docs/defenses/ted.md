@@ -66,6 +66,38 @@ see Caveats). Holding all
 reference activations at 1000 images is about 0.4 GB in float32 (measured on
 `models/resnet18_clean.pth`). A smoke run needs a small reference set.
 
+## Tuned defaults
+
+The shared defaults are `num_samples=256`, `reference_size=1000`, and
+`contamination=0.01`. The CLI and MCP tool use these same values; the detector
+function uses the shared `reference_size` and `contamination` defaults, while
+the number scored is the length of `suspect_data`. MCP does not use a smaller
+reference set: the smoke measurements below show TED is slower than TED++, but
+are not enough to justify an unexplained MCP-only setting.
+
+The committed Libra sweep (`scripts/run_ted_tuning.sbatch`) searches
+`reference_size` in 250/500/1000 and `contamination` in 0.01/0.05. It scores
+paired clean and white-square triggered CIFAR-10 examples on both checkpoints,
+with seeds 42/43/44, and reports TPR, FPR, separate clean/triggered batch
+verdicts, and runtime. See `scripts/tune_ted.py` for the exact candidates.
+
+The sweep could not be run on Libra in this environment (no Slurm or CUDA
+device). The following CPU smoke run verifies the harness and gives preliminary
+measurements only: reference size 250, contamination 0.01, seed 42, and 16
+paired clean/triggered inputs per model. The runtimes are therefore not
+representative of the 256-input production setting.
+
+| Model | Method | TPR | FPR | Clean-input verdict | Triggered-input verdict | Runtime |
+| --- | --- | ---: | ---: | --- | --- | ---: |
+| `resnet18_clean.pth` | TED | 0.000 | 0.000 | likely clean | likely clean | 17.55 s |
+| `resnet18_clean.pth` | TED++ | 0.000 | 0.000 | likely clean | likely clean | 1.29 s |
+| `resnet18_poison.pth` | TED | 0.563 | 0.000 | likely clean | likely backdoored | 24.14 s |
+| `resnet18_poison.pth` | TED++ | 0.625 | 0.063 | likely backdoored | likely backdoored | 2.91 s |
+
+These are one-seed smoke results, not evidence that the candidates are tuned.
+The defaults retain TED's reference-code contamination and current CLI settings
+until the committed three-seed Libra sweep can compare the full grid.
+
 ## Caveats
 
 Treat output as a research signal, not proof, and uncalibrated. The paper
