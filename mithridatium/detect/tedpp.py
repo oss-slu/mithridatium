@@ -6,25 +6,29 @@ import torch.nn as nn
 import torch.utils.data as data
 from pyod.models.pca import PCA
 
+from mithridatium.detect.ted_defaults import TEDPP_DEFAULTS
+
 
 class TEDPLUS():
     def __init__(self, 
                  model, 
                  reference_data, 
                  suspect_data, 
-                 reference_size=1000,
-                 contamination=0.01,
+                 reference_size=TEDPP_DEFAULTS["reference_size"],
+                 contamination=TEDPP_DEFAULTS["contamination"],
                  batch_size=100,
-                 samples_per_class=5,
-                 beta=0.5,
+                 samples_per_class=TEDPP_DEFAULTS["samples_per_class"],
+                 beta=TEDPP_DEFAULTS["beta"],
                  seed=None,
                  device="cpu"):
         
         # 1) Model configuration
         self.model = model
-        self.ref_dat = reference_data
-        self.sus_dat = suspect_data
         self.ref_size = reference_size
+        self.ref_dat = data.Subset(
+            reference_data, range(min(len(reference_data), 2 * reference_size))
+        )
+        self.sus_dat = suspect_data
         self.contam = contamination
         self.batch_size = batch_size
         self.seed = seed
@@ -45,7 +49,7 @@ class TEDPLUS():
         self.model.to(self.device)
 
         self.reference_loader = data.DataLoader(
-            reference_data, batch_size=batch_size, shuffle=False
+            self.ref_dat, batch_size=batch_size, shuffle=False
         )
         self.suspect_loader = data.DataLoader(
             suspect_data, batch_size=batch_size, shuffle=False
@@ -84,8 +88,11 @@ class TEDPLUS():
 
         if self.num_classes is None:
             raise ValueError("Clean reference data is empty.")
-        if samples_per_class < 1:
-            raise ValueError("samples_per_class must be positive.")
+        if self.num_classes * samples_per_class > reference_size:
+            raise ValueError(
+                "reference_size must be at least the number of classes times "
+                "samples_per_class."
+            )
 
         rng = np.random.default_rng(seed)
         defense_indices = []
@@ -401,7 +408,8 @@ class TEDPLUS():
             "num_flagged": num_flagged,
             "threshold": float(detector.threshold_),
             "parameters": {
-                "reference_size": len(self.h_defense_preds),
+                "reference_size": self.ref_size,
+                "selected_reference_size": len(self.h_defense_preds),
                 "samples_per_class": self.SAMPLES_PER_CLASS,
                 "beta": self.beta,
                 "contamination": self.contam,
@@ -434,17 +442,19 @@ def tedpp(
     model,
     reference_data,
     suspect_data,
-    contamination=0.01,
+    contamination=TEDPP_DEFAULTS["contamination"],
     batch_size=100,
-    samples_per_class=5,
-    beta=0.5,
+    samples_per_class=TEDPP_DEFAULTS["samples_per_class"],
+    beta=TEDPP_DEFAULTS["beta"],
     seed=None,
     device="cpu",
+    reference_size=TEDPP_DEFAULTS["reference_size"],
 ):
     detector = TEDPLUS(
         model,
         reference_data,
         suspect_data,
+        reference_size=reference_size,
         contamination=contamination,
         batch_size=batch_size,
         samples_per_class=samples_per_class,

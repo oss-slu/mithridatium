@@ -30,6 +30,7 @@ import torch.utils.data as data
 
 from pyod.models.pca import PCA
 from torch.utils.data import Subset
+from mithridatium.detect.ted_defaults import TED_DEFAULTS
 
 
 "TED configurations. These should all be changed in the ted method. Some configurations may be unneeded."
@@ -244,8 +245,8 @@ def ted(
         model,
         reference_data,
         suspect_data,
-        reference_size: int = 1000,
-        contamination: float = 0.01,
+        reference_size: int = TED_DEFAULTS["reference_size"],
+        contamination: float = TED_DEFAULTS["contamination"],
         batch_size: int = 100,
         seed=None,
         device="cpu",
