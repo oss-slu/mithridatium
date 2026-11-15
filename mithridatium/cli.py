@@ -31,6 +31,7 @@ from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_T
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
 from mithridatium.repair import run_lmr
 
@@ -531,30 +532,33 @@ def detect(
 
         ),
         ted_num_samples: int = typer.Option(
-            256,
+            TED_DEFAULTS["num_samples"],
             "--ted-num-samples",
             min=1,
             help="TED: the number of test images to score.",
         ),
         ted_reference_size: int = typer.Option(
-            1000,
+            TED_DEFAULTS["reference_size"],
             "--ted-reference-size",
             min=1,
-            help="TED: the cap on known-clean reference images, drawn from the training split.",
+            help=(
+                "TED/TED++: clean reference budget from the training split. "
+                "TED++ requires at least the class count times samples per class."
+            ),
         ),
         ted_contamination: float = typer.Option(
-            0.01,
+            TED_DEFAULTS["contamination"],
             "--ted-contamination",
             help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
         ),
         tedpp_samples_per_class: int = typer.Option(
-            5,
+            TEDPP_DEFAULTS["samples_per_class"],
             "--tedpp-samples-per-class",
             min=2,
             help="TED++: number of correctly classified clean reference inputs selected per class.",
         ),
         tedpp_beta: float = typer.Option(
-            0.5,
+            TEDPP_DEFAULTS["beta"],
             "--tedpp-beta",
             help=(
                 "TED++ tube-neighbor fraction. For each clean activation, k = "
@@ -785,6 +789,7 @@ def detect(
                 suspect_data=torch.utils.data.Subset(
                     test_ds, range(min(len(test_ds), ted_num_samples))
                 ),
+                reference_size=ted_reference_size,
                 contamination=ted_contamination,
                 samples_per_class=tedpp_samples_per_class,
                 beta=tedpp_beta,
