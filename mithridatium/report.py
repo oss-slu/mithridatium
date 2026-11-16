@@ -215,3 +215,12 @@ def validate_report_data(data: dict, schema: str | None = None) -> None:
     sch_path = Path(schema) if schema else _schema_path()
     sch = json.loads(sch_path.read_text(encoding="utf-8"))
     jsonschema.validate(instance=data, schema=sch)
+
+
+def report_flags_backdoor(report: Dict[str, Any]) -> bool:
+    """True when a defense report says a backdoor is suspected."""
+    results = report.get("results", {})
+    if results.get("suspected_backdoor") is True:
+        return True
+    verdict = results.get("verdict")
+    return isinstance(verdict, str) and "backdoor" in verdict.lower()

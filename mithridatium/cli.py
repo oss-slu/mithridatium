@@ -44,6 +44,7 @@ EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
 EXIT_CANT_CREATE = 73     # cannot create/overwrite output without --force
 EXIT_IO_ERROR = 74        # input exists but can't be opened/read
+EXIT_BACKDOOR_SUSPECTED = 78  # backdoor suspected while running audit with --fail-on-backdoor
 
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
@@ -159,6 +160,11 @@ def audit(
         "--force",
         "-f",
         help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
+    ),
+    fail_on_backdoor: bool = typer.Option(
+        False,
+        "--fail-on-backdoor",
+        help="Exit with a distinct non-zero code when the report suspects a backdoor. Useful in CI.",
     ),
     freeeagle_num_classes: int = typer.Option(
         0,
@@ -469,6 +475,9 @@ def audit(
 
     _write_json(rep, out, force)
     print(rpt.render_summary(rep))
+
+    if fail_on_backdoor and rpt.report_flags_backdoor(rep):
+        raise typer.Exit(code=EXIT_BACKDOOR_SUSPECTED)
 
 @app.command()
 def detect(
