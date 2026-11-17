@@ -42,7 +42,9 @@ Currently supported:
 | `--report` / `-r` | Path for the JSON report, or `-` for stdout. Defaults to a sidecar beside `--out`. |
 | `--force` / `-f` | Overwrite the checkpoint or report if it already exists. |
 | `--lmr-target-class` | LMR: zero-based target class to repair (required; must be below the model's class count). |
-| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (required; at least `0` and less than `1`). |
+| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (optional; default `0.10`). |
+| `--lmr-repair-steps` | LMR: optimization steps for Phase 1 (optional; default `20`). |
+| `--lmr-fine-tune-steps` | LMR: fine-tuning steps after pruning (optional; default `10`). |
 | `--clp-threshold-mult` | CLP: finite, nonnegative pruning threshold multiplier (default `3.0`). |
 | `--anp-eps` | ANP: perturbation bound ε (finite, nonnegative; default `0.4`). |
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
@@ -70,7 +72,11 @@ LMR also requires:
 
 - a small set of clean samples
 - a target class specified with `--lmr-target-class`
-- a pruning ratio specified with `--lmr-prune-ratio`
+
+Optional flags:
+- `--lmr-prune-ratio` (default `0.10`)
+- `--lmr-repair-steps` (default `20`)
+- `--lmr-fine-tune-steps` (default `10`)
 
 The clean samples are used during the repair and fine-tuning process.
 
@@ -84,10 +90,65 @@ mithridatium repair \
   --clean-samples 500 \
   --seed 42 \
   --lmr-target-class 0 \
-  --lmr-prune-ratio 0.10 \
   --out models/resnet18_repaired.pth \
   --report reports/repair_report.json
 ```
+
+### Tuned Defaults
+
+A parameter sweep was conducted using `scripts/sweep_lmr.py` on `models/resnet18_clean.pth` and `models/resnet18_poison.pth` (CIFAR-10 with a 4px bottom-right white-square trigger, target class 0).
+
+**Baselines before repair:**
+- Clean Model: Clean Accuracy (CA) = 58.13%, ASR = 3.60%
+- Poisoned Model: Clean Accuracy (CA) = 56.72%, ASR = 92.90%
+
+#### Grid 1: Prune Ratio Sweep
+Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`, `seed=0`:
+
+| `prune_ratio` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
+|---|---|---|---|
+| 0.02 | 54.63% | 1.70% | 15.63s |
+| 0.05 | 54.57% | 2.00% | 15.98s |
+| 0.10 | 54.67% | 1.30% | 13.29s |
+| 0.15 | 54.62% | 2.10% | 13.69s |
+| 0.20 | 54.54% | 1.40% | 13.77s |
+| 0.30 | 54.28% | 3.10% | 13.38s |
+
+#### Grid 2: Repair and Fine-Tune Steps
+Evaluated with `prune_ratio=0.10`, `clean_samples=500`, `seed=0`:
+
+| `repair_steps` | `fine_tune_steps` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
+|---|---|---|---|---|
+| 10 | 5 | 55.22% | 25.00% | 6.77s |
+| 10 | 10 | 55.56% | 19.20% | 9.28s |
+| 20 | 5 | 54.14% | 2.20% | 12.32s |
+| 20 | 10 | 54.67% | 1.30% | 16.59s |
+| 20 | 20 | 55.49% | 1.10% | 22.34s |
+| 30 | 10 | 54.63% | 0.20% | 21.82s |
+| 30 | 20 | 54.42% | 0.40% | 30.85s |
+
+#### Grid 3: Clean Samples
+Evaluated with `prune_ratio=0.10`, `repair_steps=20`, `fine_tune_steps=10`, `seed=0`:
+
+| `clean_samples` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
+|---|---|---|---|
+| 250 | 54.64% | 4.50% | 18.45s |
+| 500 | 54.67% | 1.30% | 18.21s |
+| 1000 | 55.17% | 0.00% | 16.62s |
+
+#### Final Candidates Across 3 Seeds (Seeds 0, 42, 123)
+Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`:
+
+| `prune_ratio` | Steps (rep/ft) | Samples | Mean CA (%) | Mean ASR (%) | Mean Runtime (s) |
+|---|---|---|---|---|---|
+| 0.05 | 20 / 10 | 500 | 54.89 ± 0.55% | 3.87 ± 4.14% | 18.14 ± 0.51s |
+| 0.10 | 20 / 10 | 500 | 54.91 ± 0.53% | 3.97 ± 4.65% | 20.17 ± 0.11s |
+| 0.15 | 20 / 10 | 500 | 54.81 ± 0.56% | 5.77 ± 6.13% | 16.19 ± 0.07s |
+
+#### Chosen Defaults and Rationale
+- **`prune_ratio = 0.10`**: Delivers the highest average clean accuracy (54.91%) while suppressing ASR to ~3.97% (close to the 3.60% clean baseline). Clean accuracy drops by only ~1.8% from the 56.72% poisoned baseline, comfortably within the $\le 3\%$ target drop budget.
+- **`repair_steps = 20` & `fine_tune_steps = 10`**: Fewer repair steps (10) leave 19–25% ASR residual, while 20 steps effectively eliminate the backdoor without unnecessary training time.
+- **`clean_samples = 500`**: Provides an optimal balance between fast execution (~18s on CPU) and sufficient representative data to recover clean accuracy.
 
 ### Caveats
 
@@ -102,8 +163,6 @@ mithridatium repair \
 ### Future Work
 
 - Make this the actual LMR implementation from the repo
-
-- Add --lmr-repair-steps (default 20) and --lmr-fine-tune-steps (default 10) options to repair, following the pattern of --lmr-prune-ratio
 
 ## CLP (Channel Lipschitzness-based Pruning)
 
