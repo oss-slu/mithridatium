@@ -38,7 +38,7 @@ CONFIG = {
     "output_dir": Path("reports/anp_tuning"),
     "device": "auto",
     "threshold": 0.15,
-    "eps": 0.4,
+    "eps": 0.2,
     "alpha": 0.2,
     "steps": 1,
     "clean_samples": 500,
