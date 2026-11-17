@@ -10,16 +10,31 @@ from torch.utils.data import DataLoader, TensorDataset
 from scripts import sweep_anp as sweep
 
 
-def test_stage_candidates(monkeypatch):
+def test_stage_candidates():
     a = sweep.parse_args(["--stage", "threshold"])
-    assert len(sweep.candidates(a)) == 7
-    assert all(c[1:] == (0.4, 0.2, 1, 500) for c in sweep.candidates(a))
+    assert sweep.candidates(a) == [
+        (t, a.eps, a.alpha, a.steps, a.clean_samples)
+        for t in sweep.SWEEPS["threshold"]
+    ]
+
     a = sweep.parse_args(["--stage", "eps-alpha"])
-    assert len(sweep.candidates(a)) == 9
+    assert sweep.candidates(a) == [
+        (a.threshold, e, alpha, a.steps, a.clean_samples)
+        for e in sweep.SWEEPS["eps"]
+        for alpha in sweep.SWEEPS["alpha"]
+    ]
+
     a = sweep.parse_args(["--stage", "steps-samples"])
-    assert len(sweep.candidates(a)) == 6
+    assert sweep.candidates(a) == [
+        (a.threshold, a.eps, a.alpha, steps, samples)
+        for steps in sweep.SWEEPS["steps"]
+        for samples in sweep.SWEEPS["clean_samples"]
+    ]
+
     a = sweep.parse_args(["--stage", "final"])
-    assert sweep.candidates(a) == [(0.2, 0.4, 0.2, 1, 500)]
+    assert sweep.candidates(a) == [
+        (a.threshold, a.eps, a.alpha, a.steps, a.clean_samples)
+    ]
 
 
 def test_smoke_does_not_modify_normal_settings():

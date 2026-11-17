@@ -139,6 +139,12 @@ def main(argv=None):
                           else "cpu" if args.device == "auto" else args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
+    if device.type == "cuda":
+        print(f"[ANP] Using GPU: {torch.cuda.get_device_name(device)} ({device})", flush=True)
+    elif args.device == "auto":
+        print("[ANP] CUDA unavailable; falling back to CPU.", flush=True)
+    else:
+        print(f"[ANP] Using configured device: {device}", flush=True)
 
     models = [("poison", args.model)]
     if args.stage == "final" and args.clean_model:
@@ -195,6 +201,7 @@ def main(argv=None):
                                         num_samples=args.iterations * 128,
                                         generator=torch.Generator().manual_seed(seed))
                 model = load_model(checkpoint, device, classes)
+                print(f"[ANP] Mask training model device: {next(model.parameters()).device}", flush=True)
                 sync(device)
                 start = time.perf_counter()
                 scores = train_masks(
