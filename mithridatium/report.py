@@ -1,8 +1,12 @@
 # mithridatium/report.py
 
-import datetime as dt
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
+
+def utc_timestamp() -> str:
+    """Return the current UTC time as an ISO 8601 string ending in 'Z'."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def build_report(
     model_path: str,
@@ -14,7 +18,7 @@ def build_report(
     """Single source of truth for a report payload."""
     payload =  {
         "mithridatium_version": version,
-        "timestamp_utc": dt.datetime.utcnow().isoformat() + "Z",
+        "timestamp_utc": utc_timestamp(),
         "model_path": model_path,
         "defense": defense,
         "dataset": dataset,
@@ -26,8 +30,6 @@ def build_report(
     }
     return to_json_safe(payload)
 
-from datetime import datetime, timezone
-
 
 def build_repair_report(
     model_path: str,
@@ -38,7 +40,7 @@ def build_repair_report(
 ) -> dict:
     return {
         "mithridatium_version": version,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": utc_timestamp(),
         "model_path": model_path,
         "method": method,
         "dataset": dataset,
