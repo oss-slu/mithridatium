@@ -37,7 +37,7 @@ CONFIG = {
     "clean_model": Path("models/resnet18_clean.pth"),  # checked in the final stage
     "output_dir": Path("reports/anp_tuning"),
     "device": "auto",
-    "threshold": 0.2,
+    "threshold": 0.15,
     "eps": 0.4,
     "alpha": 0.2,
     "steps": 1,
