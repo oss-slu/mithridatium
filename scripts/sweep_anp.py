@@ -35,7 +35,7 @@ KEY = FIELDS[:15]  # Identity of a run, for safely resuming without duplicates.
 CONFIG = {
     "model": Path("models/resnet18_poison.pth"),
     "clean_model": Path("models/resnet18_clean.pth"),  # checked in the final stage
-    "output_dir": Path("reports/anp_tuning"),
+    "output_dir": Path("reports/anp_tuning_1234"),
     "device": "auto",
     "threshold": 0.15,
     "eps": 0.2,
@@ -196,7 +196,7 @@ def main(argv=None):
                 torch.manual_seed(seed)
                 if device.type == "cuda":
                     torch.cuda.manual_seed_all(seed)
-                clean_train = sample(train.dataset, n, seed)
+                clean_train = sample(train.dataset, n, 1234)
                 sampler = RandomSampler(clean_train, replacement=True,
                                         num_samples=args.iterations * 128,
                                         generator=torch.Generator().manual_seed(seed))
