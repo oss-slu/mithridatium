@@ -2,7 +2,7 @@
 
 TED_DEFAULTS = {
     "num_samples": 256,
-    "reference_size": 1000,
+    "reference_size": 500,
     "contamination": 0.01,
 }
 

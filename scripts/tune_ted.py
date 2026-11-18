@@ -31,10 +31,10 @@ TED_CONFIGS = [
         "reference_size": size,
         "contamination": TED_DEFAULTS["contamination"],
     }
-    for size in (250, 500, TED_DEFAULTS["reference_size"])
+    for size in (250, 500, 1000)
 ] + [{
     "method": "ted",
-    "reference_size": TED_DEFAULTS["reference_size"],
+    "reference_size": 1000,
     "contamination": 0.05,
 }]
 
@@ -46,25 +46,25 @@ TEDPP_CONFIGS = [
         "samples_per_class": TEDPP_DEFAULTS["samples_per_class"],
         "beta": TEDPP_DEFAULTS["beta"],
     }
-    for size in (250, 500, TEDPP_DEFAULTS["reference_size"])
+    for size in (250, 500, 1000)
 ] + [
     {
         "method": "ted++",
-        "reference_size": TEDPP_DEFAULTS["reference_size"],
+        "reference_size": 1000,
         "contamination": 0.05,
         "samples_per_class": TEDPP_DEFAULTS["samples_per_class"],
         "beta": TEDPP_DEFAULTS["beta"],
     },
     {
         "method": "ted++",
-        "reference_size": TEDPP_DEFAULTS["reference_size"],
+        "reference_size": 1000,
         "contamination": TEDPP_DEFAULTS["contamination"],
         "samples_per_class": 10,
         "beta": TEDPP_DEFAULTS["beta"],
     },
     {
         "method": "ted++",
-        "reference_size": TEDPP_DEFAULTS["reference_size"],
+        "reference_size": 1000,
         "contamination": TEDPP_DEFAULTS["contamination"],
         "samples_per_class": TEDPP_DEFAULTS["samples_per_class"],
         "beta": 0.75,

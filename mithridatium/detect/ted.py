@@ -265,8 +265,8 @@ def ted(
             poisoned. Yields (image, label) like reference_data; the label is
             ignored, since TED ranks by the model's predictions. TED needs no
             known-poisoned data.
-        reference_size: Cap on clean reference images. 1000 is the reference
-            code's CIFAR-10 value (opt.defense_train_size).
+        reference_size: Cap on clean reference images. Defaults to the tuned
+            CIFAR-10 budget in TED_DEFAULTS.
         contamination: Fraction of reference trajectories the PCA threshold
             rejects, alpha in the paper. 0.01 is the reference code's value.
         batch_size: Forward-pass batch size.

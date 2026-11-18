@@ -21,7 +21,7 @@ How it differs from TED:
   tube's radius from its nearest same-class reference has left the class's normal
   region, so it gets the worst possible rank instead of TED's rank. The paper
   calls this Locally Adaptive Ranking.
-- **A small clean set.** TED's default uses 1000 clean images, about 100 per
+- **A small clean set.** TED's default budget is 500 clean images, about 50 per
   class; TED++ uses 5 per class. The paper reports it stays accurate with as few
   as 2 per class, where TED degrades.
 
@@ -77,50 +77,60 @@ TED++ has two flags of its own and shares three with TED.
 | `--tedpp-beta` | `0.5` | Tube neighbour factor: k = ceil(m x beta). Needs 0 < beta <= 1 and k < m |
 | `--ted-num-samples` | `256` | Test inputs to score |
 | `--ted-contamination` | `0.01` | Fraction of reference trajectories the threshold rejects, within (0, 0.5] |
-| `--ted-reference-size` | `1000` | Candidate budget; must be at least the number of classes times m |
+| `--ted-reference-size` | `500` | Candidate budget; must be at least the number of classes times m |
 
 m = 5 and beta = 0.5 are the paper's settings. The `0.01` contamination is TED's
 default; the authors' TED++ code uses `0.1`.
 
 **Cost.** Choosing the references classifies at most 2 x `--ted-reference-size`
-training images (2000 by default) once. Each scored input is then compared with
+training images (1000 by default) once. Each scored input is then compared with
 every reference image at every hooked layer, so the per-input cost grows with
 network depth.
 
 
 ## Tuned defaults
 
-TED++ shares TED's `num_samples=256`, `reference_size=1000`, and
-`contamination=0.01`, and adds `samples_per_class=5` and `beta=0.5`. The CLI and
-MCP tool use these same constants. `tedpp`'s method signature uses the shared
-defaults for `reference_size`, `contamination`, `samples_per_class`, and `beta`;
-the number scored is the length of `suspect_data`. MCP does not use a smaller
-reference set: the available smoke measurements show TED++ is faster than TED,
-but do not justify different defaults or an MCP-specific speed tradeoff.
+TED++ shares TED's `num_samples=256`, `reference_size=500`, and
+`contamination=0.01`, and adds `samples_per_class=5` and `beta=0.5`. The CLI,
+MCP tool, and detector function use the same defaults. A 500-reference budget
+is a provisional tradeoff: for the poisoned model, baseline TED++ averaged
+73.8% TPR and 7.2% FPR in 6.1 s on CPU, versus 83.1% TPR and 9.4% FPR in 7.5 s
+at 1000 references. At 500 references, the clean model's mean FPR was 2.0%,
+compared with 5.9% at 250 references. No candidate reliably produced the
+correct model verdicts across all seeds.
 
-The committed Libra sweep (`scripts/run_ted_tuning.sbatch`) compares TED and
-TED++ on reference sizes 250/500/1000 and contamination 0.01/0.05. For TED++ it
-also varies `samples_per_class` between 5/10 and `beta` between 0.5/0.75, one
-setting at a time from the baseline. Both checkpoints, paired clean and
-white-square triggered CIFAR-10 inputs, and seeds 42/43/44 are included. The
-script emits per-seed metrics and means/stds in `raw.csv` and `summary.csv`.
+The full CPU sweep scored 256 clean CIFAR-10 test examples and 256 corresponding
+white-square triggered examples (4 px, bottom-right, target class 0), using
+seeds 42/43/44 on both `resnet18_clean.pth` and `resnet18_poison.pth`. It varied
+reference size over 250/500/1000 and contamination over 0.01/0.05; at 1000
+references it also tested 10 samples/class and beta 0.75 separately from the
+baseline 5 samples/class, beta 0.5. Values below are mean ± standard deviation
+across seeds. TPR is the triggered-input flag rate; FPR is the clean-input flag
+rate. Verdict columns show counts of `likely clean` / `likely backdoored`
+batches out of three. Runtime is seconds per model/configuration on CPU. On the
+clean checkpoint, triggered-input rate is a false-alarm rate, not a true-
+positive rate.
 
-The full Libra search could not be run in this environment (no Slurm or CUDA
-device). This local CPU smoke run is included to verify the measurement path,
-not as final tuning evidence: reference size 250, contamination 0.01, 5
-samples/class, beta 0.5, seed 42, and 16 paired clean/triggered inputs per
-model. Runtime is not representative of the 256-input production setting.
+| Reference / contamination / m / beta | Model | TPR % | FPR % | Clean-input verdicts clean / backdoored | Triggered-input verdicts clean / backdoored | Runtime s |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 250 / 0.01 / 5 / 0.5 | clean | 5.5 ± 0.7 | 5.9 ± 0.8 | 0 / 3 | 0 / 3 | 5.3 ± 0.1 |
+| 250 / 0.01 / 5 / 0.5 | poisoned | 67.7 ± 11.1 | 3.8 ± 3.4 | 1 / 2 | 0 / 3 | 5.5 ± 0.2 |
+| 500 / 0.01 / 5 / 0.5 | clean | 1.8 ± 1.8 | 2.0 ± 2.2 | 1 / 2 | 1 / 2 | 5.8 ± 0.2 |
+| 500 / 0.01 / 5 / 0.5 | poisoned | 73.8 ± 13.3 | 7.2 ± 7.0 | 1 / 2 | 0 / 3 | 6.1 ± 0.1 |
+| 1000 / 0.01 / 5 / 0.5 | clean | 3.9 ± 2.7 | 3.5 ± 3.1 | 0 / 3 | 0 / 3 | 6.9 ± 0.1 |
+| 1000 / 0.01 / 5 / 0.5 | poisoned | 83.1 ± 3.3 | 9.4 ± 0.4 | 0 / 3 | 0 / 3 | 7.5 ± 0.5 |
+| 1000 / 0.05 / 5 / 0.5 | clean | 8.9 ± 2.2 | 7.9 ± 2.9 | 0 / 3 | 0 / 3 | 6.9 ± 0.1 |
+| 1000 / 0.05 / 5 / 0.5 | poisoned | 85.7 ± 4.7 | 18.1 ± 6.6 | 0 / 3 | 0 / 3 | 7.1 ± 0.1 |
+| 1000 / 0.01 / 10 / 0.5 | clean | 4.9 ± 3.6 | 5.9 ± 4.8 | 1 / 2 | 1 / 2 | 9.3 ± 0.6 |
+| 1000 / 0.01 / 10 / 0.5 | poisoned | 78.1 ± 7.4 | 5.1 ± 4.8 | 0 / 3 | 0 / 3 | 9.4 ± 0.2 |
+| 1000 / 0.01 / 5 / 0.75 | clean | 3.8 ± 2.8 | 3.4 ± 3.2 | 0 / 3 | 0 / 3 | 7.2 ± 0.1 |
+| 1000 / 0.01 / 5 / 0.75 | poisoned | 78.1 ± 2.1 | 8.7 ± 0.5 | 0 / 3 | 0 / 3 | 7.2 ± 0.1 |
 
-| Model | Method | TPR | FPR | Clean-input verdict | Triggered-input verdict | Runtime |
-| --- | --- | ---: | ---: | --- | --- | ---: |
-| `resnet18_clean.pth` | TED | 0.000 | 0.000 | likely clean | likely clean | 17.55 s |
-| `resnet18_clean.pth` | TED++ | 0.000 | 0.000 | likely clean | likely clean | 1.29 s |
-| `resnet18_poison.pth` | TED | 0.563 | 0.000 | likely clean | likely backdoored | 24.14 s |
-| `resnet18_poison.pth` | TED++ | 0.625 | 0.063 | likely backdoored | likely backdoored | 2.91 s |
-
-The defaults retain the paper's `samples_per_class=5` and `beta=0.5`, plus the
-shared current CLI settings. They remain provisional until the three-seed Libra
-search compares the full grid.
+No candidate met the clean/poison verdict criterion across all three seeds.
+The selected 500/0.01/5/0.5 configuration is a compromise between triggered
+detection, false positives, and cost, not a reliable model verdict. The sweep
+script is `scripts/tune_ted.py`; raw and summarized results are in
+`reports/ted_tuning/raw.csv` and `reports/ted_tuning/summary.csv`.
 
 ## Caveats
 
