@@ -180,10 +180,13 @@ During mask training each batch of 128 clean images is drawn with replacement an
 Channels with learned mask values `score <= threshold` are pruned by zeroing their BatchNorm weight, leaving bias intact to prevent feature drift.
 With `--anp-prune-fraction`, exactly that fraction of the lowest-scoring channels across all BatchNorm layers is pruned instead (ties broken by position).
 The `--clean-samples` option sets the number of clean images used (shared, default: `500`),
-`--anp-eps` controls the perturbation bound (default: `0.4`), `--anp-alpha` balances
+`--anp-eps` controls the perturbation bound (tuned default: `0.2`), `--anp-alpha` balances
 clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps
 (default: `1`), `--anp-iterations` controls the total optimization steps (default: `2000`),
-and `--anp-prune-threshold` sets the cutoff below which channels are pruned (default: `0.2`).
+and `--anp-prune-threshold` sets the pruning cutoff (tuned default: `0.15`).
+`--anp-clean-subset-seed` (default: `1234`) fixes which clean images are selected,
+independently of `--seed` (which controls optimization and evaluation randomness). This setting
+is important for reproducing the tuned benchmark below.
 
 ### Run ANP
 
@@ -193,10 +196,11 @@ mithridatium repair \
   --method anp \
   --data cifar10 \
   --clean-samples 500 \
-  --anp-eps 0.4 \
+  --anp-eps 0.2 \
   --anp-alpha 0.2 \
   --anp-steps 1 \
-  --anp-prune-threshold 0.2 \
+  --anp-prune-threshold 0.15 \
+  --anp-clean-subset-seed 1234 \
   --out models/resnet18_anp.pth \
   --report reports/repair_anp.json
 ```
@@ -204,6 +208,41 @@ mithridatium repair \
 This saves a new `.pth` checkpoint and a JSON report. The report's `results`
 include `method: "anp"`, parameter values, `total_channels_pruned`, a per-layer
 breakdown, `clean_accuracy_before`, `clean_accuracy_after`, and optional ASR metrics.
+
+### Tuned defaults (issue #184)
+
+ANP was tuned on `models/resnet18_poison.pth` (CIFAR-10; 4×4 white-square
+trigger in the bottom-right corner, target class 0), and checked against a
+separately trained `models/resnet18_clean.pth`. A small staged grid tested
+pruning thresholds (including 0.00–0.20), `eps` values 0.2/0.4/0.6, `alpha`
+values 0.1/0.2/0.3, `steps` 1/2, and clean sample counts 250/500/1000.
+The selected defaults are: **`prune_threshold=0.15`, `eps=0.2`, `alpha=0.2`,
+`steps=1`, `clean_samples=500`, `iterations=2000`**.
+
+For final validation, the **same 500 clean training images** were selected
+with `clean_subset_seed=1234`, while ANP optimization used seeds **0, 1, 2**.
+Clean accuracy used 500 fixed CIFAR-10 test images; ASR used 500 fixed
+triggered non-target images. Mean ± sample standard deviation over three seeds:
+
+| Checkpoint | CA before | CA after | ASR before | ASR after | Channels pruned | Runtime |
+|---|---:|---:|---:|---:|---:|---:|
+| Poisoned | 62.8% | 62.47 ± 0.90% | 89.2% | 8.20 ± 0.87% | 147.7 ± 4.6 | 165.0 ± 2.4 s |
+| Clean | 83.8% | 82.53 ± 0.76% | Not applicable | Not applicable | 123.0 ± 1.0 | 167.0 ± 1.0 s |
+
+Clean-accuracy drop remained **≤ 3 percentage points in all six runs**.
+Worst observed loss: 1.2 points on the poisoned checkpoint and 1.8 points on
+the clean checkpoint. These are measurements on these checkpoints and 500-image
+evaluation subsets, **not proof of generalization** to all training subsets,
+other triggers, or the full CIFAR-10 test set. Earlier runs that changed the
+clean subset across seeds showed much higher ASR variability. Evaluating more
+clean subsets and backdoor variants should be tracked separately (see
+[issue #170](https://github.com/oss-slu/mithridatium/issues/170) for the original
+ANP over-pruning problem).
+
+To reproduce the three-seed validation, set the sweep script `CONFIG` to the
+selected defaults above and use `python -m scripts.sweep_anp --stage final`.
+The sweep outputs CA, ASR,
+channels pruned, and runtime for each run into `all_results.csv`.
 
 ### Optional ASR evaluation (known backdoor trigger)
 
@@ -279,7 +318,7 @@ not remove the current ANP model-loader restriction to ResNet-18, and other
 repair methods are not automatically wired to ASR yet. Incorrect trigger
 metadata produces misleading ASR results.
 
-**Measured demo results:** 
+**Historical pre-tuning demo results (retained for context):**
 #### ANP ASR DEMO Evaluation Results
 
 ANP was evaluated on a poisoned ResNet-18 model trained on

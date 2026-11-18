@@ -24,6 +24,10 @@ from torch.utils.data import DataLoader, RandomSampler, Subset
 
 from mithridatium import loader, report as rpt, utils
 from mithridatium.evaluation.asr import evaluate_targeted_asr
+from mithridatium.repair.anp_defaults import (
+    ANP_ALPHA, ANP_CLEAN_SAMPLES, ANP_CLEAN_SUBSET_SEED, ANP_EPS,
+    ANP_ITERATIONS, ANP_PRUNE_THRESHOLD, ANP_STEPS,
+)
 
 
 class NoisyBatchNorm2d(nn.BatchNorm2d):
@@ -140,7 +144,8 @@ def _augment(images):
     return cropped
 
 
-def train_masks(model, clean_loader, *, eps=0.4, alpha=0.2, steps=1, iterations=2000,
+def train_masks(model, clean_loader, *, eps=ANP_EPS, alpha=ANP_ALPHA,
+                steps=ANP_STEPS, iterations=ANP_ITERATIONS,
                 augment=True):
     """Alternate noise maximization and mask minimization on clean images."""
     if not (math.isfinite(eps) and eps >= 0):
@@ -320,9 +325,12 @@ def _sample(dataset, count, generator):
     return Subset(dataset, indices)
 
 
-def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
-            steps=1, iterations=2000, prune_threshold=0.2, prune_fraction=None,
-            clean_samples=500, seed=0, version="0.1.2", data="cifar10",
+def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
+            steps=ANP_STEPS, iterations=ANP_ITERATIONS,
+            prune_threshold=ANP_PRUNE_THRESHOLD, prune_fraction=None,
+            clean_samples=ANP_CLEAN_SAMPLES, seed=0,
+            clean_subset_seed=ANP_CLEAN_SUBSET_SEED,
+            version="0.1.2", data="cifar10",
             eval_samples=500, triggered_eval_dataset=None, attack_target=None):
     """Train masks, prune neurons, and write a checkpoint and repair report."""
     source, destination = Path(model_path).resolve(), Path(out).resolve()
@@ -332,6 +340,9 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
         raise ValueError("Report path must differ from model paths")
     if (triggered_eval_dataset is None) != (attack_target is None):
         raise ValueError("Supply both triggered examples and attack target")
+
+    if not isinstance(clean_subset_seed, int) or clean_subset_seed < 0:
+        raise ValueError("clean_subset_seed must be a nonnegative integer")
 
     torch.manual_seed(seed)
     config = utils.get_preprocess_config(data)
@@ -349,9 +360,10 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
         train_loader, _ = utils.dataloader_for(data, "train", 64)
         test_loader, _ = utils.dataloader_for(data, "test", 64)
 
-    generator = torch.Generator().manual_seed(seed)
-    clean = _sample(train_loader.dataset, clean_samples, generator)
-    evaluation = _sample(test_loader.dataset, eval_samples, generator)
+    clean_generator = torch.Generator().manual_seed(clean_subset_seed)
+    eval_generator = torch.Generator().manual_seed(seed)
+    clean = _sample(train_loader.dataset, clean_samples, clean_generator)
+    evaluation = _sample(test_loader.dataset, eval_samples, eval_generator)
 
     clean_before = evaluate_clean(model, evaluation)
     asr_before = None
@@ -363,7 +375,8 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
     scores = train_masks(
         model,
         DataLoader(clean, batch_size=128, sampler=RandomSampler(
-            clean, replacement=True, num_samples=iterations * 128)),
+            clean, replacement=True, num_samples=iterations * 128,
+            generator=torch.Generator().manual_seed(seed))),
         eps=eps,
         alpha=alpha,
         steps=steps,
@@ -392,6 +405,7 @@ def run_anp(*, model_path, out, report, eps=0.4, alpha=0.2,
             "prune_threshold": prune_threshold if prune_fraction is None else None,
             "prune_fraction": prune_fraction, "clean_samples": len(clean),
             "eval_samples": len(evaluation), "seed": seed,
+            "clean_subset_seed": clean_subset_seed,
         },
         "total_channels_pruned": sum(item["count"] for item in pruned),
         "layer_breakdown": [

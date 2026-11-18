@@ -35,7 +35,7 @@ KEY = FIELDS[:15]  # Identity of a run, for safely resuming without duplicates.
 CONFIG = {
     "model": Path("models/resnet18_poison.pth"),
     "clean_model": Path("models/resnet18_clean.pth"),  # checked in the final stage
-    "output_dir": Path("reports/anp_tuning_1234"),
+    "output_dir": Path("reports/anp_fixed_1234"),
     "device": "auto",
     "threshold": 0.15,
     "eps": 0.2,
@@ -51,19 +51,19 @@ CONFIG = {
 }
 
 SWEEPS = {
-    "threshold": [0, 0.01, 0.025, 0.05, 0.1, 0.15, 0.2],
+    "threshold": [0.0, 0.025, 0.05, 0.075],
     "eps": [0.2, 0.4, 0.6],
     "alpha": [0.1, 0.2, 0.3],
     "steps": [1, 2],
     "clean_samples": [250, 500, 1000],
 }
-STAGES = ("threshold", "eps-alpha", "steps-samples", "final")
+STAGES = ("threshold", "eps-alpha", "steps-samples", "final", "threshold-seeds")
 
 
 def candidates(args):
     """Generate (threshold, eps, alpha, steps, clean_samples) combinations."""
     t, e, a, s, n = args.threshold, args.eps, args.alpha, args.steps, args.clean_samples
-    if args.stage == "threshold":
+    if args.stage in ("threshold", "threshold-seeds"):
         return [(x, e, a, s, n) for x in SWEEPS["threshold"]]
     if args.stage == "eps-alpha":
         return [(t, x, y, s, n) for x, y in itertools.product(SWEEPS["eps"], SWEEPS["alpha"])]
@@ -134,7 +134,7 @@ def main(argv=None):
     for t, e, a, s, n in runs:
         if not 0 <= t <= 1 or not math.isfinite(e) or e < 0 or not 0 <= a <= 1 or s < 1 or n < 1:
             raise ValueError("Invalid ANP parameter value")
-    seeds = (0, 1, 2) if args.stage == "final" else (0,)
+    seeds = (0, 1, 2) if args.stage in ("final", "threshold-seeds") else (0,)
     device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available()
                           else "cpu" if args.device == "auto" else args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -147,7 +147,7 @@ def main(argv=None):
         print(f"[ANP] Using configured device: {device}", flush=True)
 
     models = [("poison", args.model)]
-    if args.stage == "final" and args.clean_model:
+    if args.stage in ("final", "threshold-seeds") and args.clean_model:
         models.append(("clean", args.clean_model))
     for _, path in models:
         if not path.is_file():

@@ -1,6 +1,10 @@
 from __future__ import annotations
 from typing import Any
 from mithridatium.cli import repair
+from mithridatium.repair.anp_defaults import (
+    ANP_ALPHA, ANP_CLEAN_SAMPLES, ANP_CLEAN_SUBSET_SEED, ANP_EPS,
+    ANP_ITERATIONS, ANP_PRUNE_THRESHOLD, ANP_STEPS,
+)
 import json
 from pathlib import Path
 
@@ -17,7 +21,7 @@ def _repair_kwargs(
     force: bool = False,
 
     #lmr parameters
-    clean_samples: int = 500,
+    clean_samples: int = ANP_CLEAN_SAMPLES,
     seed: int | None = None,
     lmr_target_class: int | None = None,
     lmr_prune_ratio: float | None = None,
@@ -26,11 +30,12 @@ def _repair_kwargs(
     clp_threshold_mult: float = 3.0,
 
     # anp parameters
-    anp_eps: float = 0.4,
-    anp_alpha: float = 0.2,
-    anp_steps: int = 1,
-    anp_prune_threshold: float = 0.2,
-    anp_iterations: int = 2000,
+    anp_eps: float = ANP_EPS,
+    anp_alpha: float = ANP_ALPHA,
+    anp_steps: int = ANP_STEPS,
+    anp_prune_threshold: float = ANP_PRUNE_THRESHOLD,
+    anp_iterations: int = ANP_ITERATIONS,
+    anp_clean_subset_seed: int = ANP_CLEAN_SUBSET_SEED,
     anp_prune_fraction: float | None = None,
     anp_attack_target: int | None = None,
     anp_trigger_type: str | None = None,
@@ -60,6 +65,7 @@ def _repair_kwargs(
         "anp_steps": anp_steps,
         "anp_prune_threshold": anp_prune_threshold,
         "anp_iterations": anp_iterations,
+        "anp_clean_subset_seed": anp_clean_subset_seed,
         "anp_prune_fraction": anp_prune_fraction,
         "anp_attack_target": anp_attack_target,
         "anp_trigger_type": anp_trigger_type,
@@ -129,13 +135,14 @@ def run_anp(
     data: str = "cifar10",
     out: str | None = None,
     force: bool = False,
-    clean_samples: int = 500,
+    clean_samples: int = ANP_CLEAN_SAMPLES,
     seed: int | None = None,
-    anp_eps: float = 0.4,
-    anp_alpha: float = 0.2,
-    anp_steps: int = 1,
-    anp_prune_threshold: float = 0.2,
-    anp_iterations: int = 2000,
+    anp_eps: float = ANP_EPS,
+    anp_alpha: float = ANP_ALPHA,
+    anp_steps: int = ANP_STEPS,
+    anp_prune_threshold: float = ANP_PRUNE_THRESHOLD,
+    anp_iterations: int = ANP_ITERATIONS,
+    anp_clean_subset_seed: int = ANP_CLEAN_SUBSET_SEED,
     anp_prune_fraction: float | None = None,
     anp_attack_target: int | None = None,
     anp_trigger_type: str | None = None,
@@ -158,6 +165,7 @@ def run_anp(
         anp_steps=anp_steps,
         anp_prune_threshold=anp_prune_threshold,
         anp_iterations=anp_iterations,
+        anp_clean_subset_seed=anp_clean_subset_seed,
         anp_prune_fraction=anp_prune_fraction,
         anp_attack_target=anp_attack_target,
         anp_trigger_type=anp_trigger_type,
