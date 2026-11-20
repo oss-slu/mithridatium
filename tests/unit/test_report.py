@@ -4,6 +4,8 @@ Unit tests for report.py helpers.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 import numpy as np
 
@@ -12,6 +14,8 @@ from mithridatium.report import (
     render_summary,
     validate_report_data,
     build_report,
+    build_repair_report,
+    utc_timestamp,
 )
 
 pytestmark = pytest.mark.unit
@@ -292,3 +296,39 @@ def test_build_report_and_validate():
     
     # Should not raise validation error
     validate_report_data(report)
+
+
+def _parse_utc_z(ts: str) -> datetime:
+    # Python 3.10 (used in CI) cannot parse a trailing "Z" with fromisoformat.
+    assert ts.endswith("Z")
+    parsed = datetime.fromisoformat(ts[:-1] + "+00:00")
+    assert parsed.utcoffset() == timezone.utc.utcoffset(None)
+    return parsed
+
+
+def test_utc_timestamp_ends_with_z_and_parses():
+    _parse_utc_z(utc_timestamp())
+
+
+def test_utc_timestamp_handles_zero_microseconds(monkeypatch):
+    fixed = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr("mithridatium.report.datetime", FixedDateTime)
+    assert utc_timestamp() == "2026-01-02T03:04:05Z"
+
+
+def test_build_report_timestamp_ends_with_z_and_parses():
+    report = build_report(model_path="m.pth", defense="mmbd", dataset="cifar10")
+    _parse_utc_z(report["timestamp_utc"])
+
+
+def test_build_repair_report_timestamp_ends_with_z_and_parses():
+    report = build_repair_report(
+        model_path="m.pth", method="anp", dataset="cifar10", version="0.1.2", results={}
+    )
+    _parse_utc_z(report["timestamp_utc"])
