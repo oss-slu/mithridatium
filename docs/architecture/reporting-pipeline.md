@@ -39,6 +39,12 @@ Each defense returns its own result payload. Common fields include:
 
 The CLI default path is `reports/report.json`, or whatever `--out` is set to. MCP tools do not use that default. They write `reports/<checkpoint-stem>_<defense>.json` relative to the server's working directory and overwrite an existing file of the same name. See [MCP server and audit agent](mcp.md).
 
+## Agent Run Summary
+
+`mithridatium agent ... --report <path>` records the run as a whole: what the user asked, the agent used, the chat model, the steps that ran (each specialist, the request sent, and returned report and checkpoint paths), and the agent's final message.
+
+The summary is built from the tool calls and tool results in the message history rather than parsed from the model's final message. See [MCP server and audit agent](mcp.md).
+
 See the defense docs for defense-specific fields:
 
 - [FreeEagle](../defenses/freeeagle.md)

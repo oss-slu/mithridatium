@@ -52,6 +52,7 @@ DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp", "anp"}
 
 DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++"}
+AGENTS = ("supervisor", "audit", "detect", "repair")
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
@@ -897,9 +898,6 @@ def ui(
     launch_ui(host=host, port=port, share=share)
 
 
-AGENTS = ("supervisor", "audit", "detect", "repair")
-
-
 @app.command()
 def agent(
     prompt: str = typer.Argument(
@@ -912,10 +910,38 @@ def agent(
         "-a",
         help=f"Agent to run: {', '.join(AGENTS)}.",
     ),
-):
+    report: Path = typer.Option(
+        None,
+        "--report",
+        "-r",
+        help="Path to save the agent run JSON summary.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite existing files without asking.",
+    ),
+    model: str = typer.Option(
+        "gpt-4o-mini",
+        "--model",
+        help="Chat model use for agent",
+    ),
+) -> None:
     """
     Run an LLM agent that calls Mithridatium through the MCP server.
     """
+    # validate report options early before running any agents
+    if report is not None:
+        if str(report) == "-":
+            typer.secho("Error: --report does not support '-' stdout.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if agent_name != "supervisor":
+            typer.secho("Error: --report is only supported for the supervisor agent.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        _check_out_writable(str(report), force)
+
+    # make sure the agent name is valid
     if agent_name not in AGENTS:
         typer.secho(
             f"Error: unknown agent '{agent_name}'. Choose from: {', '.join(AGENTS)}.",
@@ -927,6 +953,7 @@ def agent(
     import importlib
     import os
 
+    # import agent dependencies lazily
     try:
         module = importlib.import_module(f"mithridatium.mcp.{agent_name}_agent")
     except ImportError:
@@ -937,13 +964,43 @@ def agent(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    # the agent module loads .env on import, so check after importing it
+    # check openai api key after loading agent module
     if not os.environ.get("OPENAI_API_KEY"):
         typer.secho("Error: OPENAI_API_KEY is not set (export it or add it to .env).", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    run = getattr(module, f"{agent_name}_agent")
-    typer.echo(asyncio.run(run(prompt or module.DEFAULT_PROMPT)))
+    # use given prompt or fall back to default agent prompt
+    actual_prompt = prompt or getattr(module, "DEFAULT_PROMPT", "")
+
+    # run supervisor with summary report output if requested
+    if agent_name == "supervisor" and report is not None:
+        try:
+            final_message, summary = asyncio.run(
+                module.supervisor_agent(actual_prompt, model_name=model, return_summary=True)
+            )
+        except Exception as ex:
+            typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
+        typer.echo(final_message)
+        _write_json(summary, str(report), force)
+    elif agent_name == "supervisor":
+        # run supervisor without writing a report file
+        try:
+            final_message = asyncio.run(
+                module.supervisor_agent(actual_prompt, model_name=model)
+            )
+        except Exception as ex:
+            typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
+        typer.echo(final_message)
+    else:
+        # run requested specialist agent
+        run = getattr(module, f"{agent_name}_agent")
+        try:
+            typer.echo(asyncio.run(run(actual_prompt)))
+        except Exception as ex:
+            typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
 
 
 @app.command("repair")
@@ -1332,6 +1389,7 @@ def repair(
         except Exception as ex:
             typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
+
 
 if __name__ == "__main__":
     app()
