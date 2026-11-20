@@ -53,13 +53,22 @@ returned. Do not invent metrics. A repaired checkpoint is not proven clean.
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
+# converts message content (blocks or str) into text
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+    return str(content) if content is not None else ""
+
+
+# extracts report paths, checkpoint paths, and verdicts from tool outputs
 def _extract_paths_and_verdict(content: Any) -> tuple[list[str], list[str], list[str]]:
-    # pull report paths checkpoint paths and verdicts from tool message
     report_paths: list[str] = []
     checkpoint_paths: list[str] = []
     verdicts: list[str] = []
 
-    # parses structured dict or JSON string
+    # checks structured dict or json tool outputs first
     parsed_dict: dict[str, Any] | None = None
     if isinstance(content, dict):
         parsed_dict = content
@@ -75,7 +84,6 @@ def _extract_paths_and_verdict(content: Any) -> tuple[list[str], list[str], list
             except Exception:
                 pass
 
-    # gets any known keys returned by MCP 
     if parsed_dict is not None:
         if "report_path" in parsed_dict and parsed_dict["report_path"]:
             report_paths.append(str(parsed_dict["report_path"]))
@@ -92,70 +100,68 @@ def _extract_paths_and_verdict(content: Any) -> tuple[list[str], list[str], list
 
     text = str(content)
 
-    # finds report paths 
-    for match in re.findall(r"(?:reports/[\w\-\./]+\.json|[\w\-\./]+/[^\s,;'\"<>()]+\.json|[^\s,;'\"<>()]+\.json)", text):
-        clean_match = match.strip("'\"")
+    # finds report paths in text excluding backticks
+    for match in re.findall(r"[^\s,;'\"<>()`]+\.json", text):
+        clean_match = match.strip("'\"`")
         if clean_match and clean_match not in report_paths:
             report_paths.append(clean_match)
 
-    # finds checkpoint paths 
-    for match in re.findall(r"(?:models/[\w\-\./]+\.(?:pth|pt)|[\w\-\./]+/[^\s,;'\"<>()]+\.(?:pth|pt)|[^\s,;'\"<>()]+\.(?:pth|pt))", text):
-        clean_match = match.strip("'\"")
+    # finds checkpoint paths in text excluding backticks
+    for match in re.findall(r"[^\s,;'\"<>()`]+\.(?:pth|pt)", text):
+        clean_match = match.strip("'\"`")
         if clean_match and clean_match not in checkpoint_paths:
             checkpoint_paths.append(clean_match)
 
-    # finds verdict keywords
+    # check report files on disk if available for objective verdict
+    for r_path in report_paths:
+        try:
+            p = Path(r_path)
+            if p.exists() and p.is_file():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                v = data.get("results", {}).get("verdict")
+                if v and str(v) not in verdicts:
+                    verdicts.append(str(v))
+        except Exception:
+            pass
+
+    # finds explicit verdict pattern from text if not in report file
     if not verdicts:
         verdict_match = re.search(r"verdict[:\s=]+([a-zA-Z0-9_\-]+)", text, re.IGNORECASE)
         if verdict_match:
             verdicts.append(verdict_match.group(1))
-        else:
-            text_lower = text.lower()
-            for v_word in ("attack", "clean", "poisoned", "unaffected", "suspicious", "repaired"):
-                if re.search(rf"\b{v_word}\b", text_lower):
-                    verdicts.append(v_word)
-                    break
 
     return report_paths, checkpoint_paths, verdicts
 
 
+# builds structured json summary from supervisor message history
 def build_agent_run_summary(
     prompt: str,
     messages: list[Any],
     agent_name: str = "supervisor",
     model_name: str = "gpt-4o-mini",
 ) -> dict[str, Any]:
-    tool_messages_by_id: dict[str, Any] = {}
-    ordered_tool_messages: list[Any] = []
+    # index tool messages by tool_call_id
+    tool_messages_by_id = {
+        getattr(msg, "tool_call_id", None): msg
+        for msg in messages
+        if getattr(msg, "tool_call_id", None)
+    }
     final_message = ""
 
+    # extract final reply text from assistant messages
     for msg in messages:
-        tool_call_id = getattr(msg, "tool_call_id", None)
-        if tool_call_id:
-            tool_messages_by_id[tool_call_id] = msg
         msg_type = getattr(msg, "type", None) or type(msg).__name__
-        if msg_type in ("tool", "ToolMessage") or hasattr(msg, "tool_call_id"):
-            ordered_tool_messages.append(msg)
-
-        # tracks the final AI message
         if msg_type in ("ai", "AIMessage"):
             content = getattr(msg, "content", "")
-            if isinstance(content, str) and content:
-                final_message = content
-            elif isinstance(content, list):
-                final_message = "".join(
-                    b.get("text", "") if isinstance(b, dict) else str(b) for b in content
-                )
+            text = _content_to_text(content)
+            if text:
+                final_message = text
 
     steps: list[dict[str, Any]] = []
-    tool_msg_index = 0
 
-    # walk message history to find AI Messages
+    # extract ordered steps matching each tool call to its tool message
     for msg in messages:
         tool_calls = getattr(msg, "tool_calls", None)
-        if not tool_calls and hasattr(msg, "additional_kwargs"):
-            tool_calls = msg.additional_kwargs.get("tool_calls", [])
-
         if not tool_calls:
             continue
 
@@ -171,28 +177,19 @@ def build_agent_run_summary(
             else:
                 request_sent = str(tc_args)
 
-            # matches the tool message
-            tool_msg = None
-            if tc_id and tc_id in tool_messages_by_id:
-                tool_msg = tool_messages_by_id[tc_id]
-            elif tool_msg_index < len(ordered_tool_messages):
-                tool_msg = ordered_tool_messages[tool_msg_index]
-            tool_msg_index += 1
-
-            # extracts output paths and verdicts from tool result
+            # pair with tool result by tool_call_id
+            tool_msg = tool_messages_by_id.get(tc_id)
             raw_result = getattr(tool_msg, "content", "") if tool_msg is not None else ""
             report_paths, checkpoint_paths, verdicts = _extract_paths_and_verdict(raw_result)
 
+            # only list fields are stored for clean schema
             step_data: dict[str, Any] = {
                 "step": len(steps) + 1,
                 "specialist": tc_name,
                 "request": request_sent,
                 "report_paths": report_paths,
-                "report_path": report_paths[0] if report_paths else None,
                 "checkpoint_paths": checkpoint_paths,
-                "checkpoint_path": checkpoint_paths[0] if checkpoint_paths else None,
                 "verdicts": verdicts,
-                "verdict": verdicts[0] if verdicts else None,
                 "result": raw_result if isinstance(raw_result, str) else json.dumps(raw_result),
             }
             steps.append(step_data)
@@ -215,11 +212,6 @@ async def supervisor_agent(
     agent = create_agent(model, [audit, detect, repair], system_prompt=SUPERVISOR_SYSTEM_PROMPT)
     result = await agent.ainvoke({"messages": prompt})
     messages = result.get("messages", [])
-    final_message = messages[-1].content if messages and hasattr(messages[-1], "content") else ""
-    if isinstance(final_message, list):
-        final_message = "".join(
-            b.get("text", "") if isinstance(b, dict) else str(b) for b in final_message
-        )
     if return_summary:
         summary = build_agent_run_summary(
             prompt=prompt,
@@ -227,8 +219,8 @@ async def supervisor_agent(
             agent_name="supervisor",
             model_name=model_name,
         )
-        return final_message, summary
-    return final_message
+        return summary["final_message"], summary
+    return _content_to_text(messages[-1].content if messages and hasattr(messages[-1], "content") else "")
 
 
 if __name__ == "__main__":

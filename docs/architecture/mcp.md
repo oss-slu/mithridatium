@@ -111,7 +111,7 @@ mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poiso
 
 Without `--report`, nothing extra is written to disk; the agent prints its final reply to stdout. Like `audit` and `repair`, an existing file is not overwritten without `--force`.
 
-The summary is built from the tool calls and tool results in the agent's message history, not parsed from the model's final reply:
+The summary is built from the tool calls and specialists' tool results in the supervisor's message history, extracting report paths, checkpoint paths, and verdicts:
 
 ```json
 {
@@ -124,11 +124,8 @@ The summary is built from the tool calls and tool results in the agent's message
       "specialist": "audit",
       "request": "Audit models/resnet18_poison.pth",
       "report_paths": ["reports/resnet18_poison_mmbd.json"],
-      "report_path": "reports/resnet18_poison_mmbd.json",
       "checkpoint_paths": [],
-      "checkpoint_path": null,
       "verdicts": ["attack"],
-      "verdict": "attack",
       "result": "..."
     }
   ],

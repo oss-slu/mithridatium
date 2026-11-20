@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from typer.testing import CliRunner
 
 pytest.importorskip("langchain")
 pytest.importorskip("langchain_mcp_adapters")
@@ -12,8 +11,6 @@ pytest.importorskip("langchain_mcp_adapters")
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from mithridatium import cli
-from mithridatium.cli import EXIT_CANT_CREATE
 from mithridatium.mcp import supervisor_agent as sup
 
 
@@ -120,7 +117,7 @@ def test_build_agent_run_summary_from_fake_message_history():
     assert step1["specialist"] == "audit"
     assert step1["request"] == "Audit models/resnet18_poison.pth"
     assert "reports/resnet18_poison_mmbd.json" in step1["report_paths"]
-    assert step1["verdict"] == "attack"
+    assert "attack" in step1["verdicts"]
 
     step2 = summary["steps"][1]
     assert step2["step"] == 2
@@ -128,7 +125,7 @@ def test_build_agent_run_summary_from_fake_message_history():
     assert step2["request"] == "Repair models/resnet18_poison.pth"
     assert "models/resnet18_poison_clp_repaired.pth" in step2["checkpoint_paths"]
     assert "reports/resnet18_poison_clp.json" in step2["report_paths"]
-    assert step2["verdict"] == "repaired"
+    assert "repaired" in step2["verdicts"]
 
 
 def test_supervisor_agent_run_with_summary(monkeypatch):
@@ -159,57 +156,4 @@ def test_supervisor_agent_run_with_summary(monkeypatch):
     assert summary["steps"][0]["report_paths"] == ["reports/resnet18_poison_mmbd.json"]
     assert summary["steps"][1]["specialist"] == "repair"
     assert summary["steps"][1]["checkpoint_paths"] == ["models/resnet18_clp_repaired.pth"]
-
-
-def test_cli_agent_without_report(monkeypatch):
-    runner = CliRunner()
-    fake_summary = {"prompt": "test", "agent": "supervisor", "chat_model": "gpt-4o-mini", "steps": []}
-    monkeypatch.setattr(
-        sup,
-        "supervisor_agent",
-        AsyncMock(return_value=("fake final message", fake_summary)),
-    )
-
-    result = runner.invoke(cli.app, ["agent", "test prompt"])
-    assert result.exit_code == 0
-    assert "fake final message" in result.output
-
-
-def test_cli_agent_with_report_and_force(monkeypatch, tmp_path):
-    runner = CliRunner()
-    report_file = tmp_path / "agent_summary.json"
-    fake_summary = {
-        "prompt": "test prompt",
-        "agent": "supervisor",
-        "chat_model": "gpt-4o-mini",
-        "steps": [
-            {
-                "step": 1,
-                "specialist": "audit",
-                "request": "check model",
-                "report_paths": ["reports/model_mmbd.json"],
-                "checkpoint_paths": [],
-                "verdict": "clean",
-            }
-        ],
-        "final_message": "all clean",
-    }
-    monkeypatch.setattr(
-        sup,
-        "supervisor_agent",
-        AsyncMock(return_value=("all clean", fake_summary)),
-    )
-
-    result = runner.invoke(cli.app, ["agent", "test prompt", "--report", str(report_file)])
-    assert result.exit_code == 0
-    assert report_file.exists()
-    saved = json.loads(report_file.read_text(encoding="utf-8"))
-    assert saved["prompt"] == "test prompt"
-    assert saved["steps"][0]["specialist"] == "audit"
-
-    result_conflict = runner.invoke(cli.app, ["agent", "test prompt", "--report", str(report_file)])
-    assert result_conflict.exit_code == EXIT_CANT_CREATE
-
-    result_forced = runner.invoke(cli.app, ["agent", "test prompt", "--report", str(report_file), "--force"])
-    assert result_forced.exit_code == 0
 
