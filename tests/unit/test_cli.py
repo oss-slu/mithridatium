@@ -13,6 +13,7 @@ import torch
 from typer.testing import CliRunner
 
 from mithridatium.cli import (
+    EXIT_BACKDOOR_SUSPECTED,
     EXIT_NO_INPUT,
     EXIT_USAGE_ERROR,
     app,
@@ -340,4 +341,64 @@ def test_audit_routes_huggingface_logits_only_defenses(tmp_path, monkeypatch, cl
 
     assert result.exit_code == 0
     assert called["defense"] == defense
+    assert out_path.exists()
+
+
+def _flagged_result(defense: str) -> dict:
+    """A defense result that suspects a backdoor."""
+    result = _valid_result(defense)
+    result["verdict"] = "likely backdoored"
+    result["suspected_backdoor"] = True
+    return result
+
+
+def _invoke_audit(tmp_path, monkeypatch, *, backdoor: bool, fail_on_backdoor: bool):
+    model_path = tmp_path / "fake.pth"
+    model_path.write_bytes(b"ok")
+    out_path = tmp_path / "audit.json"
+
+    def fake_runner(*_args, **_kwargs):
+        if backdoor:
+            return _flagged_result("mmbd")
+        return _valid_result("mmbd")
+
+    monkeypatch.setattr("mithridatium.cli.run_mmbd", fake_runner)
+
+    args = [
+        "audit",
+        "--provider",
+        "torchvision",
+        "--model",
+        str(model_path),
+        "--defense",
+        "mmbd",
+        "--data",
+        "cifar10",
+        "--out",
+        str(out_path),
+    ]
+    if fail_on_backdoor:
+        args.append("--fail-on-backdoor")
+
+    return runner.invoke(app, args), out_path
+
+
+def test_audit_flag_off_with_backdoor_exits_zero(tmp_path, monkeypatch, cli_mocks):
+    result, out_path = _invoke_audit(tmp_path, monkeypatch, backdoor=True, fail_on_backdoor=False)
+
+    assert result.exit_code == 0
+    assert out_path.exists()
+
+
+def test_audit_fail_on_backdoor_flagged_exits_new_code(tmp_path, monkeypatch, cli_mocks):
+    result, out_path = _invoke_audit(tmp_path, monkeypatch, backdoor=True, fail_on_backdoor=True)
+
+    assert result.exit_code == EXIT_BACKDOOR_SUSPECTED
+    assert out_path.exists()
+
+
+def test_audit_fail_on_backdoor_clean_exits_zero(tmp_path, monkeypatch, cli_mocks):
+    result, out_path = _invoke_audit(tmp_path, monkeypatch, backdoor=False, fail_on_backdoor=True)
+
+    assert result.exit_code == 0
     assert out_path.exists()

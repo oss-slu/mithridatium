@@ -30,7 +30,6 @@ import torch.utils.data as data
 
 from pyod.models.pca import PCA
 from torch.utils.data import Subset
-from torchmetrics.functional import pairwise_euclidean_distance
 
 
 "TED configurations. These should all be changed in the ted method. Some configurations may be unneeded."
@@ -153,7 +152,7 @@ def gather_activation_into_class(target, h, num_classes):
 
 def get_dis_sort(item, destinations):
     item = torch.reshape(item, (1, item.shape[0]))
-    new_dis = pairwise_euclidean_distance(item, destinations)
+    new_dis = torch.cdist(item, destinations)
     _, indices_individual = torch.sort(new_dis)
     return indices_individual.cpu()
 

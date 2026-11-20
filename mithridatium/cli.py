@@ -27,8 +27,10 @@ from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
 from mithridatium.repair.anp import run_anp
+from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_TYPES, POSITIONS
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
+from mithridatium.detect.tedpp import tedpp
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
 from mithridatium.repair import run_lmr
 
@@ -42,13 +44,14 @@ EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
 EXIT_CANT_CREATE = 73     # cannot create/overwrite output without --force
 EXIT_IO_ERROR = 74        # input exists but can't be opened/read
+EXIT_BACKDOOR_SUSPECTED = 78  # backdoor suspected while running audit with --fail-on-backdoor
 
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
 DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp", "anp"}
 
-DETECT_METHODS = {"scaleup", "ted", "ibdpsc"}
+DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++"}
 AGENTS = ("supervisor", "audit", "detect", "repair")
 
 def _check_out_writable(out_path: str, force: bool) -> None:
@@ -158,6 +161,11 @@ def audit(
         "--force",
         "-f",
         help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
+    ),
+    fail_on_backdoor: bool = typer.Option(
+        False,
+        "--fail-on-backdoor",
+        help="Exit with a distinct non-zero code when the report suspects a backdoor. Useful in CI.",
     ),
     freeeagle_num_classes: int = typer.Option(
         0,
@@ -469,6 +477,9 @@ def audit(
     _write_json(rep, out, force)
     print(rpt.render_summary(rep))
 
+    if fail_on_backdoor and rpt.report_flags_backdoor(rep):
+        raise typer.Exit(code=EXIT_BACKDOOR_SUSPECTED)
+
 @app.command()
 def detect(
         model: str = typer.Option(
@@ -487,7 +498,7 @@ def detect(
             "scaleup",
             "--method",
             "-M",
-            help="The method name: 'scaleup', 'ted' or 'ibdpsc'.",
+            help="The method name: 'scaleup', 'ted', 'ted++', or 'ibdpsc'.",
         ),
         num_samples: str = typer.Option(
             "256",
@@ -545,6 +556,22 @@ def detect(
             0.01,
             "--ted-contamination",
             help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
+        ),
+        tedpp_samples_per_class: int = typer.Option(
+            5,
+            "--tedpp-samples-per-class",
+            min=2,
+            help="TED++: number of correctly classified clean reference inputs selected per class.",
+        ),
+        tedpp_beta: float = typer.Option(
+            0.5,
+            "--tedpp-beta",
+            help=(
+                "TED++ tube-neighbor fraction. For each clean activation, k = "
+                "ceil(samples_per_class * beta) nearest same-class neighbors are used "
+                "to estimate the layer's tube radius; require 0 < beta <= 1 and "
+                "k < samples_per_class."
+            ),
         ),
         ibdpsc_num_samples: int = typer.Option(
             256,
@@ -672,9 +699,21 @@ def detect(
     """
     Validate TED options.
     """
-    if m == "ted":
+    if m in {"ted", "ted++"}:
         if not 0 < ted_contamination <= 0.5:
             typer.secho(f"Error: --ted-contamination must be within 0 < alpha <= 0.5, got {ted_contamination}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+    if m == "ted++":
+        if (
+            not 0 < tedpp_beta <= 1
+            or math.ceil(tedpp_samples_per_class * tedpp_beta)
+            >= tedpp_samples_per_class
+        ):
+            typer.secho(
+                "Error: --tedpp-beta must satisfy 0 < beta <= 1 and "
+                "ceil(samples_per_class * beta) < samples_per_class.",
+                err=True,
+            )
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     """
@@ -699,13 +738,23 @@ def detect(
     except ValueError as ex:
         typer.secho(f"Error: {ex}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
+    if (
+        m == "ted++"
+        and cfg.get_num_classes() * tedpp_samples_per_class > ted_reference_size
+    ):
+        typer.secho(
+            "Error: --ted-reference-size must be at least the number of classes "
+            "times --tedpp-samples-per-class.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     print(f"[cli] loading model from {p}…")
 
     try:
         mdl, _ = loader.detect_and_build(str(p), num_classes=cfg.get_num_classes())
         test_loader, config = utils.dataloader_for(data, "test", 128)
-        if m == "ted":
+        if m in {"ted", "ted++"}:
             train_loader, _ = utils.dataloader_for(data, "train", 128)
         if m == "ibdpsc":
             train_loader, _ = utils.dataloader_for(data, "train", 128)
@@ -735,6 +784,20 @@ def detect(
                 suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
                 reference_size=ted_reference_size,
                 contamination=ted_contamination,
+                device=get_device(0),
+            )
+        elif m == "ted++":
+            test_ds, train_ds = test_loader.dataset, train_loader.dataset
+            results = tedpp(
+                mdl,
+                # same 2x headroom as TED for misclassified images dropped from the reference set
+                reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+                suspect_data=torch.utils.data.Subset(
+                    test_ds, range(min(len(test_ds), ted_num_samples))
+                ),
+                contamination=ted_contamination,
+                samples_per_class=tedpp_samples_per_class,
+                beta=tedpp_beta,
                 device=get_device(0),
             )
         elif m == "ibdpsc":
@@ -785,6 +848,8 @@ def detect(
     _write_json(rep, out, force)
     if m == "ted":
         rule = f"TED score > {results['threshold']:.4g}"
+    elif m == "ted++":
+        rule = f"TED++ PCA score > {results['threshold']:.4g}"
     elif m == "ibdpsc":
         rule = f"PSC > {ibdpsc_threshold}"
     else:
@@ -965,12 +1030,44 @@ def repair(
         help="Alpha weighting for natural vs perturbed loss in ANP."
     ),
     anp_steps: int = typer.Option(
-        10, "--anp-steps",
+        1, "--anp-steps",
         help="Number of optimization steps for ANP."
     ),
     anp_prune_threshold: float = typer.Option(
         0.2, "--anp-prune-threshold",
         help="Threshold for pruning neurons in ANP."
+    ),
+    anp_iterations: int = typer.Option(
+        2000, "--anp-iterations",
+        help="Number of iterations cycling the clean set during ANP mask training."
+    ),
+    anp_prune_fraction: float = typer.Option(
+        None, "--anp-prune-fraction",
+        help="ANP: fraction of lowest-scoring channels to prune (0 to 1). Overrides --anp-prune-threshold."
+    ),
+    anp_attack_target: int = typer.Option(
+        None, "--anp-attack-target",
+        help="ANP ASR: target class for known CIFAR-10 backdoor (0-9). Omit to skip ASR.",
+    ),
+    anp_trigger_type: str = typer.Option(
+        None, "--anp-trigger-type",
+        help="ANP ASR: white-square, checkerboard, cross, or blend (default: white-square).",
+    ),
+    anp_trigger_alpha: float = typer.Option(
+        None, "--anp-trigger-alpha",
+        help="ANP ASR: whole-image white blend strength in (0, 1] (default: 0.2). Only for blend.",
+    ),
+    anp_trigger_size: int = typer.Option(
+        None, "--anp-trigger-size",
+        help="ANP ASR: patch width/height in pixels (default: 4). Not for blend.",
+    ),
+    anp_trigger_pos: str = typer.Option(
+        None, "--anp-trigger-pos",
+        help="ANP ASR: patch corner (default: bottom-right). Not for blend.",
+    ),
+    anp_asr_samples: int = typer.Option(
+        None, "--anp-asr-samples",
+        help="ANP ASR: number of non-target CIFAR-10 test samples to evaluate (default: 500).",
     ),
     seed: int = typer.Option(
         None, "--seed", "-s",
@@ -1197,8 +1294,46 @@ def repair(
         if not (math.isfinite(anp_prune_threshold) and 0 <= anp_prune_threshold <= 1):
             typer.secho("Error: --anp-prune-threshold must be between 0 and 1.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_iterations < 1:
+            typer.secho("Error: --anp-iterations must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_prune_fraction is not None and not (math.isfinite(anp_prune_fraction) and 0 <= anp_prune_fraction <= 1):
+            typer.secho("Error: --anp-prune-fraction must be between 0 and 1.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
         if clean_samples <= 0:
             typer.secho("Error: --clean-samples must be a positive integer.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        asr_options = (anp_trigger_type, anp_trigger_alpha, anp_trigger_size, anp_trigger_pos, anp_asr_samples)
+        if anp_attack_target is None and any(option is not None for option in asr_options):
+            typer.secho("Error: --anp-attack-target is required when providing ANP trigger/ASR options.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_attack_target is not None and data.lower().strip() != "cifar10":
+            typer.secho("Error: ANP CLI ASR evaluation currently supports only --data cifar10.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_attack_target is not None and not 0 <= anp_attack_target < 10:
+            typer.secho("Error: --anp-attack-target must be a CIFAR-10 class from 0 to 9.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_type is not None and anp_trigger_type not in TRIGGER_TYPES:
+            typer.secho(f"Error: --anp-trigger-type must be one of: {', '.join(TRIGGER_TYPES)}.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        trigger_kind = anp_trigger_type if anp_trigger_type is not None else "white-square"
+        if trigger_kind == "blend" and (anp_trigger_size is not None or anp_trigger_pos is not None):
+            typer.secho("Error: patch size/position options do not apply to blend triggers.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if trigger_kind != "blend" and anp_trigger_alpha is not None:
+            typer.secho("Error: --anp-trigger-alpha is only valid for blend triggers.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_alpha is not None and not (math.isfinite(anp_trigger_alpha) and 0 < anp_trigger_alpha <= 1):
+            typer.secho("Error: --anp-trigger-alpha must be finite and in (0, 1].", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_size is not None and not 1 <= anp_trigger_size <= 32:
+            typer.secho("Error: --anp-trigger-size must be between 1 and 32.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_trigger_pos is not None and anp_trigger_pos not in POSITIONS:
+            typer.secho("Error: invalid --anp-trigger-pos.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_asr_samples is not None and anp_asr_samples < 1:
+            typer.secho("Error: --anp-asr-samples must be positive.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
         model_path = Path(model)
@@ -1220,6 +1355,20 @@ def repair(
                 raise typer.Exit(code=EXIT_CANT_CREATE)
 
         try:
+            triggered_eval_dataset = None
+            if anp_attack_target is not None:
+                test_loader, test_config = utils.dataloader_for("cifar10", "test", 64)
+                triggered_eval_dataset = build_triggered_dataset(
+                    test_loader.dataset,
+                    attack_target=anp_attack_target,
+                    config=test_config,
+                    trigger_type=trigger_kind,
+                    trigger_size=anp_trigger_size if anp_trigger_size is not None else 4,
+                    trigger_pos=anp_trigger_pos if anp_trigger_pos is not None else "bottom-right",
+                    blend_alpha=anp_trigger_alpha if anp_trigger_alpha is not None else 0.2,
+                    samples=anp_asr_samples if anp_asr_samples is not None else 500,
+                    seed=seed if seed is not None else 0,
+                )
             run_anp(
                 model_path=str(model_path),
                 out=str(out),
@@ -1228,10 +1377,14 @@ def repair(
                 eps=anp_eps,
                 alpha=anp_alpha,
                 steps=anp_steps,
+                iterations=anp_iterations,
                 prune_threshold=anp_prune_threshold,
+                prune_fraction=anp_prune_fraction,
                 clean_samples=clean_samples,
                 seed=seed if seed is not None else 0,
                 version=VERSION,
+                triggered_eval_dataset=triggered_eval_dataset,
+                attack_target=anp_attack_target,
             )
         except Exception as ex:
             typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)

@@ -40,6 +40,8 @@ def _load_mithridatium_mcp():
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
+DEFAULT_PROMPT = "Audit models/resnet18_poison.pth."
+
 async def audit_agent(prompt: str):
     client = MultiServerMCPClient(_load_mithridatium_mcp())
     model = init_chat_model(model="gpt-4o-mini")
@@ -49,5 +51,5 @@ async def audit_agent(prompt: str):
     return result.get("messages", [])[-1].content
 
 if __name__ == "__main__":
-    prompt = " ".join(sys.argv[1:]) or "Audit models/resnet18_poison.pth."
+    prompt = " ".join(sys.argv[1:]) or DEFAULT_PROMPT
     print(asyncio.run(audit_agent(prompt)))

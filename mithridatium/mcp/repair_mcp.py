@@ -28,8 +28,16 @@ def _repair_kwargs(
     # anp parameters
     anp_eps: float = 0.4,
     anp_alpha: float = 0.2,
-    anp_steps: int = 10,
+    anp_steps: int = 1,
     anp_prune_threshold: float = 0.2,
+    anp_iterations: int = 2000,
+    anp_prune_fraction: float | None = None,
+    anp_attack_target: int | None = None,
+    anp_trigger_type: str | None = None,
+    anp_trigger_alpha: float | None = None,
+    anp_trigger_size: int | None = None,
+    anp_trigger_pos: str | None = None,
+    anp_asr_samples: int | None = None,
 ) -> dict[str, Any]:
     stem = Path(model).stem
     return {
@@ -51,6 +59,14 @@ def _repair_kwargs(
         "anp_alpha": anp_alpha,
         "anp_steps": anp_steps,
         "anp_prune_threshold": anp_prune_threshold,
+        "anp_iterations": anp_iterations,
+        "anp_prune_fraction": anp_prune_fraction,
+        "anp_attack_target": anp_attack_target,
+        "anp_trigger_type": anp_trigger_type,
+        "anp_trigger_alpha": anp_trigger_alpha,
+        "anp_trigger_size": anp_trigger_size,
+        "anp_trigger_pos": anp_trigger_pos,
+        "anp_asr_samples": anp_asr_samples,
     }
 
 def _run_repair(repair_kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -117,10 +133,18 @@ def run_anp(
     seed: int | None = None,
     anp_eps: float = 0.4,
     anp_alpha: float = 0.2,
-    anp_steps: int = 10,
+    anp_steps: int = 1,
     anp_prune_threshold: float = 0.2,
+    anp_iterations: int = 2000,
+    anp_prune_fraction: float | None = None,
+    anp_attack_target: int | None = None,
+    anp_trigger_type: str | None = None,
+    anp_trigger_alpha: float | None = None,
+    anp_trigger_size: int | None = None,
+    anp_trigger_pos: str | None = None,
+    anp_asr_samples: int | None = None,
 ):
-    """Run ANP repair and return the repaired checkpoint and report."""
+    """Run ANP repair. Supply a known CIFAR-10 trigger type and target to include ASR."""
     return _run_repair(_repair_kwargs(
         "anp",
         model=model,
@@ -133,4 +157,12 @@ def run_anp(
         anp_alpha=anp_alpha,
         anp_steps=anp_steps,
         anp_prune_threshold=anp_prune_threshold,
+        anp_iterations=anp_iterations,
+        anp_prune_fraction=anp_prune_fraction,
+        anp_attack_target=anp_attack_target,
+        anp_trigger_type=anp_trigger_type,
+        anp_trigger_alpha=anp_trigger_alpha,
+        anp_trigger_size=anp_trigger_size,
+        anp_trigger_pos=anp_trigger_pos,
+        anp_asr_samples=anp_asr_samples,
     ))

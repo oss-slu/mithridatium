@@ -203,6 +203,9 @@ def build_agent_run_summary(
     }
 
 
+DEFAULT_PROMPT = "Run a test suite (audit and detect) as needed on models/resnet18_poison.pth and run repairs if there is sufficient evidence of a backdoor."
+
+
 async def supervisor_agent(
     prompt: str,
     model_name: str = "gpt-4o-mini",
@@ -224,5 +227,5 @@ async def supervisor_agent(
 
 
 if __name__ == "__main__":
-    prompt = " ".join(sys.argv[1:]) or "Run a test suite (audit and detect) as needed on models/resnet18_poison.pth and run repairs if there is sufficient evidence of a backdoor."
+    prompt = " ".join(sys.argv[1:]) or DEFAULT_PROMPT
     print(asyncio.run(supervisor_agent(prompt)))

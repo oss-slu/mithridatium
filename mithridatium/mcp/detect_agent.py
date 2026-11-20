@@ -9,11 +9,11 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from mithridatium.mcp.audit_agent import _load_mithridatium_mcp
 
-DETECT_TOOLS = {"run_scaleup", "run_ted", "run_ibdpsc"}
+DETECT_TOOLS = {"run_scaleup", "run_ted", "run_ibdpsc", "run_tedpp"}
 
 DETECT_SYSTEM_PROMPT = """
 You run poisoning detection on image-classification checkpoints.
-Tools: run_scaleup, run_ted, run_ibdpsc (IBD-PSC).
+Tools: run_scaleup, run_ted, run_ibdpsc (IBD-PSC), run_tedpp.
 Pass the model path the user gives. Unless they say otherwise, use
 data='cifar10'.
 Run only the methods they name. If they name none, run run_scaleup.
@@ -22,6 +22,8 @@ report_path from the tool result. Do not invent metrics.
 """
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+DEFAULT_PROMPT = "Run detection on models/resnet18_poison.pth."
 
 async def detect_agent(prompt: str):
     client = MultiServerMCPClient(_load_mithridatium_mcp())
@@ -32,5 +34,5 @@ async def detect_agent(prompt: str):
     return result.get("messages", [])[-1].content
 
 if __name__ == "__main__":
-    prompt = " ".join(sys.argv[1:]) or "Run detection on models/resnet18_poison.pth."
+    prompt = " ".join(sys.argv[1:]) or DEFAULT_PROMPT
     print(asyncio.run(detect_agent(prompt)))
