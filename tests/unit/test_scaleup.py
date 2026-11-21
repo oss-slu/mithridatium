@@ -1,11 +1,15 @@
 """SCALE-UP unit tests. Synthetic tensors and a toy model, no checkpoint."""
 
+import inspect
+
 import pytest
 import torch
+import typer.main
 from torch.utils.data import DataLoader, TensorDataset
 
 from mithridatium import report as rpt
-from mithridatium.detect.scaleup import run_scaleup
+from mithridatium.cli import app
+from mithridatium.detect.scaleup import SCALEUP_DEFAULTS, run_scaleup
 from mithridatium.utils import get_preprocess_config
 
 pytestmark = pytest.mark.unit
@@ -64,3 +68,19 @@ def test_report_validates_against_schema():
     rep["results"].pop("per_sample")
     with pytest.raises(Exception):
         rpt.validate_report_data(rep)
+
+
+def test_defaults_match_across_function_cli_and_mcp():
+    expected = {"num_samples": "64", "threshold": "0.5", "scales": "(3, 5, 7, 9, 11)"}
+    assert {k: str(v) for k, v in SCALEUP_DEFAULTS.items()} == expected
+
+    signature = inspect.signature(run_scaleup).parameters
+    assert {k: signature[k].default for k in SCALEUP_DEFAULTS} == SCALEUP_DEFAULTS
+
+    cli = {p.name: p.default for p in typer.main.get_command(app).get_command(None, "detect").params}
+    assert (cli["num_samples"], cli["scaleup_threshold"], cli["scaleup_scales"]) == tuple(expected.values())
+
+    pytest.importorskip("fastmcp")
+    from mithridatium.mcp import detect_mcp
+    mcp = detect_mcp._detect_kwargs("scaleup")
+    assert (mcp["num_samples"], mcp["scaleup_threshold"], mcp["scaleup_scales"]) == tuple(expected.values())

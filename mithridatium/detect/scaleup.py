@@ -16,20 +16,21 @@ from mithridatium import utils
 
 from mithridatium.defenses.mmbd import get_device
 
-DEFAULT_SCALES = (3.0, 5.0, 7.0, 9.0, 11.0)
+# One set of defaults for run_scaleup, the CLI and the MCP tool (tuned in #186).
+SCALEUP_DEFAULTS = {"num_samples": 64, "threshold": 0.5, "scales": (3, 5, 7, 9, 11)}
 
-# ponytail: flat batch cutoff, uncalibrated. Swap for the paper's data-limited
-# NSPC (Eq. 3-4) once a clean set exists.
-FLAGGED_FRACTION_THRESHOLD = 0.20
+# ponytail: flat batch cutoff. Swap for the paper's data-limited NSPC (Eq. 3-4)
+# once a clean set exists.
+FLAGGED_FRACTION_THRESHOLD = 0.45
 
 
 @torch.no_grad()
 def run_scaleup(
         model,
         configs,
-        num_samples: int = 256,
-        threshold: float = 0.5,
-        scales: Sequence[float] = DEFAULT_SCALES,
+        num_samples: int = SCALEUP_DEFAULTS["num_samples"],
+        threshold: float = SCALEUP_DEFAULTS["threshold"],
+        scales: Sequence[float] = SCALEUP_DEFAULTS["scales"],
         seed: Optional[int] = None,
         device=None,
         test_loader=None,
