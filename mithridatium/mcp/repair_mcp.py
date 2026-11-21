@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from mithridatium.cli import repair
+from mithridatium.repair import LMR_DEFAULTS
 import json
 from pathlib import Path
 
@@ -17,10 +18,12 @@ def _repair_kwargs(
     force: bool = False,
 
     #lmr parameters
-    clean_samples: int = 500,
+    clean_samples: int = LMR_DEFAULTS["clean_samples"],
     seed: int | None = None,
     lmr_target_class: int | None = None,
-    lmr_prune_ratio: float | None = None,
+    lmr_prune_ratio: float = LMR_DEFAULTS["prune_ratio"],
+    lmr_repair_steps: int = LMR_DEFAULTS["repair_steps"],
+    lmr_fine_tune_steps: int = LMR_DEFAULTS["fine_tune_steps"],
 
     #clp parameters
     clp_threshold_mult: float = 3.0,
@@ -52,6 +55,8 @@ def _repair_kwargs(
         "seed": seed,
         "lmr_target_class": lmr_target_class,
         "lmr_prune_ratio": lmr_prune_ratio,
+        "lmr_repair_steps": lmr_repair_steps,
+        "lmr_fine_tune_steps": lmr_fine_tune_steps,
         #clp parameters
         "clp_threshold_mult": clp_threshold_mult,
         # anp parameters
@@ -83,15 +88,18 @@ def _run_repair(repair_kwargs: dict[str, Any]) -> dict[str, Any]:
         "report": json.loads(report.read_text()),
     }
 
+# LMR tool
 @mcp.tool(run_in_thread=False)
 def run_lmr(
     lmr_target_class: int,
-    lmr_prune_ratio: float,
+    lmr_prune_ratio: float = LMR_DEFAULTS["prune_ratio"],
+    lmr_repair_steps: int = LMR_DEFAULTS["repair_steps"],
+    lmr_fine_tune_steps: int = LMR_DEFAULTS["fine_tune_steps"],
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
     out: str | None = None,
     force: bool = False,
-    clean_samples: int = 500,
+    clean_samples: int = LMR_DEFAULTS["clean_samples"],
     seed: int | None = None,
 ):
     """Run LMR repair, save the repaired checkpoint, and return its path and the mithridatium repair report."""
@@ -105,6 +113,8 @@ def run_lmr(
         seed=seed,
         lmr_target_class=lmr_target_class,
         lmr_prune_ratio=lmr_prune_ratio,
+        lmr_repair_steps=lmr_repair_steps,
+        lmr_fine_tune_steps=lmr_fine_tune_steps,
     ))
 
 @mcp.tool(run_in_thread=False)

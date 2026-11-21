@@ -91,11 +91,11 @@ def test_cli_repair_requires_target_class():
     assert result.exit_code != 0
     assert "lmr-target-class" in result.stderr.lower()
 
-def test_cli_repair_requires_prune_ratio():
-    result = runner.invoke(app,["repair","--method","lmr","--lmr-target-class","0"])
+def test_cli_repair_does_not_require_prune_ratio():
+    # Prune ratio is optional
+    result = runner.invoke(app, ["repair", "--method", "lmr", "--lmr-target-class", "0"])
 
-    assert result.exit_code != 0
-    assert "lmr-prune-ratio" in result.stderr.lower()
+    assert "lmr-prune-ratio is required" not in result.stderr.lower()
 
 def test_cli_detect_help_loads():
     result = runner.invoke(app, ["detect", "--help"])
