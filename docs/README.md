@@ -10,7 +10,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 
 - [Architecture overview](architecture/overview.md): high-level project map and data flow.
 - [CLI flow](architecture/cli-flow.md): what happens when `mithridatium audit` runs.
-- [MCP server and audit agent](architecture/mcp.md): run the same audits as MCP tools, or from the bundled agent.
+- [MCP server and agents](architecture/mcp.md): run the same audits as MCP tools, or from the bundled agent.
 - [UI and hosted demo](architecture/ui.md): Streamlit, Gradio, and the Hugging Face Space.
 - [Defenses overview](defenses/overview.md): compare FreeEagle, STRIP, MMBD, and AEVA.
 - [Detect CLI](detect.md): input-level methods (`detect`) vs model-level defenses (`audit`).
@@ -21,7 +21,7 @@ This folder is the main documentation home for Mithridatium. It is organized for
 
 - [Overview](architecture/overview.md)
 - [CLI flow](architecture/cli-flow.md)
-- [MCP server and audit agent](architecture/mcp.md)
+- [MCP server and agents](architecture/mcp.md)
 - [UI and hosted demo](architecture/ui.md)
 - [Model loading](architecture/model-loading.md)
 - [Reporting pipeline](architecture/reporting-pipeline.md)
