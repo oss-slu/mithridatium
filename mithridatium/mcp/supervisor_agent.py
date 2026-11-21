@@ -4,26 +4,31 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
 from mithridatium.mcp.audit_agent import audit_agent
 from mithridatium.mcp.detect_agent import detect_agent
+from mithridatium.mcp.llm import chat_model, resolve_llm
 from mithridatium.mcp.repair_agent import repair_agent
 
-@tool
-async def audit(request: str) -> str:
-    """Audit a checkpoint for backdoors (MMBD, STRIP, AEVA, FreeEagle). Include the model path."""
-    return await audit_agent(request)
+def _specialist_tools(llm: str):
+    """Wrap the three specialist agents as tools that all use the same chat model."""
 
-@tool
-async def detect(request: str) -> str:
-    """Run poisoned-input detection (ScaleUp, TED, IBD-PSC) on a checkpoint. Include the model path."""
-    return await detect_agent(request)
+    @tool
+    async def audit(request: str) -> str:
+        """Audit a checkpoint for backdoors (MMBD, STRIP, AEVA, FreeEagle). Include the model path."""
+        return await audit_agent(request, llm=llm)
 
-@tool
-async def repair(request: str) -> str:
-    """Repair a backdoored checkpoint (CLP, LMR, ANP). Include the model path. Returns the repaired checkpoint path."""
-    return await repair_agent(request)
+    @tool
+    async def detect(request: str) -> str:
+        """Run poisoned-input detection (ScaleUp, TED, TED++, IBD-PSC) on a checkpoint. Include the model path."""
+        return await detect_agent(request, llm=llm)
+
+    @tool
+    async def repair(request: str) -> str:
+        """Repair a backdoored checkpoint (CLP, LMR, ANP). Include the model path. Returns the repaired checkpoint path."""
+        return await repair_agent(request, llm=llm)
+
+    return [audit, detect, repair]
 
 SUPERVISOR_SYSTEM_PROMPT = """
 You coordinate backdoor checks on image-classification checkpoints.
@@ -51,9 +56,11 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 DEFAULT_PROMPT = "Run a test suite (audit and detect) as needed on models/resnet18_poison.pth and run repairs if there is sufficient evidence of a backdoor."
 
-async def supervisor_agent(prompt: str):
-    model = init_chat_model(model="gpt-4o-mini")
-    agent = create_agent(model, [audit, detect, repair], system_prompt=SUPERVISOR_SYSTEM_PROMPT)
+async def supervisor_agent(prompt: str, llm: str | None = None):
+    # resolve once so the supervisor and every specialist it calls use one model
+    llm = resolve_llm(llm)
+    model = chat_model(llm)
+    agent = create_agent(model, _specialist_tools(llm), system_prompt=SUPERVISOR_SYSTEM_PROMPT)
     result = await agent.ainvoke({"messages": prompt})
     return result.get("messages", [])[-1].content
 

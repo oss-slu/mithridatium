@@ -890,6 +890,13 @@ def ui(
 
 AGENTS = ("supervisor", "audit", "detect", "repair")
 
+# model-name prefixes that LangChain's init_chat_model routes to OpenAI
+_OPENAI_LLM_PREFIXES = ("openai:", "gpt-", "o1", "o3", "o4", "chatgpt")
+
+
+def _needs_openai_key(llm: str) -> bool:
+    return llm.lower().startswith(_OPENAI_LLM_PREFIXES)
+
 
 @app.command()
 def agent(
@@ -902,6 +909,12 @@ def agent(
         "--agent",
         "-a",
         help=f"Agent to run: {', '.join(AGENTS)}.",
+    ),
+    llm: str = typer.Option(
+        None,
+        "--llm",
+        help="Chat model for the agents, e.g. gpt-4o or ollama:llama3.1. "
+        "Defaults to $MITHRIDATIUM_LLM, then gpt-4o-mini.",
     ),
 ):
     """
@@ -928,13 +941,17 @@ def agent(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    # the agent module loads .env on import, so check after importing it
-    if not os.environ.get("OPENAI_API_KEY"):
-        typer.secho("Error: OPENAI_API_KEY is not set (export it or add it to .env).", err=True)
+    # the agent module loads .env on import, so resolve and check after importing it
+    llm = module.resolve_llm(llm)
+    if _needs_openai_key(llm) and not os.environ.get("OPENAI_API_KEY"):
+        typer.secho(
+            f"Error: OPENAI_API_KEY is not set (export it or add it to .env); needed for '{llm}'.",
+            err=True,
+        )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     run = getattr(module, f"{agent_name}_agent")
-    typer.echo(asyncio.run(run(prompt or module.DEFAULT_PROMPT)))
+    typer.echo(asyncio.run(run(prompt or module.DEFAULT_PROMPT, llm=llm)))
 
 
 @app.command("repair")

@@ -14,14 +14,39 @@ source .venv/bin/activate
 pip install -e ".[agent]"
 ```
 
-The bundled agent calls `init_chat_model("gpt-4o-mini")`. That needs the OpenAI provider package and an API key in the same shell:
+By default the agents use `gpt-4o-mini`. The `[agent]` extra already includes `langchain-openai`, so you only need an API key in the same shell (or in `.env` at the repository root):
 
 ```bash
-pip install langchain-openai
 export OPENAI_API_KEY="sk-..."
 ```
 
 Run the server and the agent on a machine where PyTorch imports successfully.
+
+### Choosing the chat model
+
+All four agents build their chat model through `chat_model()` in `mithridatium/mcp/llm.py`. The model name comes from, in order:
+
+1. `--llm` on `mithridatium agent`, or the `llm=` argument to `supervisor_agent()`, `audit_agent()`, `detect_agent()` or `repair_agent()`
+2. the `MITHRIDATIUM_LLM` environment variable (also read from `.env`)
+3. `gpt-4o-mini`
+
+```bash
+mithridatium agent --llm gpt-4o "Audit models/resnet18_poison.pth"
+MITHRIDATIUM_LLM=ollama:llama3.1 mithridatium agent "Audit models/resnet18_poison.pth"
+```
+
+The supervisor resolves the name once and passes it to every specialist it calls, so one run uses one model.
+
+The name goes straight to LangChain's `init_chat_model`. Use either a bare name it can infer a provider from (`gpt-4o`, `claude-...`) or the `provider:model` form (`ollama:llama3.1`, `anthropic:claude-...`). Providers other than OpenAI aren't part of the `[agent]` extra. Install the matching LangChain package and set that provider's key yourself, for example:
+
+```bash
+pip install langchain-ollama      # local models through Ollama, e.g. on Libra
+pip install langchain-anthropic   # plus ANTHROPIC_API_KEY
+```
+
+`mithridatium agent` only checks for `OPENAI_API_KEY` when the model is an OpenAI one.
+
+Only `gpt-4o-mini` has been tested end to end. Other models should work if they support tool calling, but the routing and tool arguments haven't been checked with them, and smaller local models are more likely to skip tools or make up values.
 
 ## Tools
 
