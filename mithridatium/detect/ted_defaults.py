@@ -1,13 +1,20 @@
 """Shared default settings for TED and TED++ detection."""
 
-TED_DEFAULTS = {
-    "num_samples": 256,
-    "reference_size": 500,
-    "contamination": 0.01,
-}
+from dataclasses import dataclass
 
-TEDPP_DEFAULTS = {
-    **TED_DEFAULTS,
-    "samples_per_class": 5,
-    "beta": 0.5,
-}
+
+@dataclass(frozen=True)
+class TEDDefaults:
+    num_samples: int = 256
+    reference_size: int = 500
+    contamination: float = 0.01
+
+
+@dataclass(frozen=True)
+class TEDPPDefaults:
+    samples_per_class: int = 5
+    beta: float = 0.5
+
+
+TED_DEFAULTS = TEDDefaults()
+TEDPP_DEFAULTS = TEDPPDefaults()

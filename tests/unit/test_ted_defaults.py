@@ -19,81 +19,62 @@ def _signature_defaults(function, names):
     return {name: signature.parameters[name].default for name in names}
 
 
+def _cli_defaults():
+    command = typer.main.get_command(app).get_command(None, "detect")
+    assert command is not None
+    return {parameter.name: parameter.default for parameter in command.params}
+
+
+def _assert_cli_defaults(expected):
+    cli_defaults = _cli_defaults()
+    for name, value in expected.items():
+        assert cli_defaults[name] == value
+
+
+def _assert_mcp_defaults(function, expected):
+    assert _signature_defaults(function, expected) == expected
+
+
 def test_ted_defaults_match_function_cli_and_mcp():
-    names = ("num_samples", "reference_size", "contamination")
-    expected = TED_DEFAULTS
-
-    assert _signature_defaults(ted, names[1:]) == {
-        name: expected[name] for name in names[1:]
+    shared = {
+        "ted_num_samples": TED_DEFAULTS.num_samples,
+        "ted_reference_size": TED_DEFAULTS.reference_size,
+        "ted_contamination": TED_DEFAULTS.contamination,
     }
-    assert _signature_defaults(
-        _detect_kwargs,
-        ("ted_num_samples", "ted_reference_size", "ted_contamination"),
-    ) == {
-        "ted_num_samples": expected["num_samples"],
-        "ted_reference_size": expected["reference_size"],
-        "ted_contamination": expected["contamination"],
-    }
-    assert _signature_defaults(
-        run_ted,
-        ("ted_num_samples", "ted_reference_size", "ted_contamination"),
-    ) == {
-        "ted_num_samples": expected["num_samples"],
-        "ted_reference_size": expected["reference_size"],
-        "ted_contamination": expected["contamination"],
+    ted_function = {
+        "reference_size": TED_DEFAULTS.reference_size,
+        "contamination": TED_DEFAULTS.contamination,
     }
 
-    detect_command = typer.main.get_command(app).get_command(None, "detect")
-    assert detect_command is not None
-    cli_defaults = {parameter.name: parameter.default for parameter in detect_command.params}
-    assert cli_defaults["ted_num_samples"] == expected["num_samples"]
-    assert cli_defaults["ted_reference_size"] == expected["reference_size"]
-    assert cli_defaults["ted_contamination"] == expected["contamination"]
+    assert _signature_defaults(ted, ted_function) == ted_function
+    _assert_mcp_defaults(run_ted, shared)
+    _assert_mcp_defaults(_detect_kwargs, shared)
+    _assert_cli_defaults(shared)
 
 
 def test_tedpp_defaults_match_function_cli_and_mcp():
-    names = ("reference_size", "contamination", "samples_per_class", "beta")
-    expected = TEDPP_DEFAULTS
-    expected_values = {name: expected[name] for name in names}
+    expected = {
+        "contamination": TED_DEFAULTS.contamination,
+        "samples_per_class": TEDPP_DEFAULTS.samples_per_class,
+        "beta": TEDPP_DEFAULTS.beta,
+    }
+    mcp = {
+        "ted_num_samples": TED_DEFAULTS.num_samples,
+        "ted_reference_size": TED_DEFAULTS.reference_size,
+        "ted_contamination": TED_DEFAULTS.contamination,
+        "tedpp_samples_per_class": TEDPP_DEFAULTS.samples_per_class,
+        "tedpp_beta": TEDPP_DEFAULTS.beta,
+    }
 
-    assert _signature_defaults(tedpp, names) == expected_values
-    assert _signature_defaults(TEDPLUS.__init__, names) == expected_values
-    mcp_names = (
-        "ted_num_samples",
-        "ted_reference_size",
-        "ted_contamination",
-        "tedpp_samples_per_class",
-        "tedpp_beta",
+    assert _signature_defaults(tedpp, expected) == expected
+    assert _signature_defaults(TEDPLUS.__init__, expected) == expected
+    assert "reference_size" not in inspect.signature(tedpp).parameters
+    assert "reference_size" not in inspect.signature(TEDPLUS.__init__).parameters
+    _assert_mcp_defaults(run_tedpp, mcp)
+    _assert_mcp_defaults(_detect_kwargs, mcp)
+    _assert_cli_defaults(
+        {
+            **mcp,
+            "ted_num_samples": TED_DEFAULTS.num_samples,
+        }
     )
-    assert _signature_defaults(run_tedpp, mcp_names) == {
-        "ted_num_samples": expected["num_samples"],
-        "ted_reference_size": expected["reference_size"],
-        "ted_contamination": expected["contamination"],
-        "tedpp_samples_per_class": expected["samples_per_class"],
-        "tedpp_beta": expected["beta"],
-    }
-    assert _signature_defaults(
-        _detect_kwargs,
-        (
-            "ted_num_samples",
-            "ted_reference_size",
-            "ted_contamination",
-            "tedpp_samples_per_class",
-            "tedpp_beta",
-        ),
-    ) == {
-        "ted_num_samples": expected["num_samples"],
-        "ted_reference_size": expected["reference_size"],
-        "ted_contamination": expected["contamination"],
-        "tedpp_samples_per_class": expected["samples_per_class"],
-        "tedpp_beta": expected["beta"],
-    }
-
-    detect_command = typer.main.get_command(app).get_command(None, "detect")
-    assert detect_command is not None
-    cli_defaults = {parameter.name: parameter.default for parameter in detect_command.params}
-    assert cli_defaults["ted_num_samples"] == expected["num_samples"]
-    assert cli_defaults["ted_reference_size"] == expected["reference_size"]
-    assert cli_defaults["ted_contamination"] == expected["contamination"]
-    assert cli_defaults["tedpp_samples_per_class"] == expected["samples_per_class"]
-    assert cli_defaults["tedpp_beta"] == expected["beta"]

@@ -6,7 +6,8 @@ import torch.nn as nn
 import torch.utils.data as data
 from pyod.models.pca import PCA
 
-from mithridatium.detect.ted_defaults import TEDPP_DEFAULTS
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
+from mithridatium.detect.verdict import batch_verdict
 
 
 class TEDPLUS():
@@ -14,30 +15,27 @@ class TEDPLUS():
                  model, 
                  reference_data, 
                  suspect_data, 
-                 reference_size=TEDPP_DEFAULTS["reference_size"],
-                 contamination=TEDPP_DEFAULTS["contamination"],
+                 contamination=TED_DEFAULTS.contamination,
                  batch_size=100,
-                 samples_per_class=TEDPP_DEFAULTS["samples_per_class"],
-                 beta=TEDPP_DEFAULTS["beta"],
+                 samples_per_class=TEDPP_DEFAULTS.samples_per_class,
+                 beta=TEDPP_DEFAULTS.beta,
                  seed=None,
                  device="cpu"):
         
         # 1) Model configuration
         self.model = model
-        self.ref_size = reference_size
-        self.ref_dat = data.Subset(
-            reference_data, range(min(len(reference_data), 2 * reference_size))
-        )
+        self.ref_dat = reference_data
         self.sus_dat = suspect_data
         self.contam = contamination
         self.batch_size = batch_size
         self.seed = seed
         self.device = device
+        self.hook_handles = []
 
         if not 0 < contamination <= 0.5:
             raise ValueError("contamination must satisfy 0 < contamination <= 0.5.")
-        if samples_per_class < 2:
-            raise ValueError("samples_per_class must be at least 2.")
+        if samples_per_class < 1:
+            raise ValueError("samples_per_class must be at least 1.")
         if not 0 < beta <= 1 or math.ceil(samples_per_class * beta) >= samples_per_class:
             raise ValueError(
                 "beta must satisfy 0 < beta <= 1 and produce fewer neighbors "
@@ -56,7 +54,6 @@ class TEDPLUS():
         )
 
         self.SAMPLES_PER_CLASS = samples_per_class
-        self.hook_handles = []
         self.activations = {}
 
         correct_indices_per_class = None
@@ -88,12 +85,6 @@ class TEDPLUS():
 
         if self.num_classes is None:
             raise ValueError("Clean reference data is empty.")
-        if self.num_classes * samples_per_class > reference_size:
-            raise ValueError(
-                "reference_size must be at least the number of classes times "
-                "samples_per_class."
-            )
-
         rng = np.random.default_rng(seed)
         defense_indices = []
         for class_id, class_indices in enumerate(correct_indices_per_class):
@@ -399,17 +390,12 @@ class TEDPLUS():
         return {
             "mode": "input-level",
             "method": "ted++",
-            "verdict": (
-                "likely backdoored"
-                if flagged_fraction > self.contam
-                else "likely clean"
-            ),
+            "verdict": batch_verdict(flagged_fraction, self.contam),
             "num_inputs": expected_count,
             "num_flagged": num_flagged,
             "threshold": float(detector.threshold_),
             "parameters": {
-                "reference_size": self.ref_size,
-                "selected_reference_size": len(self.h_defense_preds),
+                "reference_size": len(self.h_defense_preds),
                 "samples_per_class": self.SAMPLES_PER_CLASS,
                 "beta": self.beta,
                 "contamination": self.contam,
@@ -442,19 +428,17 @@ def tedpp(
     model,
     reference_data,
     suspect_data,
-    contamination=TEDPP_DEFAULTS["contamination"],
+    contamination=TED_DEFAULTS.contamination,
     batch_size=100,
-    samples_per_class=TEDPP_DEFAULTS["samples_per_class"],
-    beta=TEDPP_DEFAULTS["beta"],
+    samples_per_class=TEDPP_DEFAULTS.samples_per_class,
+    beta=TEDPP_DEFAULTS.beta,
     seed=None,
     device="cpu",
-    reference_size=TEDPP_DEFAULTS["reference_size"],
 ):
     detector = TEDPLUS(
         model,
         reference_data,
         suspect_data,
-        reference_size=reference_size,
         contamination=contamination,
         batch_size=batch_size,
         samples_per_class=samples_per_class,

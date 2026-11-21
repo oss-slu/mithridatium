@@ -18,6 +18,7 @@ import torch
 from torch.utils.data import ConcatDataset, Subset
 
 from mithridatium.detect.ted import ted
+from mithridatium.detect.verdict import batch_verdict
 from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 from mithridatium.detect.tedpp import tedpp
 from mithridatium.evaluation.triggered import build_triggered_dataset
@@ -29,7 +30,7 @@ TED_CONFIGS = [
     {
         "method": "ted",
         "reference_size": size,
-        "contamination": TED_DEFAULTS["contamination"],
+        "contamination": TED_DEFAULTS.contamination,
     }
     for size in (250, 500, 1000)
 ] + [{
@@ -42,9 +43,9 @@ TEDPP_CONFIGS = [
     {
         "method": "ted++",
         "reference_size": size,
-        "contamination": TEDPP_DEFAULTS["contamination"],
-        "samples_per_class": TEDPP_DEFAULTS["samples_per_class"],
-        "beta": TEDPP_DEFAULTS["beta"],
+        "contamination": TED_DEFAULTS.contamination,
+        "samples_per_class": TEDPP_DEFAULTS.samples_per_class,
+        "beta": TEDPP_DEFAULTS.beta,
     }
     for size in (250, 500, 1000)
 ] + [
@@ -52,38 +53,29 @@ TEDPP_CONFIGS = [
         "method": "ted++",
         "reference_size": 1000,
         "contamination": 0.05,
-        "samples_per_class": TEDPP_DEFAULTS["samples_per_class"],
-        "beta": TEDPP_DEFAULTS["beta"],
+        "samples_per_class": TEDPP_DEFAULTS.samples_per_class,
+        "beta": TEDPP_DEFAULTS.beta,
     },
     {
         "method": "ted++",
         "reference_size": 1000,
-        "contamination": TEDPP_DEFAULTS["contamination"],
+        "contamination": TED_DEFAULTS.contamination,
         "samples_per_class": 10,
-        "beta": TEDPP_DEFAULTS["beta"],
+        "beta": TEDPP_DEFAULTS.beta,
     },
     {
         "method": "ted++",
         "reference_size": 1000,
-        "contamination": TEDPP_DEFAULTS["contamination"],
-        "samples_per_class": TEDPP_DEFAULTS["samples_per_class"],
+        "contamination": TED_DEFAULTS.contamination,
+        "samples_per_class": TEDPP_DEFAULTS.samples_per_class,
         "beta": 0.75,
     },
 ]
 
 
-def _verdict(flags, contamination: float) -> str:
-    flagged_fraction = int(flags.sum()) / flags.numel()
-    return "likely backdoored" if flagged_fraction > contamination else "likely clean"
-
-
 def _run_configuration(
     model, train_ds, clean_ds, config, seed, device, preprocess_config, num_samples
 ):
-    torch.manual_seed(seed)
-    if device.type == "cuda":
-        torch.cuda.manual_seed_all(seed)
-
     reference_data = Subset(
         train_ds,
         range(min(len(train_ds), 2 * config["reference_size"])),
@@ -123,7 +115,6 @@ def _run_configuration(
     else:
         results = tedpp(
             **common,
-            reference_size=config["reference_size"],
             samples_per_class=config["samples_per_class"],
             beta=config["beta"],
         )
@@ -142,8 +133,13 @@ def _run_configuration(
         "n_triggered": len(triggered_flags),
         "tpr": float(triggered_flags.float().mean()),
         "fpr": float(clean_flags.float().mean()),
-        "clean_verdict": _verdict(clean_flags, config["contamination"]),
-        "triggered_verdict": _verdict(triggered_flags, config["contamination"]),
+        "clean_verdict": batch_verdict(
+            int(clean_flags.sum()) / clean_flags.numel(), config["contamination"]
+        ),
+        "triggered_verdict": batch_verdict(
+            int(triggered_flags.sum()) / triggered_flags.numel(),
+            config["contamination"],
+        ),
         "runtime_seconds": runtime_seconds,
     }
 
@@ -193,7 +189,7 @@ def main() -> None:
         nargs="+",
         default=["models/resnet18_clean.pth", "models/resnet18_poison.pth"],
     )
-    parser.add_argument("--num-samples", type=int, default=TED_DEFAULTS["num_samples"])
+    parser.add_argument("--num-samples", type=int, default=TED_DEFAULTS.num_samples)
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44])
     parser.add_argument("--output-dir", type=Path, default=Path("reports/ted_tuning"))
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")

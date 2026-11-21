@@ -31,6 +31,7 @@ import torch.utils.data as data
 from pyod.models.pca import PCA
 from torch.utils.data import Subset
 from mithridatium.detect.ted_defaults import TED_DEFAULTS
+from mithridatium.detect.verdict import batch_verdict
 
 
 "TED configurations. These should all be changed in the ted method. Some configurations may be unneeded."
@@ -245,8 +246,8 @@ def ted(
         model,
         reference_data,
         suspect_data,
-        reference_size: int = TED_DEFAULTS["reference_size"],
-        contamination: float = TED_DEFAULTS["contamination"],
+        reference_size: int = TED_DEFAULTS.reference_size,
+        contamination: float = TED_DEFAULTS.contamination,
         batch_size: int = 100,
         seed=None,
         device="cpu",
@@ -493,7 +494,7 @@ def ted(
 
         # ponytail: the threshold rejects `contamination` of clean inputs by design, so
         # flag the batch only when more than that are flagged. Uncalibrated.
-        verdict = "likely backdoored" if flagged_fraction > contamination else "likely clean"
+        verdict = batch_verdict(flagged_fraction, contamination)
 
         return {
             "mode": "input-level",

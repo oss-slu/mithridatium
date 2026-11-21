@@ -49,11 +49,11 @@ own distribution. `detect` takes them from the `--data` training split.
 
 **Outputs:** `results` carries `mode: "input-level"`, `method: "ted++"`,
 `verdict`, `num_inputs`, `num_flagged`, `threshold`, `parameters`
-(`reference_size`, `selected_reference_size`, `samples_per_class`, `beta`,
-`contamination`, `batch_size`, `seed`), and `per_sample` (`index`,
-`predicted_label`, `score`, `flagged`). `reference_size` is the configured
-candidate budget; `selected_reference_size` is the class-balanced set used by
-TED++. Read `per_sample`; `verdict` just rolls it up.
+(`reference_size`, `samples_per_class`, `beta`, `contamination`, `batch_size`,
+`seed`), and `per_sample` (`index`, `predicted_label`, `score`, `flagged`).
+`reference_size` is the class-balanced reference set actually used
+(`num_classes x samples_per_class`). Read `per_sample`; `verdict` just rolls it
+up.
 
 ## Running it
 
@@ -77,33 +77,38 @@ TED++ has two flags of its own and shares three with TED.
 | `--tedpp-beta` | `0.5` | Tube neighbour factor: k = ceil(m x beta). Needs 0 < beta <= 1 and k < m |
 | `--ted-num-samples` | `256` | Test inputs to score |
 | `--ted-contamination` | `0.01` | Fraction of reference trajectories the threshold rejects, within (0, 0.5] |
-| `--ted-reference-size` | `500` | Candidate budget; must be at least the number of classes times m |
+| `--ted-reference-size` | `500` | Candidate pool cap; TED++ classifies up to twice this many training images before selecting m per class |
 
 m = 5 and beta = 0.5 are the paper's settings. The `0.01` contamination is TED's
 default; the authors' TED++ code uses `0.1`.
 
 **Cost.** Choosing the references classifies at most 2 x `--ted-reference-size`
 training images (1000 by default) once. Each scored input is then compared with
-every reference image at every hooked layer, so the per-input cost grows with
-network depth.
+the selected `num_classes x m` references at every hooked layer, so the
+per-input cost grows with network depth.
 
 
 ## Tuned defaults
 
-TED++ shares TED's `num_samples=256`, `reference_size=500`, and
-`contamination=0.01`, and adds `samples_per_class=5` and `beta=0.5`. The CLI,
-MCP tool, and detector function use the same defaults. A 500-reference budget
-is a provisional tradeoff: for the poisoned model, baseline TED++ averaged
-73.8% TPR and 7.2% FPR in 6.1 s on CPU, versus 83.1% TPR and 9.4% FPR in 7.5 s
-at 1000 references. At 500 references, the clean model's mean FPR was 2.0%,
-compared with 5.9% at 250 references. No candidate reliably produced the
-correct model verdicts across all seeds.
+TED++ shares TED's `num_samples=256` and `contamination=0.01`, and adds
+`samples_per_class=5` and `beta=0.5`. The CLI, MCP tool, and detector function
+use the same defaults. The candidate pool cap defaults to 500 (up to 1000
+training candidates); baseline TED++ averaged 73.8% TPR and 7.2% FPR on the
+poisoned model, versus 83.1% TPR and 9.4% FPR at a candidate cap of 1000. In
+this CPU run, their mean runtimes were 25.4 s and 26.7 s, respectively. These
+timings are close relative to their variation and do not establish a reliable
+speed advantage for the 500 cap. At a cap of 500, the clean model's mean FPR
+was 2.0%, compared with 5.9% at a cap of 250. No candidate reliably produced
+the correct model verdicts across all seeds.
 
 The full CPU sweep scored 256 clean CIFAR-10 test examples and 256 corresponding
 white-square triggered examples (4 px, bottom-right, target class 0), using
-seeds 42/43/44 on both `resnet18_clean.pth` and `resnet18_poison.pth`. It varied
-reference size over 250/500/1000 and contamination over 0.01/0.05; at 1000
-references it also tested 10 samples/class and beta 0.75 separately from the
+seeds 42/43/44 on both `resnet18_clean.pth` and `resnet18_poison.pth`. Each seed
+selects a different non-target test subset from the first 512 test images using
+a seeded permutation, so the standard deviation reflects both test-subset and
+reference-sampling variation. It varied
+candidate cap over 250/500/1000 and contamination over 0.01/0.05; at a cap of
+1000 it also tested 10 samples/class and beta 0.75 separately from the
 baseline 5 samples/class, beta 0.5. Values below are mean ± standard deviation
 across seeds. TPR is the triggered-input flag rate; FPR is the clean-input flag
 rate. Verdict columns show counts of `likely clean` / `likely backdoored`
@@ -111,26 +116,61 @@ batches out of three. Runtime is seconds per model/configuration on CPU. On the
 clean checkpoint, triggered-input rate is a false-alarm rate, not a true-
 positive rate.
 
-| Reference / contamination / m / beta | Model | TPR % | FPR % | Clean-input verdicts clean / backdoored | Triggered-input verdicts clean / backdoored | Runtime s |
+Runtime is wall-clock time averaged over three seeds on the Windows machine
+used for this run, not a performance guarantee. CPU timings varied between
+seeds; interpret them with that limitation in mind.
+
+The full CPU sweep was run from the repository root in Windows Git Bash with:
+
+```bash
+MITHRIDATIUM_NUM_WORKERS=0 ./.venv/Scripts/python.exe -m scripts.tune_ted \
+  --models models/resnet18_clean.pth models/resnet18_poison.pth \
+  --num-samples 256 --seeds 42 43 44 \
+  --output-dir reports/ted_tuning --device cpu
+```
+
+This command runs both TED and TED++ configurations. To run the same sweep on
+a CUDA-capable GPU, use a CUDA-enabled PyTorch environment and a separate output
+directory:
+
+```bash
+MITHRIDATIUM_NUM_WORKERS=0 ./.venv/Scripts/python.exe -m scripts.tune_ted \
+  --models models/resnet18_clean.pth models/resnet18_poison.pth \
+  --num-samples 256 --seeds 42 43 44 \
+  --output-dir reports/ted_tuning_gpu --device cuda
+```
+
+The GPU command writes to a separate directory so it does not overwrite the CPU
+results; GPU timings are not represented in the table above. Both commands
+write `raw.csv` and `summary.csv` in their selected output directory.
+
+For a quick smoke test, add `--quick` and choose a separate output directory,
+for example `--output-dir reports/ted_tuning_quick`. This runs only the first
+baseline configuration for TED and TED++, uses only the first seed, and limits
+the number of test samples to at most 16. It writes the same CSV filenames, so
+use a separate directory to preserve full-sweep results.
+
+| Candidate cap / contamination / m / beta | Model | TPR % | FPR % | Clean-input verdicts clean / backdoored | Triggered-input verdicts clean / backdoored | Runtime s |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 250 / 0.01 / 5 / 0.5 | clean | 5.5 ± 0.7 | 5.9 ± 0.8 | 0 / 3 | 0 / 3 | 5.3 ± 0.1 |
-| 250 / 0.01 / 5 / 0.5 | poisoned | 67.7 ± 11.1 | 3.8 ± 3.4 | 1 / 2 | 0 / 3 | 5.5 ± 0.2 |
-| 500 / 0.01 / 5 / 0.5 | clean | 1.8 ± 1.8 | 2.0 ± 2.2 | 1 / 2 | 1 / 2 | 5.8 ± 0.2 |
-| 500 / 0.01 / 5 / 0.5 | poisoned | 73.8 ± 13.3 | 7.2 ± 7.0 | 1 / 2 | 0 / 3 | 6.1 ± 0.1 |
-| 1000 / 0.01 / 5 / 0.5 | clean | 3.9 ± 2.7 | 3.5 ± 3.1 | 0 / 3 | 0 / 3 | 6.9 ± 0.1 |
-| 1000 / 0.01 / 5 / 0.5 | poisoned | 83.1 ± 3.3 | 9.4 ± 0.4 | 0 / 3 | 0 / 3 | 7.5 ± 0.5 |
-| 1000 / 0.05 / 5 / 0.5 | clean | 8.9 ± 2.2 | 7.9 ± 2.9 | 0 / 3 | 0 / 3 | 6.9 ± 0.1 |
-| 1000 / 0.05 / 5 / 0.5 | poisoned | 85.7 ± 4.7 | 18.1 ± 6.6 | 0 / 3 | 0 / 3 | 7.1 ± 0.1 |
-| 1000 / 0.01 / 10 / 0.5 | clean | 4.9 ± 3.6 | 5.9 ± 4.8 | 1 / 2 | 1 / 2 | 9.3 ± 0.6 |
-| 1000 / 0.01 / 10 / 0.5 | poisoned | 78.1 ± 7.4 | 5.1 ± 4.8 | 0 / 3 | 0 / 3 | 9.4 ± 0.2 |
-| 1000 / 0.01 / 5 / 0.75 | clean | 3.8 ± 2.8 | 3.4 ± 3.2 | 0 / 3 | 0 / 3 | 7.2 ± 0.1 |
-| 1000 / 0.01 / 5 / 0.75 | poisoned | 78.1 ± 2.1 | 8.7 ± 0.5 | 0 / 3 | 0 / 3 | 7.2 ± 0.1 |
+| 250 / 0.01 / 5 / 0.5 | clean | 5.5 ± 0.7 | 5.9 ± 0.8 | 0 / 3 | 0 / 3 | 17.8 ± 4.8 |
+| 250 / 0.01 / 5 / 0.5 | poisoned | 67.7 ± 11.1 | 3.8 ± 3.4 | 1 / 2 | 0 / 3 | 31.8 ± 4.6 |
+| 500 / 0.01 / 5 / 0.5 | clean | 1.8 ± 1.8 | 2.0 ± 2.2 | 1 / 2 | 1 / 2 | 14.0 ± 4.8 |
+| 500 / 0.01 / 5 / 0.5 | poisoned | 73.8 ± 13.3 | 7.2 ± 7.0 | 1 / 2 | 0 / 3 | 25.4 ± 2.1 |
+| 1000 / 0.01 / 5 / 0.5 | clean | 3.9 ± 2.7 | 3.5 ± 3.1 | 0 / 3 | 0 / 3 | 10.9 ± 1.2 |
+| 1000 / 0.01 / 5 / 0.5 | poisoned | 83.1 ± 3.3 | 9.4 ± 0.4 | 0 / 3 | 0 / 3 | 26.7 ± 1.5 |
+| 1000 / 0.05 / 5 / 0.5 | clean | 8.9 ± 2.2 | 7.9 ± 2.9 | 0 / 3 | 0 / 3 | 10.0 ± 0.9 |
+| 1000 / 0.05 / 5 / 0.5 | poisoned | 85.7 ± 4.7 | 18.1 ± 6.6 | 0 / 3 | 0 / 3 | 15.2 ± 1.1 |
+| 1000 / 0.01 / 10 / 0.5 | clean | 4.9 ± 3.6 | 5.9 ± 4.8 | 1 / 2 | 1 / 2 | 20.1 ± 3.4 |
+| 1000 / 0.01 / 10 / 0.5 | poisoned | 78.1 ± 7.4 | 5.1 ± 4.8 | 0 / 3 | 0 / 3 | 24.5 ± 6.6 |
+| 1000 / 0.01 / 5 / 0.75 | clean | 3.8 ± 2.8 | 3.4 ± 3.2 | 0 / 3 | 0 / 3 | 25.2 ± 15.3 |
+| 1000 / 0.01 / 5 / 0.75 | poisoned | 78.1 ± 2.1 | 8.7 ± 0.5 | 0 / 3 | 0 / 3 | 23.8 ± 6.1 |
 
 No candidate met the clean/poison verdict criterion across all three seeds.
 The selected 500/0.01/5/0.5 configuration is a compromise between triggered
 detection, false positives, and cost, not a reliable model verdict. The sweep
-script is `scripts/tune_ted.py`; raw and summarized results are in
-`reports/ted_tuning/raw.csv` and `reports/ted_tuning/summary.csv`.
+command writes to `reports/ted_tuning`, which is gitignored. Committed copies
+of the [raw measurements](ted_tuning/raw.csv) and
+[summary](ted_tuning/summary.csv) are included with the documentation.
 
 ## Caveats
 

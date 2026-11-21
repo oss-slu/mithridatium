@@ -59,7 +59,7 @@ mithridatium detect \
 | `--scaleup-threshold` | SCALE-UP: flag an input when its SPC exceeds this, within (0, 1]. |
 | `--scaleup-scales` | SCALE-UP: tuple of pixel scale factors, e.g. `(3, 5, 7, 9, 11)`. |
 | `--ted-num-samples` | TED and TED++: number of test images to score (default 256). |
-| `--ted-reference-size` | TED and TED++: clean reference budget (default 500). TED++ draws candidates from the first 2 x this many training images; must be at least the number of classes times `--tedpp-samples-per-class`. |
+| `--ted-reference-size` | TED and TED++: candidate clean references (default 500). TED++ classifies up to the first 2 x this many training images, then selects `--tedpp-samples-per-class` correctly classified references per class. |
 | `--ted-contamination` | TED and TED++: fraction of clean reference inputs the threshold rejects (default 0.01), within (0, 0.5]. |
 | `--tedpp-samples-per-class` | TED++: clean reference images per class (default 5), at least 2. |
 | `--tedpp-beta` | TED++: tube neighbour factor (default 0.5); the tube uses ceil(samples per class x beta) neighbours, within (0, 1]. |
