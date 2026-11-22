@@ -162,6 +162,70 @@ and overwrite protection. Neither test requires a 60-epoch training run.
 
 More copy-paste examples: [Sample commands](testing/sample-commands.md).
 
+### Tuned defaults
+
+To tune the CLP threshold multiplier (`clp_threshold_mult`), we tested
+`u = 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0` on clean and poisoned
+ResNet18 CIFAR-10 checkpoints. The goal is to reduce attack success
+rate (ASR) while keeping the clean accuracy (CA) drop within 3
+percentage points of each model's original accuracy.
+
+#### Running the sweep
+
+From the repository root, run:
+
+```bash
+python -m scripts.sweep_clp
+```
+
+The script saves CA, channels pruned, and runtime in
+`reports/clp_sweep/results.csv`, plus repaired `.pth` checkpoints and
+JSON repair reports for each threshold. ASR is evaluated separately
+using the saved checkpoints.
+
+#### Sweep results
+
+**Clean model (baseline CA: 82.18%)**
+
+| u | Channels pruned | CA after | CA drop | ASR before | ASR after |
+|---|---:|---:|---:|---:|---:|
+| 1.5 | 338 | 25.07% | 57.11 pp |  |  |
+| 2.0 | 146 | 34.12% | 48.06 pp |  |  |
+| 2.5 | 65 | 64.52% | 17.66 pp |  |  |
+| 3.0 | 33 | 82.17% | 0.01 pp |  |  |
+| 3.5 | 16 | 82.12% | 0.06 pp |  |  |
+| 4.0 | 5 | 82.14% | 0.04 pp |  |  |
+| 5.0 | 1 | 82.18% | 0.00 pp |  |  |
+
+**Poisoned model (baseline CA: 61.09%)**
+
+| u | Channels pruned | CA after | CA drop | ASR before | ASR after |
+|---|---:|---:|---:|---:|---:|
+| 1.5 | 341 | 19.57% | 41.52 pp |  |  |
+| 2.0 | 158 | 19.76% | 41.33 pp |  |  |
+| 2.5 | 74 | 34.90% | 26.19 pp |  |  |
+| 3.0 | 30 | 28.34% | 32.75 pp |  |  |
+| 3.5 | 18 | 42.28% | 18.81 pp |  |  |
+| 4.0 | 12 | 60.83% | 0.26 pp |  |  |
+| 5.0 | 3 | 60.96% | 0.13 pp |  |  |
+
+*pp = percentage points. ASR values are pending evaluation; blank cells
+are reserved for the ASR measurements.*
+
+#### Observations
+
+Lower thresholds pruned more channels but caused large clean accuracy
+drops. On the clean model, thresholds of 3.0 and higher met the 3 pp
+limit. On the poisoned model, only `u = 4.0` and `u = 5.0` met that
+limit, with drops of 0.26 pp and 0.13 pp, respectively. Those two
+thresholds are candidates for ASR evaluation, not confirmed successful
+backdoor repairs.
+
+#### Selected default
+
+Pending ASR evaluation and final validation. Do not change the shared
+CLP default based on CA alone.
+
 ## ANP (Adversarial Neuron Pruning)
 
 ANP is a **white-box, optimization-based** model repair method (Wu & Wang, NeurIPS 2021).
