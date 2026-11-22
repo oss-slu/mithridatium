@@ -170,22 +170,29 @@ def fine_tune(model, clean_loader, classifier, mask, device, steps=10, learning_
     return completed
 
 # Tuned LMR defaults
+DEFAULT_PRUNE_RATIO = 0.10
+DEFAULT_REPAIR_STEPS = 20
+DEFAULT_FINE_TUNE_STEPS = 10
+DEFAULT_CLEAN_SAMPLES = 500
+DEFAULT_SEED = 0
+
 LMR_DEFAULTS = {
-    "prune_ratio": 0.10,
-    "repair_steps": 20,
-    "fine_tune_steps": 10,
-    "clean_samples": 500,
-    "seed": 0,
+    "prune_ratio": DEFAULT_PRUNE_RATIO,
+    "repair_steps": DEFAULT_REPAIR_STEPS,
+    "fine_tune_steps": DEFAULT_FINE_TUNE_STEPS,
+    "clean_samples": DEFAULT_CLEAN_SAMPLES,
+    "seed": DEFAULT_SEED,
 }
+
 
 def run_lmr(
     model,
     clean_loader,
     target_class,
-    prune_ratio=LMR_DEFAULTS["prune_ratio"],
-    seed=LMR_DEFAULTS["seed"],
-    repair_steps=LMR_DEFAULTS["repair_steps"],
-    fine_tune_steps=LMR_DEFAULTS["fine_tune_steps"],
+    prune_ratio=DEFAULT_PRUNE_RATIO,
+    seed=DEFAULT_SEED,
+    repair_steps=DEFAULT_REPAIR_STEPS,
+    fine_tune_steps=DEFAULT_FINE_TUNE_STEPS,
 ):
     """Run the LMR repair algorithm on the model"""
 

@@ -102,6 +102,8 @@ A parameter sweep was conducted using `scripts/sweep_lmr.py` on `models/resnet18
 - Clean Model: Clean Accuracy (CA) = 58.13%, ASR = 3.60%
 - Poisoned Model: Clean Accuracy (CA) = 56.72%, ASR = 92.90%
 
+Both baseline checkpoints have around 57% clean accuracy on CIFAR-10, meaning these defaults were tuned on relatively undertrained models. Sensitivity and optimal parameter settings may differ on fully converged models.
+
 #### Grid 1: Prune Ratio Sweep
 Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`, `seed=0`:
 
@@ -146,9 +148,10 @@ Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`:
 | 0.15 | 20 / 10 | 500 | 54.81 ± 0.56% | 5.77 ± 6.13% | 16.19 ± 0.07s |
 
 #### Chosen Defaults and Rationale
-- **`prune_ratio = 0.10`**: Delivers the highest average clean accuracy (54.91%) while suppressing ASR to ~3.97% (close to the 3.60% clean baseline). Clean accuracy drops by only ~1.8% from the 56.72% poisoned baseline, comfortably within the $\le 3\%$ target drop budget.
-- **`repair_steps = 20` & `fine_tune_steps = 10`**: Fewer repair steps (10) leave 19–25% ASR residual, while 20 steps effectively eliminate the backdoor without unnecessary training time.
-- **`clean_samples = 500`**: Provides an optimal balance between fast execution (~18s on CPU) and sufficient representative data to recover clean accuracy.
+- **`prune_ratio = 0.10`**: In Grid 1, every prune ratio from 0.02 to 0.20 produced similar clean accuracy (~54.6%) and low ASR (1.3%–2.1%). Across 3 seeds, 0.05 and 0.10 had overlapping standard deviations (3.87 ± 4.14% vs. 3.97 ± 4.65% ASR). Because LMR was not sensitive to the prune ratio in this range, 0.10 was kept simply to retain the existing default.
+- **`repair_steps = 20` & `fine_tune_steps = 10`**: Tuning the step count showed a clearer difference: 10 repair steps left 19%–25% residual ASR, whereas 20 repair steps brought ASR down to ~1%–4% on these checkpoints.
+
+- **`clean_samples = 500`**: Retained to match the common default used across the repair CLI and ANP, providing sufficient data to lower ASR in testing. Runtimes were measured on an NVIDIA cluster GPU via CUDA. Observed runtimes for the same configuration exhibit some variance (~13s to ~20s) due to cluster load and device scheduling. Raw results are stored in `scripts/lmr_sweep_results.csv`.
 
 ### Caveats
 

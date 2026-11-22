@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import csv
+from pathlib import Path
 import time
 import numpy as np
 import torch
@@ -66,6 +68,9 @@ def main():
     device = get_device()
     print(f"Device: {device}")
 
+    output_csv = Path(__file__).resolve().parent / "lmr_sweep_results.csv"
+    csv_rows = []
+
     config = utils.get_preprocess_config("cifar10")
     train_loader, _ = utils.dataloader_for("cifar10", "train", 64)
     test_loader, _ = utils.dataloader_for("cifar10", "test", 64)
@@ -108,6 +113,17 @@ def main():
             device=device,
         )
         print(f"| {pr:.2f} | {res['ca']:.2f}% | {res['asr']:.2f}% | {res['runtime']:.2f}s |")
+        csv_rows.append({
+            "grid": "grid1_prune_ratio",
+            "prune_ratio": f"{pr:.2f}",
+            "repair_steps": 20,
+            "fine_tune_steps": 10,
+            "clean_samples": 500,
+            "seed": 0,
+            "clean_accuracy_pct": f"{res['ca']:.2f}",
+            "asr_pct": f"{res['asr']:.2f}",
+            "runtime_sec": f"{res['runtime']:.2f}",
+        })
 
     print("\n--- Grid 2: repair_steps / fine_tune_steps (prune=0.10, samples=500, seed=0) ---")
     print("| repair_steps | fine_tune_steps | CA (%) | ASR (%) | Runtime (s) |")
@@ -126,6 +142,17 @@ def main():
             device=device,
         )
         print(f"| {r_steps} | {f_steps} | {res['ca']:.2f}% | {res['asr']:.2f}% | {res['runtime']:.2f}s |")
+        csv_rows.append({
+            "grid": "grid2_steps",
+            "prune_ratio": "0.10",
+            "repair_steps": r_steps,
+            "fine_tune_steps": f_steps,
+            "clean_samples": 500,
+            "seed": 0,
+            "clean_accuracy_pct": f"{res['ca']:.2f}",
+            "asr_pct": f"{res['asr']:.2f}",
+            "runtime_sec": f"{res['runtime']:.2f}",
+        })
 
     print("\n--- Grid 3: clean_samples (prune=0.10, repair=20, ft=10, seed=0) ---")
     print("| clean_samples | CA (%) | ASR (%) | Runtime (s) |")
@@ -144,6 +171,17 @@ def main():
             device=device,
         )
         print(f"| {cs} | {res['ca']:.2f}% | {res['asr']:.2f}% | {res['runtime']:.2f}s |")
+        csv_rows.append({
+            "grid": "grid3_samples",
+            "prune_ratio": "0.10",
+            "repair_steps": 20,
+            "fine_tune_steps": 10,
+            "clean_samples": cs,
+            "seed": 0,
+            "clean_accuracy_pct": f"{res['ca']:.2f}",
+            "asr_pct": f"{res['asr']:.2f}",
+            "runtime_sec": f"{res['runtime']:.2f}",
+        })
 
     print("\n--- Final Candidates: 3 Seeds ---")
     print("| prune_ratio | steps (rep/ft) | samples | Mean CA (%) | Mean ASR (%) | Mean Runtime (s) |")
@@ -177,6 +215,27 @@ def main():
             f"{np.mean(asrs):.2f} ± {np.std(asrs):.2f}% | "
             f"{np.mean(times):.2f} ± {np.std(times):.2f}s |"
         )
+        csv_rows.append({
+            "grid": "candidates_seed_summary",
+            "prune_ratio": f"{pr:.2f}",
+            "repair_steps": r_steps,
+            "fine_tune_steps": f_steps,
+            "clean_samples": cs,
+            "seed": "3_seed_mean_std",
+            "clean_accuracy_pct": f"{np.mean(cas):.2f} ± {np.std(cas):.2f}",
+            "asr_pct": f"{np.mean(asrs):.2f} ± {np.std(asrs):.2f}",
+            "runtime_sec": f"{np.mean(times):.2f} ± {np.std(times):.2f}",
+        })
+
+    with output_csv.open("w", newline="", encoding="utf-8") as f:
+        fieldnames = [
+            "grid", "prune_ratio", "repair_steps", "fine_tune_steps",
+            "clean_samples", "seed", "clean_accuracy_pct", "asr_pct", "runtime_sec",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(csv_rows)
+    print(f"\nSaved sweep results to {output_csv}")
 
 if __name__ == "__main__":
     main()

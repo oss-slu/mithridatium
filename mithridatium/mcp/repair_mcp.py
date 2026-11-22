@@ -18,8 +18,8 @@ def _repair_kwargs(
     force: bool = False,
 
     #lmr parameters
-    clean_samples: int = LMR_DEFAULTS["clean_samples"],
-    seed: int | None = None,
+    clean_samples: int = 500,
+    seed: int = 0,
     lmr_target_class: int | None = None,
     lmr_prune_ratio: float = LMR_DEFAULTS["prune_ratio"],
     lmr_repair_steps: int = LMR_DEFAULTS["repair_steps"],
@@ -99,8 +99,8 @@ def run_lmr(
     data: str = "cifar10",
     out: str | None = None,
     force: bool = False,
-    clean_samples: int = LMR_DEFAULTS["clean_samples"],
-    seed: int | None = None,
+    clean_samples: int = 500,
+    seed: int = 0,
 ):
     """Run LMR repair, save the repaired checkpoint, and return its path and the mithridatium repair report."""
     return _run_repair(_repair_kwargs(

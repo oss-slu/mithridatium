@@ -1004,7 +1004,7 @@ def repair(
         help="ANP ASR: number of non-target CIFAR-10 test samples to evaluate (default: 500).",
     ),
     seed: int = typer.Option(
-        None, "--seed", "-s",
+        0, "--seed", "-s",
         help="Random seed for reproducibility.",
     ),
     out: Path = typer.Option(
@@ -1026,15 +1026,15 @@ def repair(
     ),
     lmr_prune_ratio: float = typer.Option(
         LMR_DEFAULTS["prune_ratio"], "--lmr-prune-ratio",
-        help=f"LMR: fraction of most-moved columns to prune. Default {LMR_DEFAULTS['prune_ratio']}.",
+        help="LMR: fraction of most-moved columns to prune.",
     ),
     lmr_repair_steps: int = typer.Option(
         LMR_DEFAULTS["repair_steps"], "--lmr-repair-steps",
-        help=f"LMR: optimization steps for Phase 1. Default {LMR_DEFAULTS['repair_steps']}.",
+        help="LMR: optimization steps for Phase 1.",
     ),
     lmr_fine_tune_steps: int = typer.Option(
         LMR_DEFAULTS["fine_tune_steps"], "--lmr-fine-tune-steps",
-        help=f"LMR: fine-tuning steps after pruning. Default {LMR_DEFAULTS['fine_tune_steps']}.",
+        help="LMR: fine-tuning steps after pruning.",
     ),
     clp_threshold_mult: float = typer.Option(
         3.0, "--clp-threshold-mult",

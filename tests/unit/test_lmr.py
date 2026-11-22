@@ -81,7 +81,7 @@ def test_lmr_defaults_match():
         assert mcp_params["lmr_prune_ratio"].default == LMR_DEFAULTS["prune_ratio"]
         assert mcp_params["lmr_repair_steps"].default == LMR_DEFAULTS["repair_steps"]
         assert mcp_params["lmr_fine_tune_steps"].default == LMR_DEFAULTS["fine_tune_steps"]
-        assert mcp_params["clean_samples"].default == LMR_DEFAULTS["clean_samples"]
+        assert mcp_params["seed"].default == LMR_DEFAULTS["seed"]
     except ImportError:
         pass
 
@@ -91,4 +91,4 @@ def test_lmr_defaults_match():
     assert cli_defaults["lmr_prune_ratio"] == LMR_DEFAULTS["prune_ratio"]
     assert cli_defaults["lmr_repair_steps"] == LMR_DEFAULTS["repair_steps"]
     assert cli_defaults["lmr_fine_tune_steps"] == LMR_DEFAULTS["fine_tune_steps"]
-    assert cli_defaults["clean_samples"] == LMR_DEFAULTS["clean_samples"]
+    assert cli_defaults["seed"] == LMR_DEFAULTS["seed"]

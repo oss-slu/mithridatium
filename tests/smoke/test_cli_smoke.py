@@ -92,10 +92,10 @@ def test_cli_repair_requires_target_class():
     assert "lmr-target-class" in result.stderr.lower()
 
 def test_cli_repair_does_not_require_prune_ratio():
-    # Prune ratio is optional
+    # Prune ratio is optional; command gets past option parsing to model validation
     result = runner.invoke(app, ["repair", "--method", "lmr", "--lmr-target-class", "0"])
 
-    assert "lmr-prune-ratio is required" not in result.stderr.lower()
+    assert result.exit_code == EXIT_NO_INPUT
 
 def test_cli_detect_help_loads():
     result = runner.invoke(app, ["detect", "--help"])
