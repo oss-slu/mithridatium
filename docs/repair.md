@@ -230,6 +230,71 @@ and overwrite protection. Neither test requires a 60-epoch training run.
 
 More copy-paste examples: [Sample commands](testing/sample-commands.md).
 
+### Tuned defaults
+
+To tune the CLP threshold multiplier (`clp_threshold_mult`), we evaluated
+`u = 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0` on clean and poisoned
+ResNet18 CIFAR-10 checkpoints (`models/resnet18_clean.pth` and `models/resnet18_poison.pth`).
+The target is to reduce attack success rate (ASR) while keeping the clean accuracy (CA) drop
+within 3 percentage points of the original baseline.
+
+Both baseline checkpoints have around 57% clean accuracy on CIFAR-10, meaning these defaults were tuned on relatively undertrained models. Sensitivity and optimal parameter settings may differ on fully converged models.
+
+#### Running the sweep
+
+From the repository root, run:
+
+```bash
+python -m scripts.sweep_clp
+```
+
+The sweep script evaluates channels pruned, clean accuracy before and after, and ASR before and after on both checkpoints. Results are saved to `scripts/clp_sweep_results.csv` and `scripts/clp_validation_3seeds.csv`.
+
+#### Sweep results
+
+**Clean model (baseline CA: 58.13%, ASR: 4.00%)**
+
+| `u` | Channels pruned | CA after | CA drop | ASR before | ASR after |
+|---|---:|---:|---:|---:|---:|
+| 1.5 | 361 | 13.60% | 44.53 pp | 4.00% | 5.40% |
+| 2.0 | 179 | 18.00% | 40.13 pp | 4.00% | 19.80% |
+| 2.5 | 87 | 26.52% | 31.61 pp | 4.00% | 10.60% |
+| 3.0 | 43 | 33.54% | 24.59 pp | 4.00% | 6.60% |
+| 3.5 | 19 | 35.84% | 22.29 pp | 4.00% | 7.00% |
+| 4.0 | 8 | 58.25% | -0.12 pp | 4.00% | 4.00% |
+| 5.0 | 1 | 58.01% | 0.12 pp | 4.00% | 4.00% |
+
+**Poisoned model (baseline CA: 56.72%, ASR: 92.80%)**
+
+| `u` | Channels pruned | CA after | CA drop | ASR before | ASR after |
+|---|---:|---:|---:|---:|---:|
+| 1.5 | 315 | 15.01% | 41.71 pp | 92.80% | 63.60% |
+| 2.0 | 157 | 12.25% | 44.47 pp | 92.80% | 91.20% |
+| 2.5 | 78 | 20.22% | 36.50 pp | 92.80% | 35.20% |
+| 3.0 | 42 | 23.91% | 32.81 pp | 92.80% | 21.20% |
+| 3.5 | 26 | 26.67% | 30.05 pp | 92.80% | 33.00% |
+| 4.0 | 15 | 56.79% | -0.07 pp | 92.80% | 6.60% |
+| 5.0 | 7 | 56.82% | -0.10 pp | 92.80% | 6.60% |
+
+*pp = percentage points. Negative drop indicates clean accuracy was slightly higher than baseline.*
+
+#### Validation Across 3 Seeds (Seeds 0, 42, 123)
+
+Evaluated on the poisoned model with 500 triggered test samples per seed:
+
+| `u` | Channels pruned | Mean CA (%) | CA drop | Mean ASR (%) |
+|---|---:|---:|---:|---:|
+| 3.0 | 42 | 23.91 ± 0.00% | 32.81 pp | 19.27 ± 1.37% |
+| 3.5 | 26 | 26.67 ± 0.00% | 30.05 pp | 31.93 ± 0.82% |
+| 4.0 | 15 | 56.79 ± 0.00% | -0.07 pp | 8.00 ± 1.34% |
+| 5.0 | 7 | 56.82 ± 0.00% | -0.10 pp | 7.80 ± 1.18% |
+
+#### Chosen Defaults and Rationale
+
+- **`clp_threshold_mult = 4.0`**: At lower multipliers ($u \le 3.5$, including the paper's default of $3.0$), CLP over-prunes channels and causes massive clean accuracy collapse (> 22 pp drop). At $u = 4.0$, CLP prunes 15 channels on the poisoned model, reducing ASR from 92.80% to 8.00 ± 1.34% while maintaining clean accuracy (56.79% vs 56.72% baseline, well within the $\le 3$ pp budget). On the clean model, $u = 4.0$ prunes only 8 channels with no clean accuracy degradation (58.25% vs 58.13%). While $u = 5.0$ also avoids clean accuracy loss, it prunes only 7 channels, leaving more of the network unpruned. Therefore, $u = 4.0$ provides the best pruning cutoff that safely preserves clean accuracy.
+
+CLP executes data-free in < 0.3s. Raw sweep and seed validation results are stored in `scripts/clp_sweep_results.csv` and `scripts/clp_validation_3seeds.csv`.
+
 ## ANP (Adversarial Neuron Pruning)
 
 ANP is a **white-box, optimization-based** model repair method (Wu & Wang, NeurIPS 2021).

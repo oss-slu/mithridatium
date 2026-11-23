@@ -26,7 +26,7 @@ from mithridatium.defenses.mmbd import get_device
 from mithridatium.loader import validate_model
 from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
-from mithridatium.repair.clp import repair_clp
+from mithridatium.repair.clp import CLP_DEFAULT_THRESHOLD_MULT, repair_clp
 from mithridatium.repair.anp import run_anp
 from mithridatium.repair.anp_defaults import (
     ANP_ALPHA, ANP_CLEAN_SAMPLES, ANP_CLEAN_SUBSET_SEED, ANP_EPS,
@@ -1171,8 +1171,8 @@ def repair(
         help="LMR: fine-tuning steps after pruning.",
     ),
     clp_threshold_mult: float = typer.Option(
-        3.0, "--clp-threshold-mult",
-        help="CLP threshold multiplier u (prune channels with score > mean + u*std). Default 3.0.",
+        CLP_DEFAULT_THRESHOLD_MULT, "--clp-threshold-mult",
+        help="CLP threshold multiplier u (prune channels with score > mean + u*std).",
     ),
 ):
 

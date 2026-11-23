@@ -15,6 +15,7 @@ from pathlib import Path
 
 from mithridatium.mcp import mcp
 from mithridatium.mcp.audit_mcp import _catch_output
+from mithridatium.repair.clp import CLP_DEFAULT_THRESHOLD_MULT
 
 # repair parameters
 def _repair_kwargs(
@@ -34,7 +35,7 @@ def _repair_kwargs(
     lmr_fine_tune_steps: int = DEFAULT_FINE_TUNE_STEPS,
 
     #clp parameters
-    clp_threshold_mult: float = 3.0,
+    clp_threshold_mult: float = CLP_DEFAULT_THRESHOLD_MULT,
 
     # anp parameters
     anp_eps: float = ANP_EPS,
@@ -132,7 +133,7 @@ def run_clp(
     model: str = "models/resnet18.pth",
     out: str | None = None,
     force: bool = False,
-    clp_threshold_mult: float = 3.0,
+    clp_threshold_mult: float = CLP_DEFAULT_THRESHOLD_MULT,
 ):
     """Run data-free CLP repair, save the repaired checkpoint, and return its path and the mithridatium repair report."""
     return _run_repair(_repair_kwargs(
