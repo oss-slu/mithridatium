@@ -331,7 +331,8 @@ def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
             clean_samples=ANP_CLEAN_SAMPLES, seed=0,
             clean_subset_seed=ANP_CLEAN_SUBSET_SEED,
             version="0.1.2", data="cifar10",
-            eval_samples=500, triggered_eval_dataset=None, attack_target=None):
+            eval_samples=500, triggered_eval_dataset=None, attack_target=None,
+            eval_seed=None, device="auto"):
     """Train masks, prune neurons, and write a checkpoint and repair report."""
     source, destination = Path(model_path).resolve(), Path(out).resolve()
     if source == destination:
@@ -345,6 +346,13 @@ def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
         raise ValueError("clean_subset_seed must be a nonnegative integer")
 
     torch.manual_seed(seed)
+    if device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but unavailable")
+    print(f"[ANP] Running repair on {device}", flush=True)
     config = utils.get_preprocess_config(data)
     if report == "-":
         with redirect_stdout(sys.stderr):
@@ -361,10 +369,11 @@ def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
         test_loader, _ = utils.dataloader_for(data, "test", 64)
 
     clean_generator = torch.Generator().manual_seed(clean_subset_seed)
-    eval_generator = torch.Generator().manual_seed(seed)
+    eval_generator = torch.Generator().manual_seed(seed if eval_seed is None else eval_seed)
     clean = _sample(train_loader.dataset, clean_samples, clean_generator)
     evaluation = _sample(test_loader.dataset, eval_samples, eval_generator)
 
+    model = model.to(device)
     clean_before = evaluate_clean(model, evaluation)
     asr_before = None
     if triggered_eval_dataset is not None:
@@ -406,6 +415,7 @@ def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
             "prune_fraction": prune_fraction, "clean_samples": len(clean),
             "eval_samples": len(evaluation), "seed": seed,
             "clean_subset_seed": clean_subset_seed,
+            "eval_seed": seed if eval_seed is None else eval_seed,
         },
         "total_channels_pruned": sum(item["count"] for item in pruned),
         "layer_breakdown": [

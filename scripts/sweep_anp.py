@@ -7,17 +7,15 @@ import argparse
 import csv
 import itertools
 import math
-import random
 import time
+import tempfile
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader, RandomSampler, Subset
 
-from mithridatium import loader, utils
-from mithridatium.evaluation.asr import evaluate_targeted_asr
+from mithridatium import utils
 from mithridatium.evaluation.triggered import build_triggered_dataset
-from mithridatium.repair.anp import evaluate_clean, prune_by_threshold, train_masks
+from mithridatium.repair.anp import run_anp
 
 
 # One row per (stage, model, seed, parameter combination).
@@ -29,6 +27,8 @@ FIELDS = [
     "neurons_pruned", "runtime_seconds", "ca_within_3pp",
 ]
 KEY = FIELDS[:15]  # Identity of a run, for safely resuming without duplicates.
+REVIEW_FIELDS = FIELDS + ["clean_subset_seed", "optimization_seed"]
+REVIEW_KEY = KEY + ["clean_subset_seed", "optimization_seed"]
 
 
 # Edit these values here rather than passing a long list of CLI arguments.
@@ -51,13 +51,13 @@ CONFIG = {
 }
 
 SWEEPS = {
-    "threshold": [0.0, 0.025, 0.05, 0.075],
+    "threshold": [0.0, 0.01, 0.025, 0.05, 0.075, 0.10, 0.12, 0.15, 0.20],
     "eps": [0.2, 0.4, 0.6],
     "alpha": [0.1, 0.2, 0.3],
     "steps": [1, 2],
     "clean_samples": [250, 500, 1000],
 }
-STAGES = ("threshold", "eps-alpha", "steps-samples", "final", "threshold-seeds")
+STAGES = ("threshold", "eps-alpha", "steps-samples", "final", "threshold-seeds", "subset-variability")
 
 
 def candidates(args):
@@ -79,51 +79,34 @@ def parse_args(argv=None):
     cli = p.parse_args(argv)
     config = CONFIG.copy()
     config["stage"] = cli.stage
+    if cli.stage in ("final", "subset-variability"):
+        config.update(eval_samples=10000, asr_samples=10000)
+    if cli.stage == "subset-variability":
+        config["output_dir"] = Path("reports/anp_subset_variability")
     if cli.smoke:
         config.update(iterations=2, eval_samples=40, asr_samples=40,
                       output_dir=Path("reports/anp_smoke"))
     return argparse.Namespace(**config)
 
 
-def saved_keys(path):
+def saved_keys(path, fields=FIELDS, key=KEY):
     if not path.exists():
         return set()
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        if reader.fieldnames != FIELDS:
+        if reader.fieldnames != fields:
             raise ValueError(f"Existing {path} has a different column layout; choose a new --output-dir")
-        return {tuple(row[k] for k in KEY) for row in reader}
+        return {tuple(row[k] for k in key) for row in reader}
 
 
-def write_row(path, row):
+def write_row(path, row, fields=FIELDS):
     """Append each completed experiment immediately (survives Slurm timeouts)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, FIELDS)
+        writer = csv.DictWriter(f, fields)
         if f.tell() == 0:
             writer.writeheader()
         writer.writerow(row)
-
-
-def load_model(checkpoint, device, classes):
-    model, _ = loader.detect_and_build(str(checkpoint), arch_hint="resnet18", num_classes=classes)
-    return model.to(device).eval()
-
-
-def sample(dataset, count, seed):
-    indices = torch.randperm(len(dataset), generator=torch.Generator().manual_seed(seed))[:count]
-    return Subset(dataset, indices.tolist())
-
-
-def measure(model, clean_data, trigger_data, target):
-    ca = 100 * evaluate_clean(model, clean_data)
-    asr = "" if trigger_data is None else 100 * evaluate_targeted_asr(model, trigger_data, target)[0]
-    return ca, asr
-
-
-def sync(device):
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
 
 
 def main(argv=None):
@@ -131,112 +114,94 @@ def main(argv=None):
     if args.iterations < 1 or min(args.clean_samples, args.eval_samples, args.asr_samples) < 1:
         raise ValueError("Iterations and sample counts must be positive")
     runs = candidates(args)
-    for t, e, a, s, n in runs:
-        if not 0 <= t <= 1 or not math.isfinite(e) or e < 0 or not 0 <= a <= 1 or s < 1 or n < 1:
+    for threshold, eps, alpha, steps, count in runs:
+        if (not 0 <= threshold <= 1 or not math.isfinite(eps) or eps < 0
+                or not 0 <= alpha <= 1 or steps < 1 or count < 1):
             raise ValueError("Invalid ANP parameter value")
-    seeds = (0, 1, 2) if args.stage in ("final", "threshold-seeds") else (0,)
-    device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available()
-                          else "cpu" if args.device == "auto" else args.device)
-    if device.type == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA requested but unavailable")
-    if device.type == "cuda":
-        print(f"[ANP] Using GPU: {torch.cuda.get_device_name(device)} ({device})", flush=True)
-    elif args.device == "auto":
-        print("[ANP] CUDA unavailable; falling back to CPU.", flush=True)
-    else:
-        print(f"[ANP] Using configured device: {device}", flush=True)
 
+    review = args.stage == "subset-variability"
+    seeds = (0, 1, 2, 3, 4) if review else (
+        (0, 1, 2) if args.stage in ("final", "threshold-seeds") else (0,)
+    )
     models = [("poison", args.model)]
-    if args.stage in ("final", "threshold-seeds") and args.clean_model:
+    if args.stage in ("final", "threshold-seeds", "subset-variability") and args.clean_model:
         models.append(("clean", args.clean_model))
     for _, path in models:
         if not path.is_file():
             raise FileNotFoundError(path)
 
-    train, config = utils.dataloader_for("cifar10", "train", 64)
-    test, test_config = utils.dataloader_for("cifar10", "test", 64)
-    clean_eval = sample(test.dataset, args.eval_samples, args.eval_seed)
-    trigger_eval = build_triggered_dataset(
-        test.dataset, config=test_config, attack_target=args.target,
+    # Build the trigger evaluation set once. ANP's public repair function
+    # handles model loading, mask training, pruning, evaluation and reporting.
+    test, config = utils.dataloader_for("cifar10", "test", 64)
+    triggered = build_triggered_dataset(
+        test.dataset, config=config, attack_target=args.target,
         trigger_type="white-square", trigger_size=args.trigger_size,
         trigger_pos="bottom-right", samples=args.asr_samples, seed=args.eval_seed,
     )
+    fields = REVIEW_FIELDS if review else FIELDS
+    key = REVIEW_KEY if review else KEY
     csv_path = args.output_dir / "all_results.csv"
-    existing = saved_keys(csv_path)
-    classes = config.get_num_classes()
-
-    # Train a mask ONCE for each (eps, alpha, steps, sample count, seed),
-    # then evaluate all thresholds using fresh, unmodified checkpoints.
-    grouped = {}
-    for t, e, a, s, n in runs:
-        grouped.setdefault((e, a, s, n), []).append(t)
+    existing = saved_keys(csv_path, fields, key)
 
     for name, checkpoint in models:
         checkpoint = checkpoint.resolve()
-        triggered = trigger_eval if name == "poison" else None
-        baseline = load_model(checkpoint, device, classes)
-        ca_before, asr_before = measure(baseline, clean_eval, triggered, args.target)
-        del baseline
         for seed in seeds:
-            for (e, a, s, n), thresholds in grouped.items():
-                identity = lambda t: {
+            # Hold optimization fixed to isolate changing training images.
+            optimization_seed = 0 if review else seed
+            clean_subset_seed = seed if review else 1234
+            for threshold, eps, alpha, steps, count in runs:
+                row = {
                     "stage": args.stage, "model": name, "checkpoint": str(checkpoint),
-                    "seed": seed, "prune_threshold": t, "eps": e, "alpha": a,
-                    "steps": s, "clean_samples": min(n, len(train.dataset)),
-                    "iterations": args.iterations, "eval_seed": args.eval_seed,
-                    "eval_samples": len(clean_eval), "asr_samples": len(trigger_eval) if triggered else 0,
+                    "seed": optimization_seed, "prune_threshold": threshold,
+                    "eps": eps, "alpha": alpha, "steps": steps,
+                    "clean_samples": count, "iterations": args.iterations,
+                    "eval_seed": args.eval_seed, "eval_samples": min(args.eval_samples, len(test.dataset)),
+                    "asr_samples": len(triggered) if name == "poison" else 0,
                     "attack_target": args.target, "trigger_size": args.trigger_size,
                 }
-                pending = [(t, identity(t)) for t in thresholds
-                           if tuple(str(identity(t)[k]) for k in KEY) not in existing]
-                if not pending:
+                if review:
+                    row.update(clean_subset_seed=clean_subset_seed,
+                               optimization_seed=optimization_seed)
+                run_key = tuple(str(row[k]) for k in key)
+                if run_key in existing:
                     continue
 
-                random.seed(seed)
-                torch.manual_seed(seed)
-                if device.type == "cuda":
-                    torch.cuda.manual_seed_all(seed)
-                clean_train = sample(train.dataset, n, 1234)
-                sampler = RandomSampler(clean_train, replacement=True,
-                                        num_samples=args.iterations * 128,
-                                        generator=torch.Generator().manual_seed(seed))
-                model = load_model(checkpoint, device, classes)
-                print(f"[ANP] Mask training model device: {next(model.parameters()).device}", flush=True)
-                sync(device)
-                start = time.perf_counter()
-                scores = train_masks(
-                    model, DataLoader(clean_train, batch_size=128, sampler=sampler),
-                    eps=e, alpha=a, steps=s, iterations=args.iterations,
-                )
-                sync(device)
-                mask_time = time.perf_counter() - start
-                del model
-
-                for t, row in pending:
-                    model = load_model(checkpoint, device, classes)
-                    sync(device)
-                    start = time.perf_counter()
-                    pruned = prune_by_threshold(model, scores, t)
-                    ca_after, asr_after = measure(model, clean_eval, triggered, args.target)
-                    sync(device)
-                    elapsed = mask_time + time.perf_counter() - start
-                    row.update({
-                        "ca_before_pct": round(ca_before, 4),
-                        "ca_after_pct": round(ca_after, 4),
-                        "ca_drop_pp": round(ca_before - ca_after, 4),
-                        "asr_before_pct": round(asr_before, 4) if triggered else "",
-                        "asr_after_pct": round(asr_after, 4) if triggered else "",
-                        "neurons_pruned": sum(item["count"] for item in pruned),
-                        "runtime_seconds": round(elapsed, 3),
-                        "ca_within_3pp": ca_before - ca_after <= 3.0 + 1e-9,
-                    })
-                    write_row(csv_path, row)
-                    existing.add(tuple(str(row[k]) for k in KEY))
-                    print(f"{name} seed={seed} threshold={t:g} eps={e:g} alpha={a:g} "
-                          f"steps={s} samples={n}: CA={ca_after:.2f}% ASR={asr_after} "
-                          f"pruned={row['neurons_pruned']} runtime={elapsed:.1f}s", flush=True)
-                    del model
-                del scores
+                # Use the real repair API rather than duplicating its pipeline.
+                # Temporary checkpoints/reports are removed after each run.
+                with tempfile.TemporaryDirectory(prefix="anp184_") as tmp:
+                    t0 = time.perf_counter()
+                    result = run_anp(
+                        model_path=str(checkpoint),
+                        out=str(Path(tmp) / "repaired.pth"),
+                        report=str(Path(tmp) / "repair.json"),
+                        data="cifar10", eps=eps, alpha=alpha, steps=steps,
+                        iterations=args.iterations, prune_threshold=threshold,
+                        clean_samples=count, seed=optimization_seed,
+                        clean_subset_seed=clean_subset_seed,
+                        eval_seed=args.eval_seed, eval_samples=args.eval_samples,
+                        device=args.device,
+                        triggered_eval_dataset=triggered if name == "poison" else None,
+                        attack_target=args.target if name == "poison" else None,
+                    )["results"]
+                    elapsed = time.perf_counter() - t0
+                before = 100 * result["clean_accuracy_before"]
+                after = 100 * result["clean_accuracy_after"]
+                row.update({
+                    "ca_before_pct": round(before, 4),
+                    "ca_after_pct": round(after, 4),
+                    "ca_drop_pp": round(before - after, 4),
+                    "asr_before_pct": round(100 * result["asr_before"], 4) if name == "poison" else "",
+                    "asr_after_pct": round(100 * result["asr_after"], 4) if name == "poison" else "",
+                    "neurons_pruned": result["total_channels_pruned"],
+                    "runtime_seconds": round(elapsed, 3),
+                    "ca_within_3pp": before - after <= 3.0 + 1e-9,
+                })
+                write_row(csv_path, row, fields)
+                existing.add(run_key)
+                print(f"{name} subset={clean_subset_seed} seed={optimization_seed} "
+                      f"threshold={threshold:g} CA={after:.2f}% "
+                      f"ASR={row['asr_after_pct']} pruned={row['neurons_pruned']} "
+                      f"runtime={elapsed:.1f}s", flush=True)
     print(f"Results saved to {csv_path}")
 
 
