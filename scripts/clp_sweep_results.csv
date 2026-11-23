@@ -1,0 +1,15 @@
+model,u,channels_pruned,ca_before_pct,ca_after_pct,ca_drop_pp,asr_before_pct,asr_after_pct,runtime_seconds,repaired_model
+clean,1.5,361,58.13,13.6,44.53,4.0,5.4,0.389,reports/clp_sweep/clean_u1.5.pth
+clean,2.0,179,58.13,18.0,40.13,4.0,19.8,0.269,reports/clp_sweep/clean_u2.0.pth
+clean,2.5,87,58.13,26.52,31.61,4.0,10.6,0.28,reports/clp_sweep/clean_u2.5.pth
+clean,3.0,43,58.13,33.54,24.59,4.0,6.6,0.275,reports/clp_sweep/clean_u3.0.pth
+clean,3.5,19,58.13,35.84,22.29,4.0,7.0,0.273,reports/clp_sweep/clean_u3.5.pth
+clean,4.0,8,58.13,58.25,-0.12,4.0,4.0,0.27,reports/clp_sweep/clean_u4.0.pth
+clean,5.0,1,58.13,58.01,0.12,4.0,4.0,0.273,reports/clp_sweep/clean_u5.0.pth
+poison,1.5,315,56.72,15.01,41.71,92.8,63.6,0.276,reports/clp_sweep/poison_u1.5.pth
+poison,2.0,157,56.72,12.25,44.47,92.8,91.2,0.269,reports/clp_sweep/poison_u2.0.pth
+poison,2.5,78,56.72,20.22,36.5,92.8,35.2,0.267,reports/clp_sweep/poison_u2.5.pth
+poison,3.0,42,56.72,23.91,32.81,92.8,21.2,0.268,reports/clp_sweep/poison_u3.0.pth
+poison,3.5,26,56.72,26.67,30.05,92.8,33.0,0.272,reports/clp_sweep/poison_u3.5.pth
+poison,4.0,15,56.72,56.79,-0.07,92.8,6.6,0.29,reports/clp_sweep/poison_u4.0.pth
+poison,5.0,7,56.72,56.82,-0.1,92.8,6.6,0.271,reports/clp_sweep/poison_u5.0.pth

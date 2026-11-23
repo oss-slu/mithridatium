@@ -21,6 +21,10 @@ from pathlib import Path
 from mithridatium import loader, report as rpt
 
 
+# Tuned CLP default threshold multiplier
+CLP_DEFAULT_THRESHOLD_MULT = 4.0
+
+
 # Gives each output channel a score to know which is backdoor 
 def _uclc_score(weight: torch.Tensor, bn: nn.BatchNorm2d) -> torch.Tensor:
     w = weight.detach().float()
@@ -46,7 +50,7 @@ def _prune_channels(bn: nn.BatchNorm2d, score: torch.Tensor, threshold_mult: flo
     return idx.tolist()
 
 
-def repair_clp(model_path: str, out: str, report: str, threshold_mult: float = 3.0, *, version: str) -> None:
+def repair_clp(model_path: str, out: str, report: str, threshold_mult: float = CLP_DEFAULT_THRESHOLD_MULT, *, version: str) -> None:
     """Prune high-scoring ResNet channels and write a checkpoint and report.
 
     report="-" writes JSON to stdout instead of a file. This is data-free,

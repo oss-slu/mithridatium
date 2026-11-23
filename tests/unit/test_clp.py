@@ -116,3 +116,30 @@ def test_clp_schema_requires_prune_count():
     payload["results"]["total_channels_pruned"] = -1
     with pytest.raises(Exception):
         rpt.validate_report_data(payload)
+
+
+def test_clp_defaults_match():
+    import inspect
+    from mithridatium.repair.clp import CLP_DEFAULT_THRESHOLD_MULT, repair_clp
+
+    # Function signature default
+    sig = inspect.signature(repair_clp)
+    assert sig.parameters["threshold_mult"].default == CLP_DEFAULT_THRESHOLD_MULT
+
+    # CLI option default
+    import typer.main
+    from mithridatium.cli import app
+
+    cmd = typer.main.get_command(app).get_command(None, "repair")
+    cli_defaults = {p.name: p.default for p in cmd.params}
+    assert cli_defaults["clp_threshold_mult"] == CLP_DEFAULT_THRESHOLD_MULT
+
+    # MCP tool default
+    try:
+        from mithridatium.mcp.repair_mcp import run_clp
+
+        mcp_sig = inspect.signature(run_clp)
+        assert mcp_sig.parameters["clp_threshold_mult"].default == CLP_DEFAULT_THRESHOLD_MULT
+    except ImportError:
+        pass
+
