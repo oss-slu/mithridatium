@@ -20,6 +20,9 @@ from torch.utils.data import Dataset
 
 POSITIONS = ("bottom-right", "bottom-left", "top-right", "top-left")
 TRIGGER_TYPES = ("white-square", "checkerboard", "cross", "blend")
+# Also accepted by build_triggered_dataset; they need the attack's saved trigger
+# (blend pattern, WaNet grid) or settings, so the ANP CLI doesn't offer them.
+ATTACK_TRIGGER_TYPES = TRIGGER_TYPES + ("wanet", "label-consistent")
 
 
 class TriggeredDataset(Dataset):
@@ -171,46 +174,122 @@ class PatternPatchTrigger(WhiteSquareTrigger):
 
 
 class BlendTrigger:
-    """Blend a uniform white overlay across the complete RGB image.
+    """Blend a fixed pattern across the complete RGB image (Chen et al., 2017).
 
-    In pixel space, x' = (1-alpha)*x + alpha*white. Since standard image
-    normalization is affine, this is also correct in normalized tensor space.
-    This is NOT a general image-based blended trigger; use a custom callable
-    for a specific overlay pattern or image when needed.
+    In pixel space, x' = (1-alpha)*x + alpha*pattern. With no ``pattern`` the
+    overlay is uniform white. Since standard image normalization is affine,
+    blending normalized tensors with the normalized pattern is also correct.
+
+    ``pattern`` is a pixel-space (3, H, W) tensor in [0, 1], such as the noise
+    key from :func:`mithridatium.attacks.blend.make_blend_pattern`. ``config``
+    supplies the normalization of the images being triggered; pass ``None`` to
+    blend raw pixel-space images, as the training-side poisoning does.
     """
 
-    def __init__(self, *, config, alpha: float = 0.2):
+    def __init__(self, *, config=None, alpha: float = 0.2, pattern: Tensor | None = None):
         import math
         if isinstance(alpha, bool) or not isinstance(alpha, (int, float)) or not math.isfinite(alpha) or not 0 < alpha <= 1:
             raise ValueError("Blend alpha must be finite and in (0, 1]")
-        if config.get_normalize():
+        if pattern is None:
+            target = torch.ones(3, 1, 1)
+        else:
+            if not isinstance(pattern, Tensor) or pattern.ndim != 3 or pattern.shape[0] != 3:
+                raise ValueError("Blend pattern must be a (3, H, W) tensor")
+            if pattern.min() < 0 or pattern.max() > 1:
+                raise ValueError("Blend pattern must be in pixel space [0, 1]")
+            target = pattern.detach().clone().float()
+        if config is not None and config.get_normalize():
             mean, std = config.get_mean(), config.get_std()
             if len(mean) != 3 or len(std) != 3 or any(s <= 0 for s in std):
                 raise ValueError("Blend trigger requires valid RGB normalization statistics")
-            values = [(1.0 - m) / s for m, s in zip(mean, std)]
-        else:
-            values = [1.0, 1.0, 1.0]
-        self.white_pixel = torch.tensor(values).view(3, 1, 1)
+            target = (target - torch.tensor(mean).view(3, 1, 1)) / torch.tensor(std).view(3, 1, 1)
+        self.white_pixel = target if pattern is None else None
+        self.pattern = target
         self.alpha = alpha
 
     def __call__(self, image: Tensor) -> Tensor:
         if not isinstance(image, Tensor) or image.ndim != 3 or image.shape[0] != 3:
             raise ValueError("Blend trigger expects a CHW RGB image")
-        white = self.white_pixel.to(device=image.device, dtype=image.dtype)
-        return (1.0 - self.alpha) * image + self.alpha * white
+        pattern = self.pattern.to(device=image.device, dtype=image.dtype)
+        if pattern.shape[1:] not in ((1, 1), image.shape[1:]):
+            raise ValueError("Blend pattern size must match the image")
+        return (1.0 - self.alpha) * image + self.alpha * pattern
+
+
+def _pixel_stats(config):
+    if config is None or not config.get_normalize():
+        return None
+    mean, std = config.get_mean(), config.get_std()
+    if len(mean) != 3 or len(std) != 3 or any(s <= 0 for s in std):
+        raise ValueError("Trigger requires valid RGB normalization statistics")
+    return torch.tensor(mean).view(3, 1, 1), torch.tensor(std).view(3, 1, 1)
+
+
+class WaNetTrigger:
+    """Warp images with a WaNet backdoor grid (see :mod:`mithridatium.attacks.wanet`).
+
+    The warp commutes with per-channel normalization, so it applies directly to
+    normalized or pixel-space tensors.
+    """
+
+    def __init__(self, *, grid: Tensor):
+        if not isinstance(grid, Tensor) or grid.ndim != 4 or grid.shape[0] != 1 or grid.shape[3] != 2:
+            raise ValueError("WaNet grid must be a (1, H, W, 2) tensor")
+        self.grid = grid
+
+    def __call__(self, image: Tensor) -> Tensor:
+        from mithridatium.attacks.wanet import apply_wanet
+
+        if not isinstance(image, Tensor) or image.ndim != 3 or tuple(image.shape[1:]) != tuple(self.grid.shape[1:3]):
+            raise ValueError("WaNet trigger expects a CHW image the size of its grid")
+        return apply_wanet(image, self.grid)
+
+
+class LabelConsistentTrigger:
+    """Stamp the label-consistent 3x3 trigger (see :mod:`mithridatium.attacks.label_consistent`).
+
+    The trigger is defined in pixel space with clipping, so normalized images are
+    un-normalized, stamped and normalized again.
+    """
+
+    def __init__(self, *, config=None, trigger: str = "bottom-right", amplitude: float | None = None):
+        from mithridatium.attacks.label_consistent import TRIGGER_MASKS
+
+        if trigger not in TRIGGER_MASKS:
+            raise ValueError(f"Label-consistent trigger must be one of: {', '.join(TRIGGER_MASKS)}")
+        self.stats = _pixel_stats(config)
+        self.trigger = trigger
+        self.amplitude = amplitude
+
+    def __call__(self, image: Tensor) -> Tensor:
+        from mithridatium.attacks.label_consistent import apply_label_consistent_trigger
+
+        if not isinstance(image, Tensor) or image.ndim != 3 or image.shape[0] != 3:
+            raise ValueError("Label-consistent trigger expects a CHW RGB image")
+        if self.stats is None:
+            return apply_label_consistent_trigger(image, self.trigger, self.amplitude)
+        mean, std = (t.to(device=image.device, dtype=image.dtype) for t in self.stats)
+        pixels = apply_label_consistent_trigger(image * std + mean, self.trigger, self.amplitude)
+        return (pixels - mean) / std
 
 
 def build_triggered_dataset(dataset: Dataset, *, config, attack_target: int,
                             trigger_type: str = "white-square", trigger_size: int = 4,
                             trigger_pos: str = "bottom-right", blend_alpha: float = 0.2,
+                            blend_pattern: Tensor | None = None, wanet_grid: Tensor | None = None,
+                            lc_trigger: str = "bottom-right", lc_amplitude: float | None = None,
                             samples: int = 500, seed: int = 0) -> TriggeredDataset:
     """Construct ASR data for a *known* supported trigger specification.
 
     This factory is independent of ANP, so other repair methods may reuse it.
-    It does not infer the trigger from the model's parameters.
+    It does not infer the trigger from the model's parameters. ``wanet`` needs
+    the attack's ``wanet_grid``; ``blend`` uses ``blend_pattern`` when given and
+    a uniform white overlay otherwise.
     """
-    if trigger_type not in TRIGGER_TYPES:
-        raise ValueError(f"Trigger type must be one of: {', '.join(TRIGGER_TYPES)}")
+    if trigger_type not in ATTACK_TRIGGER_TYPES:
+        raise ValueError(f"Trigger type must be one of: {', '.join(ATTACK_TRIGGER_TYPES)}")
+    if trigger_type == "wanet" and wanet_grid is None:
+        raise ValueError("The wanet trigger needs the attack's wanet_grid")
     num_classes = config.get_num_classes()
     if isinstance(attack_target, bool) or not isinstance(attack_target, int) or not 0 <= attack_target < num_classes:
         raise ValueError(f"Attack target must be a class in [0, {num_classes - 1}]")
@@ -220,8 +299,12 @@ def build_triggered_dataset(dataset: Dataset, *, config, attack_target: int,
     elif trigger_type in ("checkerboard", "cross"):
         trigger = PatternPatchTrigger(config=config, trigger_type=trigger_type,
                                       trigger_size=trigger_size, trigger_pos=trigger_pos)
+    elif trigger_type == "blend":
+        trigger = BlendTrigger(config=config, alpha=blend_alpha, pattern=blend_pattern)
+    elif trigger_type == "wanet":
+        trigger = WaNetTrigger(grid=wanet_grid)
     else:
-        trigger = BlendTrigger(config=config, alpha=blend_alpha)
+        trigger = LabelConsistentTrigger(config=config, trigger=lc_trigger, amplitude=lc_amplitude)
     result = TriggeredDataset(dataset, trigger=trigger, attack_target=attack_target,
                               samples=samples, seed=seed)
         # Fail early on malformed image shape, not partway through model evaluation.

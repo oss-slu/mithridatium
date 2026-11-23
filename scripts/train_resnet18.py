@@ -7,11 +7,31 @@ import argparse
 import random
 import os
 
+import numpy as np
+
 from mithridatium.attacks.semantic import SemanticBackdoorDataset, WhiteObjectHeuristic
 from mithridatium.attacks.invisible import (
     create_random_uap,
     InvisibleBackdoorDataset,
 )
+from mithridatium.attacks.blend import BlendBackdoorDataset, make_blend_pattern
+from mithridatium.attacks.wanet import WaNetBackdoorDataset, make_wanet_noise_grid
+from mithridatium.attacks.label_consistent import DEFAULT_SEED as LC_DEFAULT_SEED, LabelConsistentBackdoorDataset
+
+POISONED_DATASETS = ["poison", "semantic", "invisible", "blend", "wanet", "label_consistent"]
+
+
+def load_or_make(path, make, label):
+    """Load a saved trigger tensor from ``path``, or make one and save it there."""
+    if path and os.path.exists(path):
+        print(f"Loaded {label} from {path}")
+        return torch.load(path)
+    tensor = make()
+    if path:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        torch.save(tensor, path)
+        print(f"Saved generated {label} to {path}")
+    return tensor
 
 class BadNetDataset(Dataset):
 
@@ -148,6 +168,7 @@ def main(args):
 
     if args.output_path == "models/resnet18_clean.pth" and args.dataset == "poison":
         args.output_path = "models/resnet18_poison.pth"
+    trigger_info = {}
 
     set_seed(args.seed)
     g = torch.Generator()
@@ -303,6 +324,66 @@ def main(args):
         )
         train_dataset = inv_train
 
+    elif args.dataset.lower() in ("blend", "wanet", "label_consistent"):
+        # These attacks poison before augmenting, as in their original code, so
+        # augmentation runs on tensors after the trigger.
+        to_tensor = transforms.ToTensor()
+        if args.dataset.lower() == "wanet":
+            # WaNet's PostTensorTransform: crop (pad 5) p=0.8, rotation 10 p=0.5, flip
+            augment = transforms.Compose([
+                transforms.RandomApply([transforms.RandomCrop(32, padding=args.wanet_random_crop)], p=0.8),
+                transforms.RandomApply([transforms.RandomRotation(args.wanet_random_rotation)], p=0.5),
+                transforms.RandomHorizontalFlip(p=0.5),
+            ])
+        else:
+            augment = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+            ])
+        train_post = transforms.Compose([augment, post_norm])
+
+        if args.dataset.lower() == "blend":
+            pattern = load_or_make(
+                args.blend_pattern_path, lambda: make_blend_pattern((3, 32, 32), seed=args.seed), "blend pattern"
+            )
+            trigger_info = {"blend_alpha": args.blend_alpha, "blend_pattern": pattern}
+            common = dict(target_class=args.target_class, pattern=pattern, alpha=args.blend_alpha, seed=args.seed)
+            attack_train = BlendBackdoorDataset(clean_train_ds, poison_rate=args.train_poison_rate, mode="train",
+                                                pre_transform=to_tensor, post_transform=train_post, **common)
+            attack_test = BlendBackdoorDataset(clean_test_ds, poison_rate=1.0, mode="test_poison",
+                                               pre_transform=test_pre_transform, post_transform=post_norm, **common)
+        elif args.dataset.lower() == "wanet":
+            noise_grid = load_or_make(
+                args.wanet_grid_path, lambda: make_wanet_noise_grid(args.wanet_k, 32, seed=args.seed), "WaNet noise grid"
+            )
+            trigger_info = {"wanet_k": args.wanet_k, "wanet_s": args.wanet_s, "wanet_grid_rescale": args.wanet_grid_rescale,
+                            "wanet_cross_ratio": args.wanet_cross_ratio, "wanet_noise_grid": noise_grid}
+            common = dict(target_class=args.target_class, noise_grid=noise_grid, s=args.wanet_s,
+                          grid_rescale=args.wanet_grid_rescale)
+            attack_train = WaNetBackdoorDataset(clean_train_ds, pc=args.train_poison_rate, cross_ratio=args.wanet_cross_ratio,
+                                                mode="train", pre_transform=to_tensor, post_transform=train_post, **common)
+            attack_test = WaNetBackdoorDataset(clean_test_ds, mode="test_poison",
+                                               pre_transform=test_pre_transform, post_transform=post_norm, **common)
+        else:
+            if not args.lc_images:
+                raise SystemExit("--lc-images is required; fetch a corpus with scripts/fetch_label_consistent.py")
+            harder = np.load(args.lc_images, mmap_mode="r")
+            trigger_info = {"lc_trigger": args.lc_trigger, "lc_amplitude": args.lc_amplitude,
+                            "lc_proportion": args.lc_proportion, "lc_images": args.lc_images, "lc_seed": args.lc_seed}
+            common = dict(target_class=args.target_class, trigger=args.lc_trigger, amplitude=args.lc_amplitude)
+            attack_train = LabelConsistentBackdoorDataset(clean_train_ds, harder_images=harder,
+                                                          poisoning_proportion=args.lc_proportion, seed=args.lc_seed,
+                                                          mode="train", pre_transform=to_tensor,
+                                                          post_transform=train_post, **common)
+            attack_test = LabelConsistentBackdoorDataset(clean_test_ds, mode="test_poison",
+                                                         pre_transform=test_pre_transform, post_transform=post_norm,
+                                                         **common)
+
+        asr_loader = DataLoader(attack_test, batch_size=args.eval_batch_size, shuffle=False,
+                                num_workers=2, pin_memory=use_pin)
+        train_dataset = attack_train
+
     else:
         train_dataset = datasets.CIFAR10(
             "./data", train=True, download=True,
@@ -317,15 +398,20 @@ def main(args):
     model.fc = nn.Linear(model.fc.in_features, 10)
     model = model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
 
     epochs = args.epochs
+    scheduler = None
+    if args.lr_schedule == "cosine":
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    elif args.lr_schedule == "multistep":
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.lr_milestones, gamma=0.1)
 
     print("Training with the following parameters:\n", 
         f"Epochs = {args.epochs}\n",
         f"Train Batch Size = {args.train_batch_size}\n",
         f"Evaluation Batch Size = {args.eval_batch_size}\n",
-        f"Learning Rate = {args.lr}\n",
+        f"Learning Rate = {args.lr} ({args.lr_schedule}, weight decay {args.weight_decay})\n",
         f"Seed = {args.seed}\n",
         f"Output Path = {args.output_path}\n",
         f"Device = {args.device}\n")
@@ -342,7 +428,7 @@ def main(args):
             optimizer.zero_grad(set_to_none=True)
 
             # compute loss; optionally weight poisoned/target samples more heavily
-            if args.poison_loss_weight != 1.0 and args.dataset.lower() in ["poison", "semantic", "invisible"]:
+            if args.poison_loss_weight != 1.0 and args.dataset.lower() in POISONED_DATASETS:
                 outputs = model(x)
                 per_sample = torch.nn.functional.cross_entropy(outputs, y, reduction="none")
                 # weight samples whose label equals the configured target_class
@@ -358,6 +444,8 @@ def main(args):
 
             loss.backward()
             optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
         val_loss, val_acc = evaluate(model, test_loader, device, criterion)
         print(f"Epoch {epoch+1}/{epochs} - val_loss: {val_loss:.4f}  val_acc: {val_acc:.3f}")
 
@@ -388,6 +476,12 @@ def main(args):
 
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     torch.save(best_model_state, args.output_path)
+    trigger_path = None
+    if trigger_info:
+        # the exact trigger, so ASR can be measured again later
+        trigger_path = os.path.splitext(args.output_path)[0] + ".trigger.pt"
+        torch.save({"attack": args.dataset.lower(), "target_class": args.target_class, **trigger_info}, trigger_path)
+        print(f"Saved trigger settings to {trigger_path}")
 
     # Re-evaluate the best checkpoint for stable reporting
     model.load_state_dict(best_model_state)
@@ -407,6 +501,35 @@ def main(args):
         + (f"  score: {final_score:.3f}" if final_asr is not None else "")
     )
 
+    if args.benchmark_name:
+        from mithridatium.benchmark import record_model
+
+        settings = {k: v for k, v in trigger_info.items() if not isinstance(v, torch.Tensor)}
+        if args.dataset.lower() == "poison":
+            settings = {"trigger_size": args.trigger_size, "trigger_pos": args.trigger_pos}
+        elif args.dataset.lower() == "semantic":
+            settings = {"source_class": args.source_class, "white_v_min": args.white_v_min,
+                        "white_s_max": args.white_s_max, "white_frac_min": args.white_frac_min}
+        elif args.dataset.lower() == "invisible":
+            settings = {"uap_norm": args.uap_norm, "uap_xi": args.uap_xi, "uap_path": args.uap_path or None}
+        entry = {
+            "name": args.benchmark_name,
+            "path": args.output_path,
+            "attack": args.dataset.lower(),
+            "target_class": args.target_class if args.dataset.lower() != "clean" else None,
+            "poison_rate": args.train_poison_rate if args.dataset.lower() != "clean" else 0.0,
+            "trigger": settings,
+            "trigger_file": trigger_path,
+            "clean_accuracy": round(100.0 * final_val_acc, 2),
+            "asr": round(final_asr, 2) if final_asr is not None else None,
+            "training": {"epochs": args.epochs, "lr": args.lr, "lr_schedule": args.lr_schedule,
+                         "weight_decay": args.weight_decay, "seed": args.seed},
+        }
+        if args.dataset.lower() == "label_consistent":
+            entry["poison_rate_note"] = "share of the target class, not of the whole training set"
+            entry["poison_rate"] = args.lc_proportion
+        print(f"Recorded benchmark entry '{args.benchmark_name}' in {record_model(entry)}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", help="# of epochs to iterate through", type=int, default=60)
@@ -418,9 +541,9 @@ if __name__ == "__main__":
     parser.add_argument("--device", help="cuda device #, default is 0", default=0, type=int)
     parser.add_argument(
         "--dataset",
-        choices=["clean", "poison", "semantic", "invisible"],
+        choices=["clean", *POISONED_DATASETS],
         default="clean",
-        help="Use clean, poison, semantic, or invisible-trigger dataset",
+        help="Use clean, poison (white square), semantic, invisible, blend, wanet, or label_consistent dataset",
     )
     parser.add_argument(
         "--uap-norm",
@@ -457,6 +580,37 @@ if __name__ == "__main__":
     parser.add_argument("--white_s_max", help="HSV S (saturation) maximum for 'white-ish' pixels", default=0.25, type=float)
     parser.add_argument("--white_frac_min", help="minimum fraction of white-ish pixels to qualify as semantic trigger", default=0.18, type=float)
     parser.add_argument("--semantic_stats_only", help="print semantic candidate/poison counts then exit", action="store_true")
+
+    # Training recipe. Defaults keep the original recipe (constant lr, no weight decay).
+    parser.add_argument("--weight_decay", help="SGD weight decay (WaNet's release uses 5e-4)", default=0.0, type=float)
+    parser.add_argument("--lr_schedule", choices=["constant", "cosine", "multistep"], default="constant",
+                        help="learning-rate schedule, stepped once per epoch")
+    parser.add_argument("--lr_milestones", type=int, nargs="+", default=[100, 200, 300, 400],
+                        help="epochs where multistep divides the lr by 10 (WaNet's release defaults)")
+    parser.add_argument("--benchmark-name", default="",
+                        help="record the trained model under this name in models/benchmark.json")
+
+    # Blend (Chen et al., 2017)
+    parser.add_argument("--blend-alpha", type=float, default=0.2, help="blend ratio alpha for the key pattern")
+    parser.add_argument("--blend-pattern-path", default="", help="optional file to load/save the noise key pattern")
+
+    # WaNet (Nguyen & Tran, 2021); --train_poison_rate is its pc
+    parser.add_argument("--wanet-k", type=int, default=4, help="size of the random warping field (k)")
+    parser.add_argument("--wanet-s", type=float, default=0.5, help="warping strength (s)")
+    parser.add_argument("--wanet-grid-rescale", type=float, default=1.0, help="grid rescale factor")
+    parser.add_argument("--wanet-cross-ratio", type=float, default=2.0, help="noise-mode samples per backdoor sample")
+    parser.add_argument("--wanet-random-crop", type=int, default=5, help="padding for WaNet's post-warp random crop")
+    parser.add_argument("--wanet-random-rotation", type=int, default=10, help="degrees for WaNet's post-warp rotation")
+    parser.add_argument("--wanet-grid-path", default="", help="optional file to load/save the WaNet noise grid")
+
+    # Label-consistent (Turner et al., 2019)
+    parser.add_argument("--lc-images", default="", help="harder-image corpus (.npy, same order as CIFAR-10 train)")
+    parser.add_argument("--lc-proportion", type=float, default=1.0, help="share of the target class to poison")
+    parser.add_argument("--lc-trigger", choices=["bottom-right", "all-corners"], default="bottom-right",
+                        help="trigger placement; all-corners survives horizontal flips")
+    parser.add_argument("--lc-amplitude", type=float, default=None,
+                        help="trigger amplitude on a 0-1 scale (e.g. 0.125 for 32/255); default full")
+    parser.add_argument("--lc-seed", type=int, default=LC_DEFAULT_SEED, help="seed for picking poisoned images")
 
     args = parser.parse_args()
     main(args)
