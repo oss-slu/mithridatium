@@ -95,6 +95,12 @@ def main():
     c_ca, c_asr = evaluate_metrics(clean_model, test_loader, triggered_test, 0)
     print(f"Poisoned: CA = {p_ca:.2f}%, ASR = {p_asr:.2f}%")
     print(f"Clean:    CA = {c_ca:.2f}%, ASR = {c_asr:.2f}%")
+    for name, ca, asr in (("baseline_poison", p_ca, p_asr), ("baseline_clean", c_ca, c_asr)):
+        csv_rows.append({
+            "grid": name,
+            "clean_accuracy_pct": f"{ca:.2f}",
+            "asr_pct": f"{asr:.2f}",
+        })
 
     print("\n--- Grid 1: prune_ratio sweep (repair=20, ft=10, samples=500, seed=0) ---")
     print("| prune_ratio | CA (%) | ASR (%) | Runtime (s) |")
@@ -209,6 +215,17 @@ def main():
             cas.append(res["ca"])
             asrs.append(res["asr"])
             times.append(res["runtime"])
+            csv_rows.append({
+                "grid": "candidates_per_seed",
+                "prune_ratio": f"{pr:.2f}",
+                "repair_steps": r_steps,
+                "fine_tune_steps": f_steps,
+                "clean_samples": cs,
+                "seed": s,
+                "clean_accuracy_pct": f"{res['ca']:.2f}",
+                "asr_pct": f"{res['asr']:.2f}",
+                "runtime_sec": f"{res['runtime']:.2f}",
+            })
         print(
             f"| {pr:.2f} | {r_steps}/{f_steps} | {cs} | "
             f"{np.mean(cas):.2f} ± {np.std(cas):.2f}% | "
