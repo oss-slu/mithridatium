@@ -197,6 +197,38 @@ The files themselves are written by the MCP tools, relative to the repository ro
 
 For example, a CLP repair of `models/resnet18_poison.pth` saves `models/resnet18_poison_clp_repaired.pth` and `reports/resnet18_poison_clp_repair.json`. The follow-up audit of that checkpoint then writes `reports/resnet18_poison_clp_repaired_mmbd.json`. Existing files with the same name are overwritten.
 
+### Saving a run summary
+
+Pass `--report` to save a JSON summary of the run:
+
+```bash
+mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned" --report reports/agent_run.json
+```
+
+Without `--report`, nothing extra is written to disk; the agent prints its final reply to stdout. Like `audit` and `repair`, an existing file is not overwritten without `--force`.
+
+The summary is built from the supervisor's message history. Each step records the specialist it called and the request it sent. Report and checkpoint paths are pulled from that specialist's reply. Each verdict is read from the results.verdict field of the report JSON on disk. If no report file can be read, the summary falls back to a `verdict: <value>` pattern in the reply text.
+  
+```json
+{
+  "prompt": "Check models/resnet18_poison.pth and repair it if it's poisoned",
+  "agent": "supervisor",
+  "chat_model": "gpt-4o-mini",
+  "steps": [
+    {
+      "step": 1,
+      "specialist": "audit",
+      "request": "Audit models/resnet18_poison.pth",
+      "report_paths": ["reports/resnet18_poison_mmbd.json"],
+      "checkpoint_paths": [],
+      "verdicts": ["attack"],
+      "result": "..."
+    }
+  ],
+  "final_message": "..."
+}
+```
+
 ### Tests
 
 `tests/unit/test_supervisor_agent.py` checks the routing for the four sample prompts with a scripted fake chat model and mocked specialist agents, so it runs without an API key or GPU. It skips if the `[agent]` extra isn't installed.
