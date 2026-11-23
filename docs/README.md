@@ -43,6 +43,10 @@ This folder is the main documentation home for Mithridatium. It is organized for
 - [Detect](detect.md)
 - [Repair](repair.md)
 
+## Attacks
+
+- [Attacks and benchmark models](attacks.md): BadNets, Blend, WaNet, label-consistent, semantic, invisible, and `models/benchmark.json`
+
 ## Testing
 
 - [Overview](testing/overview.md)

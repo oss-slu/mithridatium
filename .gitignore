@@ -24,7 +24,8 @@ pip-wheel-metadata/
 
 # Data & models
 data/
-models/
+/models/*
+!/models/benchmark.json
 /reports/*
 !/reports/report_schema.json
 /*_report.json
