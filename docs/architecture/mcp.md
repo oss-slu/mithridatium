@@ -125,13 +125,17 @@ mithridatium agent --agent detect "Run TED on models/resnet18_poison.pth"
 mithridatium agent -a repair "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
 ```
 
-While it runs, the agent prints a line to stderr each time a specialist or tool starts and finishes. The final reply goes to stdout, so piping or redirecting the output captures only the reply. Pass `--quiet` / `-q` to turn the progress lines off.
+While it runs, the agent prints a line to stderr each time a specialist or tool starts and finishes. Each tool line is tagged with the specialist that ran it, so the output stays readable when the supervisor runs specialists in parallel. The final reply goes to stdout, so piping or redirecting the output captures only the reply. Pass `--quiet` / `-q` to turn the progress lines off.
 
 ```text
 ▶ audit: Audit models/resnet18_poison.pth
-    · run_mmbd: model=models/resnet18_poison.pth, data=cifar10, arch=resnet18, provider=torchvision
-    ✓ run_mmbd done (41.2s)
-✓ audit done (44.0s)
+▶ detect: Detect models/resnet18_poison.pth
+    · [audit] run_mmbd: model=models/resnet18_poison.pth, data=cifar10, arch=resnet18, provider=torchvision
+    · [detect] run_scaleup: model=models/resnet18_poison.pth, data=cifar10
+    ✓ [detect] run_scaleup done (1.4s)
+    ✓ [audit] run_mmbd done (3.5s)
+✓ audit done (14.2s)
+✓ detect done (15.0s)
 ```
 
 Each specialist call starts one MCP server and runs all of its tool calls on that server's session (`mithridatium_tools` in `audit_agent.py`). The server starts with no banner and logs warnings only. Tools from `MultiServerMCPClient.get_tools()` start a new server process for every tool call, so don't go back to that.
