@@ -33,7 +33,7 @@ from mithridatium.repair.anp_defaults import (
     ANP_ITERATIONS, ANP_PRUNE_THRESHOLD, ANP_STEPS,
 )
 from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_TYPES, POSITIONS
-from mithridatium.detect.scaleup import run_scaleup
+from mithridatium.detect.scaleup import SCALEUP_DEFAULTS, run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
 from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
@@ -513,7 +513,7 @@ def detect(
             help="The method name: 'scaleup', 'ted', 'ted++', or 'ibdpsc'.",
         ),
         num_samples: str = typer.Option(
-            "256",
+            str(SCALEUP_DEFAULTS["num_samples"]),
             "--scaleup-num-samples",
             "-n",
             help="The number of images from the dataset to test on.",
@@ -524,7 +524,7 @@ def detect(
         #     help="",
         # ),
         scaleup_threshold: str = typer.Option(
-            "0.5",
+            str(SCALEUP_DEFAULTS["threshold"]),
             "--scaleup-threshold",
             help="The percent threshold of distortion scalars an image must pass through to be declared poisoned.",
         ),
@@ -547,7 +547,7 @@ def detect(
             help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
         ),
         scaleup_scales: str = typer.Option(
-            "(3,5,7,9,11)",
+            str(SCALEUP_DEFAULTS["scales"]),
             "--scaleup-scales",
             help='The series of value scalars to use in scaleup, e.g. "(3,5,7,9,11)."'
 

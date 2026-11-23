@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from mithridatium.cli import detect
+from mithridatium.detect.scaleup import SCALEUP_DEFAULTS
 import json
 from pathlib import Path
 
@@ -15,9 +16,9 @@ def _detect_kwargs(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
 
-    #scaleup parameters (sample count reduced from the CLI's 256 for smoke runs)
-    scaleup_num_samples: int = 128,
-    scaleup_threshold: float = 0.5,
+    #scaleup parameters (shared with the CLI defaults)
+    scaleup_num_samples: int = SCALEUP_DEFAULTS["num_samples"],
+    scaleup_threshold: float = SCALEUP_DEFAULTS["threshold"],
     scaleup_scales: list[float] | None = None,
 
     #ted parameters (shared with the CLI defaults)
@@ -34,7 +35,7 @@ def _detect_kwargs(
     ibdpsc_num_models: int = 5,
     ibdpsc_threshold: float = 0.9,
 ) -> dict[str, Any]:
-    scales = tuple(scaleup_scales) if scaleup_scales else (3, 5, 7, 9, 11)
+    scales = tuple(scaleup_scales) if scaleup_scales else SCALEUP_DEFAULTS["scales"]
     return {
         "method": method,
         "model": model,
@@ -69,8 +70,8 @@ def _run_detect(detect_kwargs: dict[str, Any]) -> dict[str, Any]:
 def run_scaleup(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
-    scaleup_num_samples: int = 128,
-    scaleup_threshold: float = 0.5,
+    scaleup_num_samples: int = SCALEUP_DEFAULTS["num_samples"],
+    scaleup_threshold: float = SCALEUP_DEFAULTS["threshold"],
     scaleup_scales: list[float] | None = None,
 ):
     """Run SCALE-UP detection and return the mithridatium detect report."""
