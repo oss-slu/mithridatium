@@ -13,6 +13,7 @@ from mithridatium.mcp.audit_agent import audit_agent
 from mithridatium.mcp.detect_agent import detect_agent
 from mithridatium.mcp.llm import chat_model, resolve_llm
 from mithridatium.mcp.memory import Memory, with_memory
+from mithridatium.mcp.progress import progress_config
 from mithridatium.mcp.repair_agent import repair_agent
 
 def _specialist_tools(llm: str, memory: Memory | None = None):
@@ -298,6 +299,7 @@ async def supervisor_agent(
     llm: str | None = None,
     return_summary: bool = False,
     memory: bool = True,
+    progress: bool = False,
 ):
     # resolve once so the supervisor and every specialist it calls use one model
     llm = resolve_llm(llm)
@@ -308,7 +310,7 @@ async def supervisor_agent(
             store, "supervisor", prompt, SUPERVISOR_SYSTEM_PROMPT, _specialist_tools(llm, store)
         )
         agent = create_agent(model, tools, system_prompt=system_prompt)
-        result = await agent.ainvoke({"messages": prompt})
+        result = await agent.ainvoke({"messages": prompt}, config=progress_config(progress))
         messages = result.get("messages", [])
         # a run with no tool calls (a question about memory, a chat reply) is not an
         # episode; recording it would feed the model's answer back as history

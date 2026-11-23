@@ -125,6 +125,17 @@ mithridatium agent --agent detect "Run TED on models/resnet18_poison.pth"
 mithridatium agent -a repair "Run LMR on models/resnet18_poison.pth with target class 0 and prune ratio 0.05"
 ```
 
+While it runs, the agent prints a line to stderr each time a specialist or tool starts and finishes. The final reply goes to stdout, so piping or redirecting the output captures only the reply. Pass `--quiet` / `-q` to turn the progress lines off.
+
+```text
+▶ audit: Audit models/resnet18_poison.pth
+    · run_mmbd: model=models/resnet18_poison.pth, data=cifar10, arch=resnet18, provider=torchvision
+    ✓ run_mmbd done (41.2s)
+✓ audit done (44.0s)
+```
+
+Each specialist call starts one MCP server and runs all of its tool calls on that server's session (`mithridatium_tools` in `audit_agent.py`). The server starts with no banner and logs warnings only. Tools from `MultiServerMCPClient.get_tools()` start a new server process for every tool call, so don't go back to that.
+
 The `python -m` entry points below still work. Each agent connects to the local server, asks the model to call the requested defenses, and prints the model's last message:
 
 ```bash

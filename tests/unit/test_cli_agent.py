@@ -24,12 +24,14 @@ pytestmark = pytest.mark.unit
 
 runner = CliRunner()
 memory_kwargs: list = []
+progress_kwargs: list = []
 
 
 @pytest.fixture
 def fake_agents(monkeypatch):
     calls = []
     memory_kwargs.clear()
+    progress_kwargs.clear()
     for name in AGENTS:
         mod = types.ModuleType(f"mithridatium.mcp.{name}_agent")
         mod.DEFAULT_PROMPT = f"default {name} prompt"
@@ -39,6 +41,7 @@ def fake_agents(monkeypatch):
         async def run(prompt, llm=None, _name=name, **kwargs):
             calls.append((_name, prompt, llm))
             memory_kwargs.append(kwargs.get("memory"))
+            progress_kwargs.append(kwargs.get("progress"))
             if kwargs.get("return_summary"):
                 fake_summary = {
                     "prompt": prompt,
@@ -209,3 +212,10 @@ def test_openai_embeddings_need_openai_key(fake_agents, monkeypatch):
     assert "memory embeddings" in result.output
     assert fake_agents == []
 
+
+@pytest.mark.parametrize("args, progress", [([], True), (["--quiet"], False), (["-q"], False)])
+@pytest.mark.parametrize("name", ["supervisor", "audit"])
+def test_progress_is_on_unless_quiet(fake_agents, name, args, progress):
+    result = runner.invoke(app, ["agent", "-a", name, "hi", *args])
+    assert result.exit_code == 0, result.output
+    assert progress_kwargs == [progress]

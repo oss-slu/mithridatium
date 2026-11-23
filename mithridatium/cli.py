@@ -952,6 +952,12 @@ def agent(
         "--forget",
         help="Clear the agent memory store and exit without running an agent.",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Print only the final reply, not a progress line per agent and tool call.",
+    ),
 ) -> None:
     """
     Run an LLM agent that calls Mithridatium through the MCP server.
@@ -1027,7 +1033,9 @@ def agent(
     if agent_name == "supervisor" and report is not None:
         try:
             final_message, summary = asyncio.run(
-                module.supervisor_agent(actual_prompt, llm=llm, return_summary=True, memory=not no_memory)
+                module.supervisor_agent(
+                    actual_prompt, llm=llm, return_summary=True, memory=not no_memory, progress=not quiet
+                )
             )
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
@@ -1037,7 +1045,9 @@ def agent(
     elif agent_name == "supervisor":
         # run supervisor without writing a report file
         try:
-            final_message = asyncio.run(module.supervisor_agent(actual_prompt, llm=llm, memory=not no_memory))
+            final_message = asyncio.run(
+                module.supervisor_agent(actual_prompt, llm=llm, memory=not no_memory, progress=not quiet)
+            )
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
@@ -1046,7 +1056,7 @@ def agent(
         # run requested specialist agent; standalone specialists read memory but never write it
         run = getattr(module, f"{agent_name}_agent")
         try:
-            kwargs = {}
+            kwargs = {"progress": not quiet}
             if not no_memory:
                 from mithridatium.mcp.memory import Memory
 
