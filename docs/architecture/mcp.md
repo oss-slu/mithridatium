@@ -282,9 +282,17 @@ Agents remember across runs. The store is a LangMem/LangGraph store saved to `me
 It has two namespaces:
 
 - **semantic**: facts that stay true across runs, such as what a checkpoint is, its dataset and architecture, user preferences, and which methods suit which models.
-- **episodic**: what happened. After every run the supervisor records one episode for the run (which specialists it called, their verdicts, the checkpoint and report paths) and one for each specialist call (which MCP tools that specialist ran, whether each worked or failed, and what it returned).
+- **episodic**: what happened. After every run the supervisor records one episode for the run (which specialists it called, their verdicts, the checkpoint and report paths) and one for each specialist call (which MCP tools that specialist ran, whether each worked or failed, the error line if it failed, and its verdicts and paths).
 
-Every time an agent starts, it gets the relevant facts and its own past episodes in its system prompt. The supervisor sees which specialists it called for similar requests. Each specialist sees which of its tools worked or failed before, for example that AEVA ran out of memory on this checkpoint. The prompt says memory is context only: current tool results always win, and an agent never reports a past verdict as a current one.
+Episodes are built from tool results, not from the model's reply. A reply is kept only when a specialist ran no tools, because then it is the only record, for example the repair agent saying LMR needs a target class. A stored reply would otherwise be recalled and repeated in later runs. A run that calls no specialist, such as a question about what happened last time, is not recorded at all. Calls to the memory tools don't count as running a specialist.
+
+Every time an agent starts, its system prompt gets a `<memories>` block with up to three sections:
+
+- **Known facts**: the semantic memories that best match the request.
+- **Most recent runs (newest first)**: that agent's last three episodes, always shown, so "the last run" means the last run.
+- **Older runs related to this request**: up to three earlier episodes that match the request but aren't among the most recent.
+
+The supervisor sees its own runs, so it knows which specialists it called for similar requests. Each specialist sees only its own episodes, so it knows which of its tools worked or failed before, for example that AEVA ran out of memory on this checkpoint. The block starts with the rule that memory is context only: current tool results always win, and an agent never reports a past verdict as a current one.
 
 Only the supervisor writes memory. It also gets `manage_semantic_memory` and `manage_episodic_memory` tools, so the model can record facts or lessons beyond the automatic episodes. Specialists get only the `search_*_memory` tools and a read-only view. A specialist run directly (`--agent audit`) reads memory but records nothing.
 

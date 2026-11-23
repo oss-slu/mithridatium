@@ -101,7 +101,19 @@ mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poiso
 mithridatium agent --agent audit "Run MMBD on models/resnet18_poison.pth"
 ```
 
-It needs the `[agent]` extra, `langchain-openai`, and `OPENAI_API_KEY`. The supervisor never repairs a model unless the request asks for it. Setup, routing rules, and output paths are in [MCP server and agents](mcp.md#supervisor-agent).
+It needs the `[agent]` extra, and `OPENAI_API_KEY` for OpenAI models. The supervisor never repairs a model unless the request asks for it. Setup, routing rules, and output paths are in [MCP server and agents](mcp.md#supervisor-agent).
+
+| Option | What it does |
+| --- | --- |
+| `--agent` / `-a` | Agent to run: `supervisor` (default), `audit`, `detect`, or `repair`. |
+| `--llm` | Chat model, e.g. `gpt-4o` or `ollama:llama3.1`. Defaults to `$MITHRIDATIUM_LLM`, then `gpt-4o-mini`. See [Choosing the chat model](mcp.md#choosing-the-chat-model). |
+| `--report` / `-r` | Save a JSON summary of the run (supervisor only). See [Saving a run summary](mcp.md#saving-a-run-summary). |
+| `--force` / `-f` | Overwrite an existing `--report` file. |
+| `--quiet` / `-q` | Print only the final reply, not the progress line for each agent and tool call. |
+| `--no-memory` | Run without memory: nothing is recalled or saved. |
+| `--forget` | Delete the memory store and exit without running an agent. |
+
+The agents remember past runs in `memory/memory.json`. What is stored and how it is recalled is in [Memory](mcp.md#memory).
 
 ## Troubleshooting
 
