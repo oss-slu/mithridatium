@@ -979,9 +979,9 @@ def repair(
         ANP_ITERATIONS, "--anp-iterations",
         help="Number of iterations cycling the clean set during ANP mask training."
     ),
-    anp_clean_subset_seed: int = typer.Option(
+    anp_clean_subset_seed: int | None = typer.Option(
         ANP_CLEAN_SUBSET_SEED, "--anp-clean-subset-seed",
-        help="Seed for selecting the clean ANP reference subset (independent of --seed).",
+        help="Override the ANP clean-reference subset seed (default: use --seed).",
     ),
     anp_prune_fraction: float = typer.Option(
         None, "--anp-prune-fraction",
@@ -1245,7 +1245,7 @@ def repair(
         if clean_samples <= 0:
             typer.secho("Error: --clean-samples must be a positive integer.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
-        if anp_clean_subset_seed < 0:
+        if anp_clean_subset_seed is not None and anp_clean_subset_seed < 0:
             typer.secho("Error: --anp-clean-subset-seed must be nonnegative.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
         asr_options = (anp_trigger_type, anp_trigger_alpha, anp_trigger_size, anp_trigger_pos, anp_asr_samples)

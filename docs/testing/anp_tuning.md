@@ -130,3 +130,29 @@ argument parsing. A separate user-facing `mithridatium repair` run with the
 selected defaults is still required, followed by attaching its actual JSON
 report to PR #184. Check `mithridatium repair --help` for the installed CLI
 flags before running. A Slurm batch wrapper is a follow-up issue.
+
+### Default clean-subset selection (current CLI, Python API, and MCP)
+
+The ANP **default** now chooses a random but reproducible 500-image clean
+training subset using the regular run seed: `--seed 0` selects subset seed `0`,
+`--seed 1` selects subset seed `1`, etc. Re-running with the same seed selects
+the same training images; this does **not** use unseeded randomness.
+When `--seed` is omitted, the ANP backend uses seed `0`.
+
+The optional CLI `--anp-clean-subset-seed N`, Python `clean_subset_seed=N`, or
+MCP `anp_clean_subset_seed=N` **overrides only clean-image selection**, keeping
+the run seed for mask optimization (and CLI evaluation sampling). If that
+option is omitted, it defaults to `None` and the effective clean-subset seed
+is resolved from the run seed. The JSON repair report records the effective
+seed in `results.parameters.clean_subset_seed`.
+
+To test the current user-facing defaults, run `mithridatium repair --method anp`
+with `--seed 0` and **omit** `--anp-clean-subset-seed`; the report should show
+`clean_subset_seed: 0`. To reproduce the original *fixed-subset* experiments,
+explicitly use `--anp-clean-subset-seed 1234`. The staged tuning sweeps fixed
+that clean subset while varying optimization seeds; the later five-subset
+validation instead passed clean-subset seeds `0` through `4` to `run_anp()`
+while holding optimization seed `0`. Neither historical result should be
+interpreted as a new measurement of the changed user-facing default.
+
+Note: `--seed` also controls CLI evaluation sampling; the sweep's independent

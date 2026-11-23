@@ -35,7 +35,7 @@ def _repair_kwargs(
     anp_steps: int = ANP_STEPS,
     anp_prune_threshold: float = ANP_PRUNE_THRESHOLD,
     anp_iterations: int = ANP_ITERATIONS,
-    anp_clean_subset_seed: int = ANP_CLEAN_SUBSET_SEED,
+    anp_clean_subset_seed: int | None = ANP_CLEAN_SUBSET_SEED,
     anp_prune_fraction: float | None = None,
     anp_attack_target: int | None = None,
     anp_trigger_type: str | None = None,
@@ -142,7 +142,7 @@ def run_anp(
     anp_steps: int = ANP_STEPS,
     anp_prune_threshold: float = ANP_PRUNE_THRESHOLD,
     anp_iterations: int = ANP_ITERATIONS,
-    anp_clean_subset_seed: int = ANP_CLEAN_SUBSET_SEED,
+    anp_clean_subset_seed: int | None = ANP_CLEAN_SUBSET_SEED,
     anp_prune_fraction: float | None = None,
     anp_attack_target: int | None = None,
     anp_trigger_type: str | None = None,
@@ -151,7 +151,11 @@ def run_anp(
     anp_trigger_pos: str | None = None,
     anp_asr_samples: int | None = None,
 ):
-    """Run ANP repair. Supply a known CIFAR-10 trigger type and target to include ASR."""
+    """Run ANP repair. Default clean-subset selection uses seed (or 0 if omitted).
+
+    Set anp_clean_subset_seed only to override the subset seed independently.
+    Supply a known CIFAR-10 trigger type and target to include ASR.
+    """
     return _run_repair(_repair_kwargs(
         "anp",
         model=model,

@@ -64,3 +64,58 @@ def test_train_masks_uses_shared_training_defaults():
     assert parameters["alpha"].default == defaults.ANP_ALPHA
     assert parameters["steps"].default == defaults.ANP_STEPS
     assert parameters["iterations"].default == defaults.ANP_ITERATIONS
+
+
+def test_clean_subset_seed_follows_optimizer_seed_unless_overridden():
+    from mithridatium.repair.anp import _resolve_clean_subset_seed
+
+    assert defaults.ANP_CLEAN_SUBSET_SEED is None
+    assert _resolve_clean_subset_seed(0, None) == 0
+    assert _resolve_clean_subset_seed(1, None) == 1
+    assert _resolve_clean_subset_seed(1, 1234) == 1234
+
+
+def test_run_anp_uses_seeded_clean_subset_by_default(tmp_path, monkeypatch):
+    """Exercise the actual backend (without loading checkpoints or training masks)."""
+    from types import SimpleNamespace
+
+    import pytest
+    import torch
+    from torch import nn
+    from torch.utils.data import DataLoader, Subset, TensorDataset
+
+    dataset = TensorDataset(torch.zeros(20, 3, 4, 4), torch.zeros(20, dtype=torch.long))
+    seen = []
+
+    def record_sample(data, count, generator):
+        seen.append(generator.initial_seed())
+        return Subset(data, list(range(count)))
+
+    monkeypatch.setattr(anp, "_sample", record_sample)
+    monkeypatch.setattr(anp.loader, "detect_and_build", lambda *args, **kw: (nn.Linear(1, 1), None))
+    monkeypatch.setattr(anp.utils, "get_preprocess_config", lambda name: SimpleNamespace(get_num_classes=lambda: 10))
+    monkeypatch.setattr(anp.utils, "dataloader_for", lambda *args, **kw: (DataLoader(dataset), None))
+    monkeypatch.setattr(anp, "evaluate_clean", lambda model, data: 0.75)
+    monkeypatch.setattr(anp, "train_masks", lambda *args, **kw: {})
+    monkeypatch.setattr(anp, "prune_by_threshold", lambda *args, **kw: [])
+    monkeypatch.setattr(anp.rpt, "build_repair_report", lambda model_path, method, data, version, results: results)
+    monkeypatch.setattr(anp.rpt, "validate_report_data", lambda report: None)
+
+    for override, expected in [(None, 3), (9, 9)]:
+        seen.clear()
+        kwargs = dict(model_path=str(tmp_path / "original.pth"),
+                      out=str(tmp_path / "repaired.pth"),
+                      report=str(tmp_path / "report.json"),
+                      clean_samples=5, eval_samples=7, seed=3, eval_seed=1234)
+        if override is not None:
+            kwargs["clean_subset_seed"] = override
+        report = anp.run_anp(**kwargs)
+        assert seen == [expected, 1234]
+        assert report["parameters"]["clean_subset_seed"] == expected
+        assert report["parameters"]["seed"] == 3
+
+    with pytest.raises(ValueError, match="nonnegative"):
+        anp.run_anp(model_path=str(tmp_path / "original.pth"),
+                    out=str(tmp_path / "repaired.pth"),
+                    report=str(tmp_path / "report.json"),
+                    clean_subset_seed=-1)

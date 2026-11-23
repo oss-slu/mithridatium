@@ -325,6 +325,14 @@ def _sample(dataset, count, generator):
     return Subset(dataset, indices)
 
 
+def _resolve_clean_subset_seed(seed, clean_subset_seed):
+    """Use the run seed for clean sampling unless an override is supplied."""
+    resolved = seed if clean_subset_seed is None else clean_subset_seed
+    if not isinstance(resolved, int) or resolved < 0:
+        raise ValueError("clean_subset_seed must be a nonnegative integer")
+    return resolved
+
+
 def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
             steps=ANP_STEPS, iterations=ANP_ITERATIONS,
             prune_threshold=ANP_PRUNE_THRESHOLD, prune_fraction=None,
@@ -333,7 +341,11 @@ def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
             version="0.1.2", data="cifar10",
             eval_samples=500, triggered_eval_dataset=None, attack_target=None,
             eval_seed=None, device="auto"):
-    """Train masks, prune neurons, and write a checkpoint and repair report."""
+    """Train and prune ANP; by default, seed also determines the clean subset.
+
+    Pass clean_subset_seed explicitly to select different clean training images
+    independently of the optimization seed. The report records the effective seed.
+    """
     source, destination = Path(model_path).resolve(), Path(out).resolve()
     if source == destination:
         raise ValueError("Output cannot overwrite the input checkpoint")
@@ -342,8 +354,7 @@ def run_anp(*, model_path, out, report, eps=ANP_EPS, alpha=ANP_ALPHA,
     if (triggered_eval_dataset is None) != (attack_target is None):
         raise ValueError("Supply both triggered examples and attack target")
 
-    if not isinstance(clean_subset_seed, int) or clean_subset_seed < 0:
-        raise ValueError("clean_subset_seed must be a nonnegative integer")
+    clean_subset_seed = _resolve_clean_subset_seed(seed, clean_subset_seed)
 
     torch.manual_seed(seed)
     if device == "auto":

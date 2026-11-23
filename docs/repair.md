@@ -48,6 +48,7 @@ Currently supported:
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
 | `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `1`, as in upstream ANP). |
 | `--anp-iterations` | ANP: number of iterations cycling clean data during mask optimization (positive integer; default `2000`). |
+| `--anp-clean-subset-seed` | ANP: optional clean-reference subset seed; defaults to the regular `--seed`. |
 | `--anp-prune-threshold` | ANP: prune channels whose mask is at or below this value (between `0` and `1`; default `0.2`). |
 | `--anp-prune-fraction` | ANP: prune the lowest-scoring fraction of channels (between `0` and `1`; optional). |
 | `--anp-attack-target` | ANP ASR: known backdoor target class (CIFAR-10 label 0–9). Omit to skip ASR. |
@@ -184,9 +185,10 @@ The `--clean-samples` option sets the number of clean images used (shared, defau
 clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps
 (default: `1`), `--anp-iterations` controls the total optimization steps (default: `2000`),
 and `--anp-prune-threshold` sets the pruning cutoff (tuned default: `0.15`).
-`--anp-clean-subset-seed` (default: `1234`) fixes which clean images are selected,
-independently of `--seed` (which controls optimization and evaluation randomness). This setting
-is important for reproducing the tuned benchmark below.
+By default, ANP randomly samples a reproducible clean-reference subset using the
+regular `--seed` value (which also controls optimization and evaluation). Use
+`--anp-clean-subset-seed` to override only the clean-subset selection. For example,
+`--anp-clean-subset-seed 1234` reproduces the earlier fixed-subset experiment below.
 
 ### Run ANP
 
@@ -200,7 +202,7 @@ mithridatium repair \
   --anp-alpha 0.2 \
   --anp-steps 1 \
   --anp-prune-threshold 0.15 \
-  --anp-clean-subset-seed 1234 \
+  --seed 0 \
   --out models/resnet18_anp.pth \
   --report reports/repair_anp.json
 ```
@@ -246,7 +248,10 @@ These earlier values were obtained using a single fixed training subset and a
 **not** establish typical ASR for randomly selected clean training data.
 Seed `1234` was used to hold the subset constant across optimizer seeds after
 initial experiments showed subset-dependent behavior; it was not validated as
-a representative clean subset.
+a representative clean subset. To reproduce that historical experiment, explicitly
+set `--anp-clean-subset-seed 1234`. Current CLI, Python, and MCP defaults instead
+select a reproducible clean subset using the run seed (e.g. `--seed 0` selects
+subset 0). These historical results have not been remeasured under the new default.
 
 #### Clean-subset variability (full CIFAR-10 test set)
 
@@ -355,7 +360,9 @@ non-target images predicted as the target / total triggered non-target images.
 All triggered evaluation images are selected deterministically using `--seed`.
 The same triggered set is evaluated on the model before and after repair.
 
-The MCP `run_anp` tool accepts the corresponding arguments
+The MCP `run_anp` tool uses `seed` for clean-subset selection by default,
+with optional `anp_clean_subset_seed` to override it independently, matching
+the CLI and Python API. It accepts the corresponding arguments
 `anp_attack_target`, `anp_trigger_type`, `anp_trigger_alpha`,
 `anp_trigger_size`, `anp_trigger_pos`, and `anp_asr_samples`, with the same defaults and validation. ASR arguments must
 be supplied with the attack target; leaving all ASR arguments out retains the
