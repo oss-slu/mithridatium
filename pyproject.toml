@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mithridatium"
 version = "0.1.2"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 description = "Framework for verifying integrity of pretrained AI models"
 readme = "README.md"
 dependencies = [
