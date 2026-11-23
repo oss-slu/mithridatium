@@ -5,8 +5,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain_mcp_adapters.client import MultiServerMCPClient
+
+from mithridatium.mcp.llm import chat_model, resolve_llm  # noqa: F401 (resolve_llm used by the CLI)
 
 AUDIT_TOOLS = {"run_mmbd", "run_strip", "run_aeva", "run_freeeagle"}
 
@@ -42,9 +43,9 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 DEFAULT_PROMPT = "Audit models/resnet18_poison.pth."
 
-async def audit_agent(prompt: str):
+async def audit_agent(prompt: str, llm: str | None = None):
     client = MultiServerMCPClient(_load_mithridatium_mcp())
-    model = init_chat_model(model="gpt-4o-mini")
+    model = chat_model(llm)
     tools = [tool for tool in await client.get_tools() if tool.name in AUDIT_TOOLS]
     agent = create_agent(model, tools, system_prompt=AUDIT_SYSTEM_PROMPT)
     result = await agent.ainvoke({"messages": prompt})

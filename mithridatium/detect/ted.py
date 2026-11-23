@@ -30,6 +30,8 @@ import torch.utils.data as data
 
 from pyod.models.pca import PCA
 from torch.utils.data import Subset
+from mithridatium.detect.ted_defaults import TED_DEFAULTS
+from mithridatium.detect.verdict import batch_verdict
 
 
 "TED configurations. These should all be changed in the ted method. Some configurations may be unneeded."
@@ -244,8 +246,8 @@ def ted(
         model,
         reference_data,
         suspect_data,
-        reference_size: int = 1000,
-        contamination: float = 0.01,
+        reference_size: int = TED_DEFAULTS.reference_size,
+        contamination: float = TED_DEFAULTS.contamination,
         batch_size: int = 100,
         seed=None,
         device="cpu",
@@ -264,8 +266,8 @@ def ted(
             poisoned. Yields (image, label) like reference_data; the label is
             ignored, since TED ranks by the model's predictions. TED needs no
             known-poisoned data.
-        reference_size: Cap on clean reference images. 1000 is the reference
-            code's CIFAR-10 value (opt.defense_train_size).
+        reference_size: Cap on clean reference images. Defaults to the tuned
+            CIFAR-10 budget in TED_DEFAULTS.
         contamination: Fraction of reference trajectories the PCA threshold
             rejects, alpha in the paper. 0.01 is the reference code's value.
         batch_size: Forward-pass batch size.
@@ -492,7 +494,7 @@ def ted(
 
         # ponytail: the threshold rejects `contamination` of clean inputs by design, so
         # flag the batch only when more than that are flagged. Uncalibrated.
-        verdict = "likely backdoored" if flagged_fraction > contamination else "likely clean"
+        verdict = batch_verdict(flagged_fraction, contamination)
 
         return {
             "mode": "input-level",

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mithridatium.mcp import mcp
 from mithridatium.mcp.audit_mcp import _catch_output
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 
 # detect parameters
 def _detect_kwargs(
@@ -20,12 +21,12 @@ def _detect_kwargs(
     scaleup_threshold: float = SCALEUP_DEFAULTS["threshold"],
     scaleup_scales: list[float] | None = None,
 
-    #ted parameters (reduced from the CLI's 256 / 1000 for smoke runs)
-    ted_num_samples: int = 128,
-    ted_reference_size: int = 250,
-    ted_contamination: float = 0.01,
-    tedpp_samples_per_class: int = 5,
-    tedpp_beta: float = 0.5,
+    #ted parameters (shared with the CLI defaults)
+    ted_num_samples: int = TED_DEFAULTS.num_samples,
+    ted_reference_size: int = TED_DEFAULTS.reference_size,
+    ted_contamination: float = TED_DEFAULTS.contamination,
+    tedpp_samples_per_class: int = TEDPP_DEFAULTS.samples_per_class,
+    tedpp_beta: float = TEDPP_DEFAULTS.beta,
 
     #ibdpsc parameters (sample count reduced from the CLI's 256 for smoke runs)
     ibdpsc_num_samples: int = 128,
@@ -87,9 +88,9 @@ def run_scaleup(
 def run_ted(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
-    ted_num_samples: int = 128,
-    ted_reference_size: int = 250,
-    ted_contamination: float = 0.01,
+    ted_num_samples: int = TED_DEFAULTS.num_samples,
+    ted_reference_size: int = TED_DEFAULTS.reference_size,
+    ted_contamination: float = TED_DEFAULTS.contamination,
 ):
     """Run TED detection and return the mithridatium detect report."""
     return _run_detect(_detect_kwargs(
@@ -105,11 +106,11 @@ def run_ted(
 def run_tedpp(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
-    ted_num_samples: int = 128,
-    ted_reference_size: int = 250,
-    ted_contamination: float = 0.01,
-    tedpp_samples_per_class: int = 5,
-    tedpp_beta: float = 0.5,
+    ted_num_samples: int = TED_DEFAULTS.num_samples,
+    ted_reference_size: int = TED_DEFAULTS.reference_size,
+    ted_contamination: float = TED_DEFAULTS.contamination,
+    tedpp_samples_per_class: int = TEDPP_DEFAULTS.samples_per_class,
+    tedpp_beta: float = TEDPP_DEFAULTS.beta,
 ):
     """Run TED++ detection and return the mithridatium detect report."""
     return _run_detect(_detect_kwargs(

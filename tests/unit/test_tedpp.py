@@ -86,6 +86,16 @@ def test_suspect_ranking_rejects_mismatched_predictions_and_activations():
         )
 
 
+def test_tedpp_rejects_nonpositive_samples_per_class():
+    with pytest.raises(ValueError, match="samples_per_class must be at least 1"):
+        TEDPLUS(
+            nn.Identity(),
+            [],
+            [],
+            samples_per_class=0,
+        )
+
+
 class TinyClassifier(nn.Module):
     def __init__(self):
         super().__init__()
@@ -131,6 +141,8 @@ def test_tedpp_returns_schema_valid_per_sample_results():
     }
     assert (results["mode"], results["method"]) == ("input-level", "ted++")
     assert results["num_inputs"] == len(results["per_sample"]) == 4
+    assert results["parameters"]["reference_size"] == 6
+    assert "selected_reference_size" not in results["parameters"]
     assert [sample["index"] for sample in results["per_sample"]] == list(range(4))
     assert results["num_flagged"] == sum(
         sample["flagged"] for sample in results["per_sample"]

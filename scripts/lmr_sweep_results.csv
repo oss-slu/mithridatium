@@ -1,0 +1,31 @@
+grid,prune_ratio,repair_steps,fine_tune_steps,clean_samples,seed,clean_accuracy_pct,asr_pct,runtime_sec
+baseline_poison,,,,,,60.09,91.90,
+baseline_clean,,,,,,60.21,5.90,
+grid1_prune_ratio,0.02,20,10,500,0,54.33,1.50,0.64
+grid1_prune_ratio,0.05,20,10,500,0,54.42,1.40,0.35
+grid1_prune_ratio,0.10,20,10,500,0,54.21,0.50,0.35
+grid1_prune_ratio,0.15,20,10,500,0,53.66,0.30,0.35
+grid1_prune_ratio,0.20,20,10,500,0,53.45,0.70,0.34
+grid1_prune_ratio,0.30,20,10,500,0,52.53,0.10,0.35
+grid2_steps,0.10,10,5,500,0,54.49,7.30,0.18
+grid2_steps,0.10,10,10,500,0,55.68,5.40,0.23
+grid2_steps,0.10,20,5,500,0,53.09,0.40,0.30
+grid2_steps,0.10,20,10,500,0,54.03,0.40,0.35
+grid2_steps,0.10,20,20,500,0,55.12,0.80,0.44
+grid2_steps,0.10,30,10,500,0,54.64,0.40,0.47
+grid2_steps,0.10,30,20,500,0,54.46,0.20,0.58
+grid3_samples,0.10,20,10,250,0,53.38,0.00,0.35
+grid3_samples,0.10,20,10,500,0,53.91,0.40,0.35
+grid3_samples,0.10,20,10,1000,0,56.38,0.10,0.35
+candidates_per_seed,0.05,20,10,500,0,54.02,0.40,0.34
+candidates_per_seed,0.05,20,10,500,42,54.68,0.00,0.35
+candidates_per_seed,0.05,20,10,500,123,54.23,0.00,0.35
+candidates_seed_summary,0.05,20,10,500,3_seed_mean_std,54.31 ± 0.28,0.13 ± 0.19,0.35 ± 0.00
+candidates_per_seed,0.10,20,10,500,0,54.01,0.40,0.35
+candidates_per_seed,0.10,20,10,500,42,54.78,0.00,0.35
+candidates_per_seed,0.10,20,10,500,123,53.90,0.00,0.35
+candidates_seed_summary,0.10,20,10,500,3_seed_mean_std,54.23 ± 0.39,0.13 ± 0.19,0.35 ± 0.00
+candidates_per_seed,0.15,20,10,500,0,53.64,0.30,0.35
+candidates_per_seed,0.15,20,10,500,42,53.75,0.00,0.35
+candidates_per_seed,0.15,20,10,500,123,53.76,0.00,0.34
+candidates_seed_summary,0.15,20,10,500,3_seed_mean_std,53.72 ± 0.05,0.10 ± 0.14,0.35 ± 0.00
