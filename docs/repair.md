@@ -96,63 +96,67 @@ mithridatium repair \
 
 ### Tuned Defaults
 
-A parameter sweep was conducted using `scripts/sweep_lmr.py` on `models/resnet18_clean.pth` and `models/resnet18_poison.pth` (CIFAR-10 with a 4px bottom-right white-square trigger, target class 0).
+A parameter sweep was conducted using `scripts/sweep_lmr.py` on CIFAR-10 with a 4px bottom-right white-square trigger and target class 0. The poisoned model is the checkpoint CI downloads from Hugging Face (`SuperAddi1/resnet18_poison.pth` at commit `605e2f8`, sha256 `2d232167…`). The clean model is a ResNet-18 checkpoint with sha256 `e2cb1a9e…`. The script loads them from `models/resnet18_poison.pth` and `models/resnet18_clean.pth`.
 
 **Baselines before repair:**
-- Clean Model: Clean Accuracy (CA) = 58.13%, ASR = 3.60%
-- Poisoned Model: Clean Accuracy (CA) = 56.72%, ASR = 92.90%
+- Clean Model: Clean Accuracy (CA) = 60.21%, ASR = 5.90%
+- Poisoned Model: Clean Accuracy (CA) = 60.09%, ASR = 91.90%
 
-Both baseline checkpoints have around 57% clean accuracy on CIFAR-10, meaning these defaults were tuned on relatively undertrained models. Sensitivity and optimal parameter settings may differ on fully converged models.
+Both baseline checkpoints have around 60% clean accuracy on CIFAR-10, meaning these defaults were tuned on relatively undertrained models. Sensitivity and optimal parameter settings may differ on fully converged models.
 
 #### Grid 1: Prune Ratio Sweep
 Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`, `seed=0`:
 
 | `prune_ratio` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
 |---|---|---|---|
-| 0.02 | 54.63% | 1.70% | 15.63s |
-| 0.05 | 54.57% | 2.00% | 15.98s |
-| 0.10 | 54.67% | 1.30% | 13.29s |
-| 0.15 | 54.62% | 2.10% | 13.69s |
-| 0.20 | 54.54% | 1.40% | 13.77s |
-| 0.30 | 54.28% | 3.10% | 13.38s |
+| 0.02 | 54.33% | 1.50% | 0.64s |
+| 0.05 | 54.42% | 1.40% | 0.35s |
+| 0.10 | 54.21% | 0.50% | 0.35s |
+| 0.15 | 53.66% | 0.30% | 0.35s |
+| 0.20 | 53.45% | 0.70% | 0.34s |
+| 0.30 | 52.53% | 0.10% | 0.35s |
 
 #### Grid 2: Repair and Fine-Tune Steps
 Evaluated with `prune_ratio=0.10`, `clean_samples=500`, `seed=0`:
 
 | `repair_steps` | `fine_tune_steps` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
 |---|---|---|---|---|
-| 10 | 5 | 55.22% | 25.00% | 6.77s |
-| 10 | 10 | 55.56% | 19.20% | 9.28s |
-| 20 | 5 | 54.14% | 2.20% | 12.32s |
-| 20 | 10 | 54.67% | 1.30% | 16.59s |
-| 20 | 20 | 55.49% | 1.10% | 22.34s |
-| 30 | 10 | 54.63% | 0.20% | 21.82s |
-| 30 | 20 | 54.42% | 0.40% | 30.85s |
+| 10 | 5 | 54.49% | 7.30% | 0.18s |
+| 10 | 10 | 55.68% | 5.40% | 0.23s |
+| 20 | 5 | 53.09% | 0.40% | 0.30s |
+| 20 | 10 | 54.03% | 0.40% | 0.35s |
+| 20 | 20 | 55.12% | 0.80% | 0.44s |
+| 30 | 10 | 54.64% | 0.40% | 0.47s |
+| 30 | 20 | 54.46% | 0.20% | 0.58s |
 
 #### Grid 3: Clean Samples
 Evaluated with `prune_ratio=0.10`, `repair_steps=20`, `fine_tune_steps=10`, `seed=0`:
 
 | `clean_samples` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
 |---|---|---|---|
-| 250 | 54.64% | 4.50% | 18.45s |
-| 500 | 54.67% | 1.30% | 18.21s |
-| 1000 | 55.17% | 0.00% | 16.62s |
+| 250 | 53.38% | 0.00% | 0.35s |
+| 500 | 53.91% | 0.40% | 0.35s |
+| 1000 | 56.38% | 0.10% | 0.35s |
+
+The `prune_ratio=0.10`, 20/10, 500-sample configuration appears in all three grids. Its clean accuracy is 54.21% in Grid 1, 54.03% in Grid 2, and 53.91% in Grid 3, because LMR is not bit-for-bit deterministic on the GPU even with the same seed.
 
 #### Final Candidates Across 3 Seeds (Seeds 0, 42, 123)
 Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`:
 
 | `prune_ratio` | Steps (rep/ft) | Samples | Mean CA (%) | Mean ASR (%) | Mean Runtime (s) |
 |---|---|---|---|---|---|
-| 0.05 | 20 / 10 | 500 | 54.89 ± 0.55% | 3.87 ± 4.14% | 18.14 ± 0.51s |
-| 0.10 | 20 / 10 | 500 | 54.91 ± 0.53% | 3.97 ± 4.65% | 20.17 ± 0.11s |
-| 0.15 | 20 / 10 | 500 | 54.81 ± 0.56% | 5.77 ± 6.13% | 16.19 ± 0.07s |
+| 0.05 | 20 / 10 | 500 | 54.31 ± 0.28% | 0.13 ± 0.19% | 0.35 ± 0.00s |
+| 0.10 | 20 / 10 | 500 | 54.23 ± 0.39% | 0.13 ± 0.19% | 0.35 ± 0.00s |
+| 0.15 | 20 / 10 | 500 | 53.72 ± 0.05% | 0.10 ± 0.14% | 0.35 ± 0.00s |
 
 #### Chosen Defaults and Rationale
-- **`prune_ratio = 0.10`**: In Grid 1, every prune ratio from 0.02 to 0.20 produced similar clean accuracy (~54.6%) and low ASR (1.3%–2.1%). Across 3 seeds, 0.05 and 0.10 had overlapping standard deviations (3.87 ± 4.14% vs. 3.97 ± 4.65% ASR). Because LMR was not sensitive to the prune ratio in this range, 0.10 was kept simply to retain the existing default.
-- **`repair_steps = 20` & `fine_tune_steps = 10`**: Tuning the step count showed a clearer difference: 10 repair steps left 19%–25% residual ASR, whereas 20 repair steps brought ASR down to ~1%–4% on these checkpoints.
-- **`clean_samples = 500`**: Retained to match the common default used across the repair CLI and ANP, providing sufficient data to lower ASR in testing.
+- **`prune_ratio = 0.10`**: In Grid 1, every prune ratio from 0.02 to 0.20 produced similar clean accuracy (53.45%–54.42%) and low ASR (0.30%–1.50%). Across 3 seeds, 0.05 and 0.10 had the same mean ASR (0.13 ± 0.19%) and nearly the same clean accuracy (54.31% vs. 54.23%). Because LMR was not sensitive to the prune ratio in this range, 0.10 was kept simply to retain the existing default. Clean accuracy starts to fall at 0.30 (52.53%).
+- **`repair_steps = 20` & `fine_tune_steps = 10`**: Tuning the step count showed a clearer difference: 10 repair steps left 5.40%–7.30% residual ASR, whereas 20 repair steps brought ASR down to 0.40%–0.80% on these checkpoints. 30 repair steps lowered ASR a little further (0.20%–0.40%) but took longer.
+- **`clean_samples = 500`**: Retained to match the common default used across the repair CLI and ANP. In this single-seed grid, 1000 samples gave higher clean accuracy (56.38% vs. 53.91%), so it may be worth revisiting with more seeds.
 
-Runtimes were measured on an NVIDIA cluster GPU via CUDA. Observed runtimes for the same configuration exhibit some variance (~13s to ~20s) due to cluster load and device scheduling. Raw results are stored in `scripts/lmr_sweep_results.csv`.
+At the chosen defaults, LMR lowers the poisoned model's ASR from 91.90% to under 1%, but clean accuracy drops by about 6 points (60.09% to 54.23% averaged over 3 seeds).
+
+Runtimes were measured on an NVIDIA L40S GPU via CUDA and cover the `run_lmr` call only, not evaluation. Every configuration took under a second (0.18s to 0.64s); the first run of the sweep was the slowest. Raw results, including each seed of the final candidates and the baselines, are stored in `scripts/lmr_sweep_results.csv`.
 
 ### Caveats
 
