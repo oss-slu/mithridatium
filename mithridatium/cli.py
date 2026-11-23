@@ -1175,8 +1175,7 @@ def repair(
         help="CLP threshold multiplier u (prune channels with score > mean + u*std).",
     ),
 ):
-
-
+    """Repair a backdoored checkpoint with LMR, CLP, or ANP and save the repaired model and a JSON report."""
     if method not in REPAIR_METHODS:
         typer.secho(
             f"Error: Unsupported repair method '{method}'. "
