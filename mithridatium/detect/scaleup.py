@@ -19,8 +19,9 @@ from mithridatium.defenses.mmbd import get_device
 # One set of defaults for run_scaleup, the CLI and the MCP tool (tuned in #186).
 SCALEUP_DEFAULTS = {"num_samples": 64, "threshold": 0.5, "scales": (3, 5, 7, 9, 11)}
 
-# ponytail: flat batch cutoff. Swap for the paper's data-limited NSPC (Eq. 3-4)
-# once a clean set exists.
+# ponytail: flat batch cutoff. It separates mostly-clean batches from mostly-triggered
+# ones, but on clean data it can't tell a poisoned model from a clean one. Swap for
+# the paper's data-limited NSPC (Eq. 3-4) once a clean set exists.
 FLAGGED_FRACTION_THRESHOLD = 0.45
 
 

@@ -34,6 +34,9 @@ for scales in SCALE_SETS:
                     flags[model_name, stream, seed] = [s["flagged"] for s in result["per_sample"]]
         seconds = (time.perf_counter() - start) / len(flags)
         rate = lambda m, s: sum(sum(flags[m, s, seed]) for seed in SEEDS) / (len(SEEDS) * max(SAMPLE_COUNTS))
+        # "Right" means only the poisoned model's triggered batch is flagged: the cutoff
+        # separates mostly-clean batches from mostly-triggered ones. It is not #186's
+        # model-level check; detect only scores clean inputs, where both models look alike.
         right = {(cutoff, n): sum(all((sum(flags[m, s, seed][:n]) / n >= cutoff) == ((m, s) == ("poison", "triggered"))
                                       for m in models for s in streams) for seed in SEEDS)
                  for cutoff in CUTOFFS for n in SAMPLE_COUNTS}

@@ -56,7 +56,8 @@ not expose one yet, and there is no `--seed` flag.
 ## Tuned defaults
 
 From `scripts/tune_scaleup.py` (`sbatch scripts/run_scaleup_tuning.sbatch`), on
-`resnet18_clean.pth` and `resnet18_poison.pth`, seeds 42/43/44.
+`resnet18_clean.pth` and `resnet18_poison.pth`, seeds 42/43/44. The numbers
+reproduce on Libra, on GPU and CPU.
 
 | Setting | Before | Now |
 | --- | --- | --- |
@@ -65,12 +66,21 @@ From `scripts/tune_scaleup.py` (`sbatch scripts/run_scaleup_tuning.sbatch`), on
 | `scales` | (3, 5, 7, 9, 11) | (3, 5, 7, 9, 11) |
 | batch cutoff | 0.20 | 0.45 |
 
-Clean inputs are flagged 15-18% of the time and triggered ones 74%, so a 0.20
-cutoff gave wrong verdicts on some seeds; 0.45 was right on every seed at 32 to
-256 inputs. Threshold and scales were not improved by the grid in a way that
-held up: larger scales only look better because amplified images collapse to
-class 0, this backdoor's target. A model poisoned toward class 7 is not
-detected at any setting.
+Clean inputs are flagged 15-18% of the time and triggered ones 74%. Any cutoff
+from about 0.3 to 0.6 separates a mostly-clean batch from a mostly-triggered one
+at 32 to 256 inputs (on Libra, 0.6 missed one seed at 32); 0.45 sits in the
+middle of that range. That is all the cutoff does. The threshold and scales were
+not improved by the grid in a way that held up: larger scales only look better
+because amplified images collapse to class 0, which is also this backdoor's
+target, and a model poisoned toward class 7 is not detected at any setting.
+
+**The verdict can't tell a poisoned model from a clean one on clean data.**
+`detect --method scaleup` scores the clean test split, and on clean images the
+two checkpoints flag almost the same share (17% and 15%): both flag 13 of 64
+inputs and both read "likely clean". No cutoff fixes that, because clean images
+don't separate the models. The verdict only means something when the batch may
+contain triggered inputs. The paper's data-limited NSPC (Eq. 3-4) is the planned
+follow-up.
 
 ## Licensing
 
