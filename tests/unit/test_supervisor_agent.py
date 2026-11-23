@@ -24,7 +24,7 @@ def _call(name, request, i):
     return AIMessage(content="", tool_calls=[{"name": name, "args": {"request": request}, "id": f"call_{i}"}])
 
 
-def _run(monkeypatch, prompt, script, audit_reply="audit: clean"):
+def _run(monkeypatch, prompt, script, audit_reply="audit: clean", llm=None):
     mocks = {
         "audit_agent": AsyncMock(return_value=audit_reply),
         "detect_agent": AsyncMock(return_value="detect: clean"),
@@ -34,8 +34,9 @@ def _run(monkeypatch, prompt, script, audit_reply="audit: clean"):
         monkeypatch.setattr(sup, name, mock)
     messages = [_call(name, req, i) for i, (name, req) in enumerate(script)]
     messages.append(AIMessage(content="summary"))
-    monkeypatch.setattr(sup, "init_chat_model", lambda **_: ScriptedModel(messages=iter(messages)))
-    assert asyncio.run(sup.supervisor_agent(prompt)) == "summary"
+    monkeypatch.setattr(sup, "chat_model", lambda llm=None: ScriptedModel(messages=iter(messages)))
+    monkeypatch.delenv("MITHRIDATIUM_LLM", raising=False)
+    assert asyncio.run(sup.supervisor_agent(prompt, llm=llm)) == "summary"
     return mocks
 
 
@@ -46,7 +47,7 @@ def _run(monkeypatch, prompt, script, audit_reply="audit: clean"):
 ])
 def test_single_agent_routing(monkeypatch, prompt, tool, agent):
     mocks = _run(monkeypatch, prompt, [(tool, prompt)])
-    mocks[agent].assert_awaited_once_with(prompt)
+    mocks[agent].assert_awaited_once_with(prompt, llm="gpt-4o-mini")
     for other, mock in mocks.items():
         if other != agent:
             mock.assert_not_awaited()
@@ -60,7 +61,7 @@ def test_conditional_repair_chains_after_flagged_audit(monkeypatch):
         audit_reply="mmbd: attack",
     )
     mocks["audit_agent"].assert_awaited_once()
-    mocks["repair_agent"].assert_awaited_once_with("Repair models/resnet18_poison.pth")
+    mocks["repair_agent"].assert_awaited_once_with("Repair models/resnet18_poison.pth", llm="gpt-4o-mini")
 
 
 def test_clean_audit_skips_repair(monkeypatch):
@@ -71,9 +72,20 @@ def test_clean_audit_skips_repair(monkeypatch):
 
 
 def test_supervisor_tools_are_the_three_agents():
-    assert {t.name for t in (sup.audit, sup.detect, sup.repair)} == {"audit", "detect", "repair"}
+    assert {t.name for t in sup._specialist_tools("gpt-4o-mini")} == {"audit", "detect", "repair"}
 
 
+def test_supervisor_passes_its_llm_to_specialists(monkeypatch):
+    prompt = "Check models/resnet18_poison.pth"
+    mocks = _run(
+        monkeypatch, prompt,
+        [("audit", "Audit models/resnet18_poison.pth"), ("detect", "Detect models/resnet18_poison.pth")],
+        llm="gpt-4o",
+    )
+    mocks["audit_agent"].assert_awaited_once_with("Audit models/resnet18_poison.pth", llm="gpt-4o")
+    mocks["detect_agent"].assert_awaited_once_with("Detect models/resnet18_poison.pth", llm="gpt-4o")
+
+    
 def test_build_agent_run_summary_from_fake_message_history():
     prompt = "Check models/resnet18_poison.pth and repair it if it's poisoned"
     messages = [
@@ -144,7 +156,8 @@ def test_supervisor_agent_run_with_summary(monkeypatch):
     ]
     messages = [_call(name, req, i) for i, (name, req) in enumerate(script)]
     messages.append(AIMessage(content="Run completed successfully."))
-    monkeypatch.setattr(sup, "init_chat_model", lambda **_: ScriptedModel(messages=iter(messages)))
+    monkeypatch.setattr(sup, "chat_model", lambda llm=None: ScriptedModel(messages=iter(messages)))
+    monkeypatch.delenv("MITHRIDATIUM_LLM", raising=False)
 
     final_msg, summary = asyncio.run(sup.supervisor_agent(prompt, return_summary=True))
     assert final_msg == "Run completed successfully."

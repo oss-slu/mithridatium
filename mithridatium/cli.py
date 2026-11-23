@@ -900,6 +900,12 @@ def ui(
     launch_ui(host=host, port=port, share=share)
 
 
+# model-name prefixes that LangChain's init_chat_model routes to OpenAI
+_OPENAI_LLM_PREFIXES = ("openai:", "gpt-", "o1", "o3", "o4", "chatgpt")
+
+def _needs_openai_key(llm: str) -> bool:
+    return llm.lower().startswith(_OPENAI_LLM_PREFIXES)
+
 @app.command()
 def agent(
     prompt: str = typer.Argument(
@@ -912,6 +918,12 @@ def agent(
         "-a",
         help=f"Agent to run: {', '.join(AGENTS)}.",
     ),
+    llm: str = typer.Option(
+        None,
+        "--llm",
+        help="Chat model for the agents, e.g. gpt-4o or ollama:llama3.1. "
+        "Defaults to $MITHRIDATIUM_LLM, then gpt-4o-mini.",
+    ),
     report: Path = typer.Option(
         None,
         "--report",
@@ -923,11 +935,6 @@ def agent(
         "--force",
         "-f",
         help="Overwrite existing files without asking.",
-    ),
-    model: str = typer.Option(
-        "gpt-4o-mini",
-        "--model",
-        help="Chat model use for agent",
     ),
 ) -> None:
     """
@@ -966,9 +973,13 @@ def agent(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    # check openai api key after loading agent module
-    if not os.environ.get("OPENAI_API_KEY"):
-        typer.secho("Error: OPENAI_API_KEY is not set (export it or add it to .env).", err=True)
+    # the agent module loads .env on import, so resolve and check after importing it
+    llm = module.resolve_llm(llm)
+    if _needs_openai_key(llm) and not os.environ.get("OPENAI_API_KEY"):
+        typer.secho(
+            f"Error: OPENAI_API_KEY is not set (export it or add it to .env); needed for '{llm}'.",
+            err=True,
+        )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     # use given prompt or fall back to default agent prompt
@@ -978,7 +989,7 @@ def agent(
     if agent_name == "supervisor" and report is not None:
         try:
             final_message, summary = asyncio.run(
-                module.supervisor_agent(actual_prompt, model_name=model, return_summary=True)
+                module.supervisor_agent(actual_prompt, llm=llm, return_summary=True)
             )
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
@@ -988,9 +999,7 @@ def agent(
     elif agent_name == "supervisor":
         # run supervisor without writing a report file
         try:
-            final_message = asyncio.run(
-                module.supervisor_agent(actual_prompt, model_name=model)
-            )
+            final_message = asyncio.run(module.supervisor_agent(actual_prompt, llm=llm))
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
@@ -999,7 +1008,7 @@ def agent(
         # run requested specialist agent
         run = getattr(module, f"{agent_name}_agent")
         try:
-            typer.echo(asyncio.run(run(actual_prompt)))
+            typer.echo(asyncio.run(run(actual_prompt, llm=llm)))
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
