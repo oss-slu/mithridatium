@@ -33,7 +33,12 @@ from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
 from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
-from mithridatium.repair import run_lmr
+from mithridatium.repair import (
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+    run_lmr,
+)
 
 try:
     VERSION = package_version("mithridatium")
@@ -1067,7 +1072,7 @@ def repair(
         help="ANP ASR: number of non-target CIFAR-10 test samples to evaluate (default: 500).",
     ),
     seed: int = typer.Option(
-        None, "--seed", "-s",
+        0, "--seed", "-s",
         help="Random seed for reproducibility.",
     ),
     out: Path = typer.Option(
@@ -1082,13 +1087,22 @@ def repair(
         False, "--force", "-f",
         help="Overwrite the checkpoint or report if it already exists.",
     ),
+    # LMR options
     lmr_target_class: int = typer.Option(
         None, "--lmr-target-class",
         help="LMR: target class to repair. Required for LMR.",
     ),
     lmr_prune_ratio: float = typer.Option(
-        None, "--lmr-prune-ratio",
+        DEFAULT_PRUNE_RATIO, "--lmr-prune-ratio",
         help="LMR: fraction of most-moved columns to prune.",
+    ),
+    lmr_repair_steps: int = typer.Option(
+        DEFAULT_REPAIR_STEPS, "--lmr-repair-steps",
+        help="LMR: optimization steps for Phase 1.",
+    ),
+    lmr_fine_tune_steps: int = typer.Option(
+        DEFAULT_FINE_TUNE_STEPS, "--lmr-fine-tune-steps",
+        help="LMR: fine-tuning steps after pruning.",
     ),
     clp_threshold_mult: float = typer.Option(
         3.0, "--clp-threshold-mult",
@@ -1108,16 +1122,10 @@ def repair(
     
     if method == "lmr":
 
-    #validate inputs for LMR
+    # Validate inputs for LMR
         if lmr_target_class is None:
             typer.secho(
                 "Error: --lmr-target-class is required for LMR repair.",
-                err=True,
-            )
-            raise typer.Exit(code=EXIT_USAGE_ERROR)
-        if lmr_prune_ratio is None:
-            typer.secho(
-                "Error: --lmr-prune-ratio is required for LMR repair.",
                 err=True,
             )
             raise typer.Exit(code=EXIT_USAGE_ERROR)
@@ -1129,6 +1137,12 @@ def repair(
             raise typer.Exit(code=EXIT_USAGE_ERROR)
         if not 0 <= lmr_prune_ratio < 1:
             typer.secho("Error: --lmr-prune-ratio must be in [0, 1).", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if lmr_repair_steps < 0:
+            typer.secho("Error: --lmr-repair-steps must be non-negative.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if lmr_fine_tune_steps < 0:
+            typer.secho("Error: --lmr-fine-tune-steps must be non-negative.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
         prune_ratio = lmr_prune_ratio
@@ -1205,7 +1219,15 @@ def repair(
             raise typer.Exit(code=EXIT_IO_ERROR)
 #run lmr
         try:
-            repaired_model, results = run_lmr(mdl, clean_loader, target_class=lmr_target_class, prune_ratio=prune_ratio, seed=seed_value)
+            repaired_model, results = run_lmr(
+                mdl,
+                clean_loader,
+                target_class=lmr_target_class,
+                prune_ratio=prune_ratio,
+                seed=seed_value,
+                repair_steps=lmr_repair_steps,
+                fine_tune_steps=lmr_fine_tune_steps,
+            )
 
         except Exception as ex:
             typer.secho(

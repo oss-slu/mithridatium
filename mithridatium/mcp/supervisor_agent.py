@@ -44,7 +44,7 @@ After a repair, run audit on the repaired checkpoint path that repair
 returned, not on the original.
 If an audit result gives a suspected_target, include it as the target class
 when you ask for an LMR repair. Pass through what a specialist says it is
-missing (for example LMR's prune ratio). Do not make those values up.
+missing (for example LMR's target class). Do not make those values up.
 End with a short summary: each tool you ran, its verdict, and where the
 repaired checkpoint and reports were saved. Report only what the tools
 returned. Do not invent metrics. A repaired checkpoint is not proven clean.
