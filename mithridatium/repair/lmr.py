@@ -176,14 +176,6 @@ DEFAULT_FINE_TUNE_STEPS = 10
 DEFAULT_CLEAN_SAMPLES = 500
 DEFAULT_SEED = 0
 
-LMR_DEFAULTS = {
-    "prune_ratio": DEFAULT_PRUNE_RATIO,
-    "repair_steps": DEFAULT_REPAIR_STEPS,
-    "fine_tune_steps": DEFAULT_FINE_TUNE_STEPS,
-    "clean_samples": DEFAULT_CLEAN_SAMPLES,
-    "seed": DEFAULT_SEED,
-}
-
 
 def run_lmr(
     model,

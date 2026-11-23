@@ -1,7 +1,11 @@
 from __future__ import annotations
 from typing import Any
 from mithridatium.cli import repair
-from mithridatium.repair import LMR_DEFAULTS
+from mithridatium.repair import (
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+)
 import json
 from pathlib import Path
 
@@ -21,9 +25,9 @@ def _repair_kwargs(
     clean_samples: int = 500,
     seed: int = 0,
     lmr_target_class: int | None = None,
-    lmr_prune_ratio: float = LMR_DEFAULTS["prune_ratio"],
-    lmr_repair_steps: int = LMR_DEFAULTS["repair_steps"],
-    lmr_fine_tune_steps: int = LMR_DEFAULTS["fine_tune_steps"],
+    lmr_prune_ratio: float = DEFAULT_PRUNE_RATIO,
+    lmr_repair_steps: int = DEFAULT_REPAIR_STEPS,
+    lmr_fine_tune_steps: int = DEFAULT_FINE_TUNE_STEPS,
 
     #clp parameters
     clp_threshold_mult: float = 3.0,
@@ -92,9 +96,9 @@ def _run_repair(repair_kwargs: dict[str, Any]) -> dict[str, Any]:
 @mcp.tool(run_in_thread=False)
 def run_lmr(
     lmr_target_class: int,
-    lmr_prune_ratio: float = LMR_DEFAULTS["prune_ratio"],
-    lmr_repair_steps: int = LMR_DEFAULTS["repair_steps"],
-    lmr_fine_tune_steps: int = LMR_DEFAULTS["fine_tune_steps"],
+    lmr_prune_ratio: float = DEFAULT_PRUNE_RATIO,
+    lmr_repair_steps: int = DEFAULT_REPAIR_STEPS,
+    lmr_fine_tune_steps: int = DEFAULT_FINE_TUNE_STEPS,
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
     out: str | None = None,

@@ -4,7 +4,6 @@ from .lmr import (
     DEFAULT_PRUNE_RATIO,
     DEFAULT_REPAIR_STEPS,
     DEFAULT_SEED,
-    LMR_DEFAULTS,
     run_lmr,
 )
 
@@ -14,6 +13,5 @@ __all__ = [
     "DEFAULT_PRUNE_RATIO",
     "DEFAULT_REPAIR_STEPS",
     "DEFAULT_SEED",
-    "LMR_DEFAULTS",
     "run_lmr",
 ]

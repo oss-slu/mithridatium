@@ -32,7 +32,12 @@ from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
-from mithridatium.repair import run_lmr, LMR_DEFAULTS
+from mithridatium.repair import (
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+    run_lmr,
+)
 
 try:
     VERSION = package_version("mithridatium")
@@ -1025,15 +1030,15 @@ def repair(
         help="LMR: target class to repair. Required for LMR.",
     ),
     lmr_prune_ratio: float = typer.Option(
-        LMR_DEFAULTS["prune_ratio"], "--lmr-prune-ratio",
+        DEFAULT_PRUNE_RATIO, "--lmr-prune-ratio",
         help="LMR: fraction of most-moved columns to prune.",
     ),
     lmr_repair_steps: int = typer.Option(
-        LMR_DEFAULTS["repair_steps"], "--lmr-repair-steps",
+        DEFAULT_REPAIR_STEPS, "--lmr-repair-steps",
         help="LMR: optimization steps for Phase 1.",
     ),
     lmr_fine_tune_steps: int = typer.Option(
-        LMR_DEFAULTS["fine_tune_steps"], "--lmr-fine-tune-steps",
+        DEFAULT_FINE_TUNE_STEPS, "--lmr-fine-tune-steps",
         help="LMR: fine-tuning steps after pruning.",
     ),
     clp_threshold_mult: float = typer.Option(
