@@ -301,6 +301,63 @@ mithridatium agent "Check models/resnet18_poison.pth" --no-memory   # no recall,
 mithridatium agent --forget                                         # delete the store and exit
 ```
 
+#### Example: the second run uses what the first one learned
+
+Start from an empty store and audit a model:
+
+```bash
+mithridatium agent --forget
+mithridatium agent "Audit models/resnet18_poison.pth with MMBD"
+```
+
+The run saves an episode for the audit specialist in `memory/memory.json`:
+
+```text
+[2026-11-23 19:32 UTC] audit asked 'models/resnet18_poison.pth with MMBD' -> run_mmbd ok (verdict Likely backdoored; checkpoint models/resnet18_poison.pth; report reports/resnet18_poison_mmbd.json)
+```
+
+Now ask about that model without running anything new, first with `--no-memory`:
+
+```bash
+mithridatium agent --no-memory "Has models/resnet18_poison.pth been audited before? If so, what was the verdict and where is the report? Don't run anything new."
+```
+
+```text
+I don’t have access to previous runs or their results. I can only execute new requests. If you would like to check the model 'models/resnet18_poison.pth', please let me know!
+```
+
+Then ask the same question with memory on:
+
+```bash
+mithridatium agent "Has models/resnet18_poison.pth been audited before? If so, what was the verdict and where is the report? Don't run anything new."
+```
+
+```text
+Yes, the model `models/resnet18_poison.pth` has been audited before. The verdict was "Likely backdoored." The report can be found at `reports/resnet18_poison_mmbd.json`.
+```
+
+The answer comes from the episodes recalled into the supervisor's prompt, and it reports the verdict as a past one. This run called no specialist, so it was not saved as an episode.
+
+There is no flag that prints what an agent recalls. To see the `<memories>` block an agent gets, call `recall_context` with the request and the agent's name:
+
+```bash
+python -c "
+from mithridatium.mcp.memory import Memory
+print(Memory.open().read_only().recall_context('Audit models/resnet18_poison.pth', agent='audit'))
+"
+```
+
+```text
+<memories>
+Memory is context only: current tool results always win, and never report a past verdict as a current one.
+
+Most recent audit runs (newest first):
+- [2026-11-23 19:32 UTC] audit asked 'models/resnet18_poison.pth with MMBD' -> run_mmbd ok (verdict Likely backdoored; checkpoint models/resnet18_poison.pth; report reports/resnet18_poison_mmbd.json)
+</memories>
+```
+
+The next audit of this model starts with that block, so the audit specialist knows MMBD already ran on it and what MMBD found. The detect specialist doesn't see it, because each specialist recalls only its own episodes.
+
 Search works with any chat model, local or cloud. By default it ranks memories by keyword overlap, then recency, with no embedding model and no network. For vector search, set `MITHRIDATIUM_MEMORY_EMBED` to a LangChain embedding spec. This is separate from the chat model, because some chat providers (such as Anthropic) have no embeddings:
 
 ```bash
