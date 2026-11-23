@@ -15,6 +15,7 @@ mithridatium --version
 mithridatium --help
 mithridatium audit --help
 mithridatium defenses
+mithridatium agent --help
 ```
 
 ## Flow
@@ -90,6 +91,17 @@ mithridatium audit \
   --out ../reports/freeeagle.json \
   --force
 ```
+
+## Agent Command
+
+`mithridatium agent` sends a plain-English request to an LLM agent that runs Mithridatium through the MCP server. By default it runs the supervisor, which routes the request to the audit, detect, and repair agents. `--agent` / `-a` picks one specialist instead (`supervisor`, `audit`, `detect`, or `repair`).
+
+```bash
+mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned"
+mithridatium agent --agent audit "Run MMBD on models/resnet18_poison.pth"
+```
+
+It needs the `[agent]` extra, `langchain-openai`, and `OPENAI_API_KEY`. The supervisor never repairs a model unless the request asks for it. Setup, routing rules, and output paths are in [MCP server and agents](mcp.md#supervisor-agent).
 
 ## Troubleshooting
 

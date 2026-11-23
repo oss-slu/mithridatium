@@ -1,11 +1,13 @@
 from __future__ import annotations
 from typing import Any
 from mithridatium.cli import detect
+from mithridatium.detect.scaleup import SCALEUP_DEFAULTS
 import json
 from pathlib import Path
 
 from mithridatium.mcp import mcp
 from mithridatium.mcp.audit_mcp import _catch_output
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 
 # detect parameters
 def _detect_kwargs(
@@ -14,17 +16,17 @@ def _detect_kwargs(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
 
-    #scaleup parameters (sample count reduced from the CLI's 256 for smoke runs)
-    scaleup_num_samples: int = 128,
-    scaleup_threshold: float = 0.5,
+    #scaleup parameters (shared with the CLI defaults)
+    scaleup_num_samples: int = SCALEUP_DEFAULTS["num_samples"],
+    scaleup_threshold: float = SCALEUP_DEFAULTS["threshold"],
     scaleup_scales: list[float] | None = None,
 
-    #ted parameters (reduced from the CLI's 256 / 1000 for smoke runs)
-    ted_num_samples: int = 128,
-    ted_reference_size: int = 250,
-    ted_contamination: float = 0.01,
-    tedpp_samples_per_class: int = 5,
-    tedpp_beta: float = 0.5,
+    #ted parameters (shared with the CLI defaults)
+    ted_num_samples: int = TED_DEFAULTS.num_samples,
+    ted_reference_size: int = TED_DEFAULTS.reference_size,
+    ted_contamination: float = TED_DEFAULTS.contamination,
+    tedpp_samples_per_class: int = TEDPP_DEFAULTS.samples_per_class,
+    tedpp_beta: float = TEDPP_DEFAULTS.beta,
 
     #ibdpsc parameters (sample count reduced from the CLI's 256 for smoke runs)
     ibdpsc_num_samples: int = 128,
@@ -33,7 +35,7 @@ def _detect_kwargs(
     ibdpsc_num_models: int = 5,
     ibdpsc_threshold: float = 0.9,
 ) -> dict[str, Any]:
-    scales = tuple(scaleup_scales) if scaleup_scales else (3, 5, 7, 9, 11)
+    scales = tuple(scaleup_scales) if scaleup_scales else SCALEUP_DEFAULTS["scales"]
     return {
         "method": method,
         "model": model,
@@ -68,8 +70,8 @@ def _run_detect(detect_kwargs: dict[str, Any]) -> dict[str, Any]:
 def run_scaleup(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
-    scaleup_num_samples: int = 128,
-    scaleup_threshold: float = 0.5,
+    scaleup_num_samples: int = SCALEUP_DEFAULTS["num_samples"],
+    scaleup_threshold: float = SCALEUP_DEFAULTS["threshold"],
     scaleup_scales: list[float] | None = None,
 ):
     """Run SCALE-UP detection and return the mithridatium detect report."""
@@ -86,9 +88,9 @@ def run_scaleup(
 def run_ted(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
-    ted_num_samples: int = 128,
-    ted_reference_size: int = 250,
-    ted_contamination: float = 0.01,
+    ted_num_samples: int = TED_DEFAULTS.num_samples,
+    ted_reference_size: int = TED_DEFAULTS.reference_size,
+    ted_contamination: float = TED_DEFAULTS.contamination,
 ):
     """Run TED detection and return the mithridatium detect report."""
     return _run_detect(_detect_kwargs(
@@ -104,11 +106,11 @@ def run_ted(
 def run_tedpp(
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
-    ted_num_samples: int = 128,
-    ted_reference_size: int = 250,
-    ted_contamination: float = 0.01,
-    tedpp_samples_per_class: int = 5,
-    tedpp_beta: float = 0.5,
+    ted_num_samples: int = TED_DEFAULTS.num_samples,
+    ted_reference_size: int = TED_DEFAULTS.reference_size,
+    ted_contamination: float = TED_DEFAULTS.contamination,
+    tedpp_samples_per_class: int = TEDPP_DEFAULTS.samples_per_class,
+    tedpp_beta: float = TEDPP_DEFAULTS.beta,
 ):
     """Run TED++ detection and return the mithridatium detect report."""
     return _run_detect(_detect_kwargs(

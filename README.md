@@ -38,7 +38,7 @@ The project documentation has been reorganized under [`docs/`](docs/README.md).
 
 - New contributors should start with the [docs index](docs/README.md), [architecture overview](docs/architecture/overview.md), and [glossary](docs/glossary.md).
 - Users running audits should see the [defenses overview](docs/defenses/overview.md) and [testing guide](docs/testing/overview.md).
-- The MCP server and bundled audit agent are documented in [MCP server and audit agent](docs/architecture/mcp.md).
+- The MCP server and the agents (supervisor, audit, detect, repair) are documented in [MCP server and agents](docs/architecture/mcp.md).
 - Future maintainers should read the [tech lead handoff](docs/handoff/tech-lead-handoff.md), [known issues](docs/handoff/known-issues.md), and [future work](docs/handoff/future-work.md).
 
 ## Quickstart
@@ -50,7 +50,7 @@ pip install -e ".[dev]"
 # Optional extras:
 # pip install -e ".[hf]"      # Hugging Face model loading
 # pip install -e ".[ui]"      # Streamlit/Gradio UI dependencies
-# pip install -e ".[agent]"   # MCP server and audit agent
+# pip install -e ".[agent]"   # MCP server and agents
 # pip install -e ".[all]"     # Everything for development/demo work
 
 # (A) Train demo models (fast settings)
@@ -79,7 +79,13 @@ mithridatium audit --model models/resnet18_poison.pth --defense mmbd --data cifa
 
 # (C) See report JSON
 cat reports/mmbd.json
+
+# (D) Optional: let the supervisor agent pick the checks (needs the [agent] extra,
+#     langchain-openai, and OPENAI_API_KEY)
+mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned"
 ```
+
+The supervisor agent is the recommended entry point for the agent workflow. It sends your request to the audit, detect, and repair agents as needed, and only runs a repair when you ask for one. The agents remember past runs in `memory/memory.json`. Pass `--no-memory` to skip memory, or `--forget` to clear it. See [Supervisor agent](docs/architecture/mcp.md#supervisor-agent) and [Memory](docs/architecture/mcp.md#memory).
 
 For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-commands.md).
 
@@ -88,7 +94,9 @@ For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-c
 To see all available options and arguments:
 
 ```bash
+mithridatium --help          # list all commands (audit, detect, repair, defenses, agent, ...)
 mithridatium audit --help
+mithridatium agent --help
 ```
 
 Defense-specific options are documented in [`docs/defenses/`](docs/defenses/overview.md). Keeping the full CLI help in the command output avoids stale duplicated option lists in this README.

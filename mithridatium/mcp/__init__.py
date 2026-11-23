@@ -9,4 +9,5 @@ def main():
     os.environ["MITHRIDATIUM_NUM_WORKERS"] = "0"
     from mithridatium.mcp import audit_mcp, detect_mcp, repair_mcp
 
-    mcp.run(transport="stdio")
+    # stdio servers are started by the agents; keep their stderr to warnings only
+    mcp.run(transport="stdio", show_banner=False, log_level="WARNING")

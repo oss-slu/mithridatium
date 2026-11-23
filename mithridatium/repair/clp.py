@@ -16,7 +16,6 @@ import json
 import math
 import sys
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
 from pathlib import Path
 from mithridatium import loader, report as rpt
 
@@ -104,7 +103,7 @@ def repair_clp(model_path: str, out: str, report: str, threshold_mult: float = C
 
     report_data = {
         "mithridatium_version": version,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": rpt.utc_timestamp(),
         "model_path": str(model_path),
         "defense": "clp",
         "dataset": "n/a (data-free)", 

@@ -1,4 +1,20 @@
 from .clp import CLP_DEFAULT_THRESHOLD_MULT, repair_clp
-from .lmr import run_lmr
+from .lmr import (
+    DEFAULT_CLEAN_SAMPLES,
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+    DEFAULT_SEED,
+    run_lmr,
+)
 
-__all__ = ["CLP_DEFAULT_THRESHOLD_MULT", "repair_clp", "run_lmr"]
+__all__ = [
+    "CLP_DEFAULT_THRESHOLD_MULT",
+    "DEFAULT_CLEAN_SAMPLES",
+    "DEFAULT_FINE_TUNE_STEPS",
+    "DEFAULT_PRUNE_RATIO",
+    "DEFAULT_REPAIR_STEPS",
+    "DEFAULT_SEED",
+    "repair_clp",
+    "run_lmr",
+]

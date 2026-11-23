@@ -1,6 +1,15 @@
 from __future__ import annotations
 from typing import Any
 from mithridatium.cli import repair
+from mithridatium.repair.anp_defaults import (
+    ANP_ALPHA, ANP_CLEAN_SAMPLES, ANP_CLEAN_SUBSET_SEED, ANP_EPS,
+    ANP_ITERATIONS, ANP_PRUNE_THRESHOLD, ANP_STEPS,
+)
+from mithridatium.repair import (
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+)
 import json
 from pathlib import Path
 
@@ -18,20 +27,23 @@ def _repair_kwargs(
     force: bool = False,
 
     #lmr parameters
-    clean_samples: int = 500,
+    clean_samples: int = ANP_CLEAN_SAMPLES,
     seed: int | None = None,
     lmr_target_class: int | None = None,
-    lmr_prune_ratio: float | None = None,
+    lmr_prune_ratio: float = DEFAULT_PRUNE_RATIO,
+    lmr_repair_steps: int = DEFAULT_REPAIR_STEPS,
+    lmr_fine_tune_steps: int = DEFAULT_FINE_TUNE_STEPS,
 
     #clp parameters
     clp_threshold_mult: float = CLP_DEFAULT_THRESHOLD_MULT,
 
     # anp parameters
-    anp_eps: float = 0.4,
-    anp_alpha: float = 0.2,
-    anp_steps: int = 1,
-    anp_prune_threshold: float = 0.2,
-    anp_iterations: int = 2000,
+    anp_eps: float = ANP_EPS,
+    anp_alpha: float = ANP_ALPHA,
+    anp_steps: int = ANP_STEPS,
+    anp_prune_threshold: float = ANP_PRUNE_THRESHOLD,
+    anp_iterations: int = ANP_ITERATIONS,
+    anp_clean_subset_seed: int | None = ANP_CLEAN_SUBSET_SEED,
     anp_prune_fraction: float | None = None,
     anp_attack_target: int | None = None,
     anp_trigger_type: str | None = None,
@@ -53,6 +65,8 @@ def _repair_kwargs(
         "seed": seed,
         "lmr_target_class": lmr_target_class,
         "lmr_prune_ratio": lmr_prune_ratio,
+        "lmr_repair_steps": lmr_repair_steps,
+        "lmr_fine_tune_steps": lmr_fine_tune_steps,
         #clp parameters
         "clp_threshold_mult": clp_threshold_mult,
         # anp parameters
@@ -61,6 +75,7 @@ def _repair_kwargs(
         "anp_steps": anp_steps,
         "anp_prune_threshold": anp_prune_threshold,
         "anp_iterations": anp_iterations,
+        "anp_clean_subset_seed": anp_clean_subset_seed,
         "anp_prune_fraction": anp_prune_fraction,
         "anp_attack_target": anp_attack_target,
         "anp_trigger_type": anp_trigger_type,
@@ -84,16 +99,19 @@ def _run_repair(repair_kwargs: dict[str, Any]) -> dict[str, Any]:
         "report": json.loads(report.read_text()),
     }
 
+# LMR tool
 @mcp.tool(run_in_thread=False)
 def run_lmr(
     lmr_target_class: int,
-    lmr_prune_ratio: float,
+    lmr_prune_ratio: float = DEFAULT_PRUNE_RATIO,
+    lmr_repair_steps: int = DEFAULT_REPAIR_STEPS,
+    lmr_fine_tune_steps: int = DEFAULT_FINE_TUNE_STEPS,
     model: str = "models/resnet18.pth",
     data: str = "cifar10",
     out: str | None = None,
     force: bool = False,
     clean_samples: int = 500,
-    seed: int | None = None,
+    seed: int = 0,
 ):
     """Run LMR repair, save the repaired checkpoint, and return its path and the mithridatium repair report."""
     return _run_repair(_repair_kwargs(
@@ -106,6 +124,8 @@ def run_lmr(
         seed=seed,
         lmr_target_class=lmr_target_class,
         lmr_prune_ratio=lmr_prune_ratio,
+        lmr_repair_steps=lmr_repair_steps,
+        lmr_fine_tune_steps=lmr_fine_tune_steps,
     ))
 
 @mcp.tool(run_in_thread=False)
@@ -130,13 +150,14 @@ def run_anp(
     data: str = "cifar10",
     out: str | None = None,
     force: bool = False,
-    clean_samples: int = 500,
+    clean_samples: int = ANP_CLEAN_SAMPLES,
     seed: int | None = None,
-    anp_eps: float = 0.4,
-    anp_alpha: float = 0.2,
-    anp_steps: int = 1,
-    anp_prune_threshold: float = 0.2,
-    anp_iterations: int = 2000,
+    anp_eps: float = ANP_EPS,
+    anp_alpha: float = ANP_ALPHA,
+    anp_steps: int = ANP_STEPS,
+    anp_prune_threshold: float = ANP_PRUNE_THRESHOLD,
+    anp_iterations: int = ANP_ITERATIONS,
+    anp_clean_subset_seed: int | None = ANP_CLEAN_SUBSET_SEED,
     anp_prune_fraction: float | None = None,
     anp_attack_target: int | None = None,
     anp_trigger_type: str | None = None,
@@ -145,7 +166,11 @@ def run_anp(
     anp_trigger_pos: str | None = None,
     anp_asr_samples: int | None = None,
 ):
-    """Run ANP repair. Supply a known CIFAR-10 trigger type and target to include ASR."""
+    """Run ANP repair. Default clean-subset selection uses seed (or 0 if omitted).
+
+    Set anp_clean_subset_seed only to override the subset seed independently.
+    Supply a known CIFAR-10 trigger type and target to include ASR.
+    """
     return _run_repair(_repair_kwargs(
         "anp",
         model=model,
@@ -159,6 +184,7 @@ def run_anp(
         anp_steps=anp_steps,
         anp_prune_threshold=anp_prune_threshold,
         anp_iterations=anp_iterations,
+        anp_clean_subset_seed=anp_clean_subset_seed,
         anp_prune_fraction=anp_prune_fraction,
         anp_attack_target=anp_attack_target,
         anp_trigger_type=anp_trigger_type,
