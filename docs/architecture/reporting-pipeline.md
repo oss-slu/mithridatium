@@ -37,7 +37,7 @@ Each defense returns its own result payload. Common fields include:
 - `thresholds`
 - `parameters`
 
-The CLI default path is `reports/report.json`, or whatever `--out` is set to. MCP tools do not use that default. They write `reports/<checkpoint-stem>_<defense>.json` relative to the server's working directory and overwrite an existing file of the same name. See [MCP server and audit agent](mcp.md).
+The CLI default path is `reports/report.json`, or whatever `--out` is set to. MCP tools do not use that default. They write `reports/<checkpoint-stem>_<defense>.json` relative to the server's working directory and overwrite an existing file of the same name. See [MCP server and agents](mcp.md).
 
 ## Agent Run Summary
 
