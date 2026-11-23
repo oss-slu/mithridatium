@@ -43,16 +43,41 @@ set rather than only the test data used to select hyperparameters.
 
 ### Staged parameter search
 
+The initial `threshold` stage included **seven thresholds**: 
+`0`, `0.01`, `0.025`, `0.05`, `0.10`, `0.15`,and `0.20`. 
+It used the poisoned checkpoint, ANP optimization seed `0`,
+`eps=0.4`, `alpha=0.2`, `steps=1`, and `clean_samples=500`. At threshold
+`0.20`, post-repair clean accuracy was **62.6%** and ASR was **56.0%**
+(on the original 500-image evaluation). That threshold was **not** included
+in the later `threshold-seeds` stage, which evaluated seven *different*
+thresholds (`0`, `0.025`, `0.05`, `0.075`, `0.10`, `0.12`, `0.15`) across
+three optimizer seeds on both checkpoints. The union of these stages gives
+the nine thresholds in the committed sweep grid; it is **not** a claim
+that all nine were evaluated in every stage.
+
 The original ANP search was **staged, not a full Cartesian grid**. Across its
 stages, the tested pruning thresholds were `0`, `0.01`, `0.025`, `0.05`,
 `0.075`, `0.10`, `0.12`, `0.15`, and `0.20`; `eps` values were `0.2`, `0.4`,
 and `0.6`; `alpha` values were `0.1`, `0.2`, and `0.3`; `steps` values were
 `1` and `2`; and clean sample counts were `250`, `500`, and `1000`.
 
-The `threshold-seeds` stage retested selected thresholds with ANP optimization
-seeds **0, 1, 2** on clean and poisoned checkpoints while holding the 500-image
-training subset fixed at `clean_subset_seed=1234`. This measured optimizer-seed
-variability, **not** variation across clean training-image selections.
+### `threshold-seeds` stage
+
+To check whether pruning-threshold behavior was consistent across ANP
+optimization seeds, this stage tested the **seven thresholds** `0`, `0.025`,
+`0.05`, `0.075`, `0.10`, `0.12`, and `0.15` with optimization seeds **0, 1, 2**
+on both **poisoned and clean ResNet-18** checkpoints: **42 runs** total. It used
+`eps=0.4`, `alpha=0.3`, `steps=1`, `clean_samples=500`, and
+`iterations=2000`, while keeping the clean training subset fixed
+(`clean_subset_seed=1234`).
+
+The goal was to compare ASR reduction against clean-accuracy loss across
+thresholds and optimization seeds. Because the clean subset did not change,
+these runs measured **optimization-seed variability**, not variability from
+which clean images were selected. The subsequent `final` stage evaluated the
+selected defaults with `eps=0.2` and `alpha=0.2`; it should not be treated as
+identical to the earlier `threshold-seeds` setting. Original results are in
+the staged-search CSV shared with PR #184.
 
 ### Five-subset validation on the full CIFAR-10 test set
 
