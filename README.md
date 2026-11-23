@@ -85,7 +85,7 @@ cat reports/mmbd.json
 mithridatium agent "Check models/resnet18_poison.pth and repair it if it's poisoned"
 ```
 
-The supervisor agent is the recommended entry point for the agent workflow. It sends your request to the audit, detect, and repair agents as needed, and only runs a repair when you ask for one. See [Supervisor agent](docs/architecture/mcp.md#supervisor-agent).
+The supervisor agent is the recommended entry point for the agent workflow. It sends your request to the audit, detect, and repair agents as needed, and only runs a repair when you ask for one. The agents remember past runs in `memory/memory.json`. Pass `--no-memory` to skip memory, or `--forget` to clear it. See [Supervisor agent](docs/architecture/mcp.md#supervisor-agent) and [Memory](docs/architecture/mcp.md#memory).
 
 For more examples, see [`docs/testing/sample-commands.md`](docs/testing/sample-commands.md).
 

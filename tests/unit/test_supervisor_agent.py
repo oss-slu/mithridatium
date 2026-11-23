@@ -36,7 +36,8 @@ def _run(monkeypatch, prompt, script, audit_reply="audit: clean", llm=None):
     messages.append(AIMessage(content="summary"))
     monkeypatch.setattr(sup, "chat_model", lambda llm=None: ScriptedModel(messages=iter(messages)))
     monkeypatch.delenv("MITHRIDATIUM_LLM", raising=False)
-    assert asyncio.run(sup.supervisor_agent(prompt, llm=llm)) == "summary"
+    # routing tests run without memory; tests/unit/test_agent_memory.py covers it
+    assert asyncio.run(sup.supervisor_agent(prompt, llm=llm, memory=False)) == "summary"
     return mocks
 
 

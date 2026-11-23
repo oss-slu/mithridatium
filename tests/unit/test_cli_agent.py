@@ -23,11 +23,13 @@ from mithridatium.cli import (
 pytestmark = pytest.mark.unit
 
 runner = CliRunner()
+memory_kwargs: list = []
 
 
 @pytest.fixture
 def fake_agents(monkeypatch):
     calls = []
+    memory_kwargs.clear()
     for name in AGENTS:
         mod = types.ModuleType(f"mithridatium.mcp.{name}_agent")
         mod.DEFAULT_PROMPT = f"default {name} prompt"
@@ -36,6 +38,7 @@ def fake_agents(monkeypatch):
 
         async def run(prompt, llm=None, _name=name, **kwargs):
             calls.append((_name, prompt, llm))
+            memory_kwargs.append(kwargs.get("memory"))
             if kwargs.get("return_summary"):
                 fake_summary = {
                     "prompt": prompt,
@@ -49,6 +52,18 @@ def fake_agents(monkeypatch):
 
         setattr(mod, f"{name}_agent", run)
         monkeypatch.setitem(sys.modules, mod.__name__, mod)
+    memory = types.ModuleType("mithridatium.mcp.memory")
+
+    class FakeMemory:
+        @classmethod
+        def open(cls):
+            return cls()
+
+        def read_only(self):
+            return "read-only memory"
+
+    memory.Memory = FakeMemory
+    monkeypatch.setitem(sys.modules, memory.__name__, memory)
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.delenv("MITHRIDATIUM_LLM", raising=False)
     return calls
@@ -150,3 +165,47 @@ def test_report_writes_file_and_respects_force(fake_agents, tmp_path):
     # overwrites with --force
     result_forced = runner.invoke(app, ["agent", "check model", "--report", str(report_file), "--force"])
     assert result_forced.exit_code == 0
+
+
+# verify specialists get a read-only memory view unless --no-memory is passed
+def test_specialist_gets_read_only_memory(fake_agents):
+    result = runner.invoke(app, ["agent", "-a", "audit", "hi"])
+    assert result.exit_code == 0, result.output
+    assert memory_kwargs == ["read-only memory"]
+
+
+def test_no_memory_flag_skips_memory(fake_agents):
+    result = runner.invoke(app, ["agent", "-a", "audit", "hi", "--no-memory"])
+    assert result.exit_code == 0, result.output
+    assert memory_kwargs == [None]
+
+
+# verify --forget clears the store and exits without running an agent
+def test_forget_clears_store_and_exits(fake_agents, monkeypatch, isolated_agent_memory):
+    memory = types.ModuleType("mithridatium.mcp.memory")
+
+    def forget():
+        existed = isolated_agent_memory.exists()
+        isolated_agent_memory.unlink(missing_ok=True)
+        return isolated_agent_memory, existed
+
+    memory.forget = forget
+    monkeypatch.setitem(sys.modules, memory.__name__, memory)
+    isolated_agent_memory.parent.mkdir(parents=True)
+    isolated_agent_memory.write_text("[]")
+
+    result = runner.invoke(app, ["agent", "--forget"])
+    assert result.exit_code == 0, result.output
+    assert "Cleared agent memory" in result.output
+    assert not isolated_agent_memory.exists()
+    assert fake_agents == []
+
+
+def test_openai_embeddings_need_openai_key(fake_agents, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY")
+    monkeypatch.setenv("MITHRIDATIUM_MEMORY_EMBED", "openai:text-embedding-3-small")
+    result = runner.invoke(app, ["agent", "--llm", "ollama:llama3.1", "hi"])
+    assert result.exit_code == EXIT_USAGE_ERROR
+    assert "memory embeddings" in result.output
+    assert fake_agents == []
+

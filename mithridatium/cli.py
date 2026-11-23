@@ -940,10 +940,34 @@ def agent(
         "-f",
         help="Overwrite existing files without asking.",
     ),
+    no_memory: bool = typer.Option(
+        False,
+        "--no-memory",
+        help="Run without agent memory: nothing is recalled or saved.",
+    ),
+    forget: bool = typer.Option(
+        False,
+        "--forget",
+        help="Clear the agent memory store and exit without running an agent.",
+    ),
 ) -> None:
     """
     Run an LLM agent that calls Mithridatium through the MCP server.
     """
+    if forget:
+        try:
+            from mithridatium.mcp.memory import forget as forget_memory
+        except ImportError:
+            typer.secho(
+                "Error: agents require the optional 'agent' dependencies. "
+                "Install with: pip install -e '.[agent]'",
+                err=True,
+            )
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        path, existed = forget_memory()
+        typer.echo(f"Cleared agent memory at {path}." if existed else f"No agent memory at {path}; nothing to clear.")
+        return
+
     # validate report options early before running any agents
     if report is not None:
         if str(report) == "-":
@@ -985,6 +1009,14 @@ def agent(
             err=True,
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
+    embed = os.environ.get("MITHRIDATIUM_MEMORY_EMBED", "")
+    if not no_memory and _needs_openai_key(embed) and not os.environ.get("OPENAI_API_KEY"):
+        typer.secho(
+            f"Error: OPENAI_API_KEY is not set; needed for memory embeddings '{embed}' "
+            "(unset MITHRIDATIUM_MEMORY_EMBED for keyword search, or pass --no-memory).",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
     # use given prompt or fall back to default agent prompt
     actual_prompt = prompt or getattr(module, "DEFAULT_PROMPT", "")
@@ -993,7 +1025,7 @@ def agent(
     if agent_name == "supervisor" and report is not None:
         try:
             final_message, summary = asyncio.run(
-                module.supervisor_agent(actual_prompt, llm=llm, return_summary=True)
+                module.supervisor_agent(actual_prompt, llm=llm, return_summary=True, memory=not no_memory)
             )
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
@@ -1003,16 +1035,21 @@ def agent(
     elif agent_name == "supervisor":
         # run supervisor without writing a report file
         try:
-            final_message = asyncio.run(module.supervisor_agent(actual_prompt, llm=llm))
+            final_message = asyncio.run(module.supervisor_agent(actual_prompt, llm=llm, memory=not no_memory))
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
         typer.echo(final_message)
     else:
-        # run requested specialist agent
+        # run requested specialist agent; standalone specialists read memory but never write it
         run = getattr(module, f"{agent_name}_agent")
         try:
-            typer.echo(asyncio.run(run(actual_prompt, llm=llm)))
+            kwargs = {}
+            if not no_memory:
+                from mithridatium.mcp.memory import Memory
+
+                kwargs["memory"] = Memory.open().read_only()
+            typer.echo(asyncio.run(run(actual_prompt, llm=llm, **kwargs)))
         except Exception as ex:
             typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)

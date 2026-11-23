@@ -28,6 +28,7 @@ agent = [
     "langchain-mcp-adapters==0.3.2",
     "python-dotenv",
     "langchain-openai",
+    "langmem",
 ]
 hf = [
     "transformers>=4.40",
