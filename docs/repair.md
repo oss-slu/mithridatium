@@ -150,8 +150,9 @@ Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`:
 #### Chosen Defaults and Rationale
 - **`prune_ratio = 0.10`**: In Grid 1, every prune ratio from 0.02 to 0.20 produced similar clean accuracy (~54.6%) and low ASR (1.3%–2.1%). Across 3 seeds, 0.05 and 0.10 had overlapping standard deviations (3.87 ± 4.14% vs. 3.97 ± 4.65% ASR). Because LMR was not sensitive to the prune ratio in this range, 0.10 was kept simply to retain the existing default.
 - **`repair_steps = 20` & `fine_tune_steps = 10`**: Tuning the step count showed a clearer difference: 10 repair steps left 19%–25% residual ASR, whereas 20 repair steps brought ASR down to ~1%–4% on these checkpoints.
+- **`clean_samples = 500`**: Retained to match the common default used across the repair CLI and ANP, providing sufficient data to lower ASR in testing.
 
-- **`clean_samples = 500`**: Retained to match the common default used across the repair CLI and ANP, providing sufficient data to lower ASR in testing. Runtimes were measured on an NVIDIA cluster GPU via CUDA. Observed runtimes for the same configuration exhibit some variance (~13s to ~20s) due to cluster load and device scheduling. Raw results are stored in `scripts/lmr_sweep_results.csv`.
+Runtimes were measured on an NVIDIA cluster GPU via CUDA. Observed runtimes for the same configuration exhibit some variance (~13s to ~20s) due to cluster load and device scheduling. Raw results are stored in `scripts/lmr_sweep_results.csv`.
 
 ### Caveats
 
