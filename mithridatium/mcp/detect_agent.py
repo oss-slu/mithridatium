@@ -4,10 +4,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from mithridatium.mcp.audit_agent import _load_mithridatium_mcp
+from mithridatium.mcp.audit_agent import mithridatium_tools
 from mithridatium.mcp.memory import with_memory
+from mithridatium.mcp.progress import progress_config
 from mithridatium.mcp.llm import chat_model, resolve_llm  # noqa: F401 (resolve_llm used by the CLI)
 
 DETECT_TOOLS = {"run_scaleup", "run_ted", "run_ibdpsc", "run_tedpp"}
@@ -26,15 +26,16 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 DEFAULT_PROMPT = "Run detection on models/resnet18_poison.pth."
 
-async def detect_agent(prompt: str, llm: str | None = None, memory=None, trace: list | None = None):
+async def detect_agent(
+    prompt: str, llm: str | None = None, memory=None, trace: list | None = None, progress: bool = False
+):
     """Run the detect specialist. `memory` is a read-only Memory view; `trace`, if given,
     receives the agent's messages so the supervisor can record which tools ran."""
-    client = MultiServerMCPClient(_load_mithridatium_mcp())
     model = chat_model(llm)
-    tools = [tool for tool in await client.get_tools() if tool.name in DETECT_TOOLS]
-    system_prompt, tools = with_memory(memory, "detect", prompt, DETECT_SYSTEM_PROMPT, tools)
-    agent = create_agent(model, tools, system_prompt=system_prompt)
-    result = await agent.ainvoke({"messages": prompt})
+    async with mithridatium_tools(DETECT_TOOLS) as tools:
+        system_prompt, tools = with_memory(memory, "detect", prompt, DETECT_SYSTEM_PROMPT, tools)
+        agent = create_agent(model, tools, system_prompt=system_prompt)
+        result = await agent.ainvoke({"messages": prompt}, config=progress_config(progress))
     messages = result.get("messages", [])
     if trace is not None:
         trace.extend(messages)
