@@ -77,6 +77,7 @@ def test_repair_clp_creates_checkpoint_and_valid_report(tmp_path, monkeypatch):
 
     payload = json.loads(report_file.read_text(encoding="utf-8"))
     rpt.validate_report_data(payload)
+    assert payload["timestamp_utc"].endswith("Z")
     assert payload["defense"] == "clp"
     assert payload["results"]["method"] == "clp"
     assert payload["results"]["parameters"]["threshold_mult"] == 1.0

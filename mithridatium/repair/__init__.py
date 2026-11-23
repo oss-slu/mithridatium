@@ -1,3 +1,17 @@
-from .lmr import run_lmr
+from .lmr import (
+    DEFAULT_CLEAN_SAMPLES,
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+    DEFAULT_SEED,
+    run_lmr,
+)
 
-__all__ = ["run_lmr"]
+__all__ = [
+    "DEFAULT_CLEAN_SAMPLES",
+    "DEFAULT_FINE_TUNE_STEPS",
+    "DEFAULT_PRUNE_RATIO",
+    "DEFAULT_REPAIR_STEPS",
+    "DEFAULT_SEED",
+    "run_lmr",
+]
