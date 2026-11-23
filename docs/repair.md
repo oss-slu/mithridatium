@@ -50,6 +50,7 @@ Currently supported:
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
 | `--anp-steps` | ANP: noise optimization steps per batch (positive integer; default `1`, as in upstream ANP). |
 | `--anp-iterations` | ANP: number of iterations cycling clean data during mask optimization (positive integer; default `2000`). |
+| `--anp-clean-subset-seed` | ANP: optional clean-reference subset seed; defaults to the regular `--seed`. |
 | `--anp-prune-threshold` | ANP: prune channels whose mask is at or below this value (between `0` and `1`; default `0.2`). |
 | `--anp-prune-fraction` | ANP: prune the lowest-scoring fraction of channels (between `0` and `1`; optional). |
 | `--anp-attack-target` | ANP ASR: known backdoor target class (CIFAR-10 label 0–9). Omit to skip ASR. |
@@ -247,10 +248,14 @@ During mask training each batch of 128 clean images is drawn with replacement an
 Channels with learned mask values `score <= threshold` are pruned by zeroing their BatchNorm weight, leaving bias intact to prevent feature drift.
 With `--anp-prune-fraction`, exactly that fraction of the lowest-scoring channels across all BatchNorm layers is pruned instead (ties broken by position).
 The `--clean-samples` option sets the number of clean images used (shared, default: `500`),
-`--anp-eps` controls the perturbation bound (default: `0.4`), `--anp-alpha` balances
+`--anp-eps` controls the perturbation bound (tuned default: `0.2`), `--anp-alpha` balances
 clean vs noisy loss (default: `0.2`), `--anp-steps` controls the noise optimization steps
 (default: `1`), `--anp-iterations` controls the total optimization steps (default: `2000`),
-and `--anp-prune-threshold` sets the cutoff below which channels are pruned (default: `0.2`).
+and `--anp-prune-threshold` sets the pruning cutoff (tuned default: `0.15`).
+By default, ANP randomly samples a reproducible clean-reference subset using the
+regular `--seed` value (which also controls optimization and evaluation). Use
+`--anp-clean-subset-seed` to override only the clean-subset selection. For example,
+`--anp-clean-subset-seed 1234` reproduces the earlier fixed-subset experiment below.
 
 ### Run ANP
 
@@ -260,10 +265,11 @@ mithridatium repair \
   --method anp \
   --data cifar10 \
   --clean-samples 500 \
-  --anp-eps 0.4 \
+  --anp-eps 0.2 \
   --anp-alpha 0.2 \
   --anp-steps 1 \
-  --anp-prune-threshold 0.2 \
+  --anp-prune-threshold 0.15 \
+  --seed 0 \
   --out models/resnet18_anp.pth \
   --report reports/repair_anp.json
 ```
@@ -271,6 +277,92 @@ mithridatium repair \
 This saves a new `.pth` checkpoint and a JSON report. The report's `results`
 include `method: "anp"`, parameter values, `total_channels_pruned`, a per-layer
 breakdown, `clean_accuracy_before`, `clean_accuracy_after`, and optional ASR metrics.
+
+### Tuned defaults (issue #184)
+
+ANP was tuned on `models/resnet18_poison.pth` (CIFAR-10; 4×4 white-square
+trigger in the bottom-right corner, target class 0), and checked against a
+separately trained `models/resnet18_clean.pth`. A small staged grid tested
+pruning thresholds (including 0.00–0.20), `eps` values 0.2/0.4/0.6, `alpha`
+values 0.1/0.2/0.3, `steps` 1/2, and clean sample counts 250/500/1000.
+The selected defaults are: **`prune_threshold=0.15`, `eps=0.2`, `alpha=0.2`,
+`steps=1`, `clean_samples=500`, `iterations=2000`**.
+
+For the **earlier fixed-subset experiment** (not a representative default-user estimate),
+the **same 500 clean training images** were selected
+with `clean_subset_seed=1234`, while ANP optimization used seeds **0, 1, 2**.
+Clean accuracy used 500 fixed CIFAR-10 test images; ASR used 500 fixed
+triggered non-target images. Mean ± sample standard deviation over three seeds:
+
+| Checkpoint | CA before | CA after | ASR before | ASR after | Channels pruned | Runtime |
+|---|---:|---:|---:|---:|---:|---:|
+| Poisoned | 62.8% | 62.47 ± 0.90% | 89.2% | 8.20 ± 0.87% | 147.7 ± 4.6 | 165.0 ± 2.4 s |
+| Clean | 83.8% | 82.53 ± 0.76% | Not applicable | Not applicable | 123.0 ± 1.0 | 167.0 ± 1.0 s |
+
+Within that fixed-subset experiment, clean-accuracy drop remained
+**≤ 3 percentage points in all six runs**.
+Worst observed loss: 1.2 points on the poisoned checkpoint and 1.8 points on
+the clean checkpoint. These are measurements on these checkpoints and 500-image
+evaluation subsets, **not proof of generalization** to all training subsets,
+other triggers, or the full CIFAR-10 test set. Earlier runs that changed the
+clean subset across seeds showed much higher ASR variability. Evaluating more
+clean subsets and backdoor variants should be tracked separately (see
+[issue #170](https://github.com/oss-slu/mithridatium/issues/170) for the original
+ANP over-pruning problem).
+
+These earlier values were obtained using a single fixed training subset and a
+500-image evaluation subset, with a lower-level sweep implementation. They do
+**not** establish typical ASR for randomly selected clean training data.
+Seed `1234` was used to hold the subset constant across optimizer seeds after
+initial experiments showed subset-dependent behavior; it was not validated as
+a representative clean subset. To reproduce that historical experiment, explicitly
+set `--anp-clean-subset-seed 1234`. Current CLI, Python, and MCP defaults instead
+select a reproducible clean subset using the run seed (e.g. `--seed 0` selects
+subset 0). These historical results have not been remeasured under the new default.
+
+#### Clean-subset variability (full CIFAR-10 test set)
+
+To assess the effect of training-subset selection, the tuned configuration was
+retested using the actual `run_anp()` repair function with **five randomly
+selected but reproducible clean subsets** (`clean_subset_seed` values 0–4).
+The ANP optimization seed was held at **0**, isolating changes in the 500 clean
+training examples; the test evaluation seed was held at **1234**. Each run used
+`prune_threshold=0.15`, `eps=0.2`, `alpha=0.2`, `steps=1`, and
+`iterations=2000`. Both clean and poisoned ResNet-18 checkpoints were tested.
+
+CA was measured on all **10,000 CIFAR-10 test images** and targeted ASR on the
+**9,000 non-target test images** for target class 0. Results below are mean ±
+sample standard deviation across five clean subsets:
+
+| Metric | Poisoned checkpoint | Clean checkpoint |
+|---|---:|---:|
+| Clean accuracy before repair | 61.09% | 82.18% |
+| Clean accuracy after repair | 61.59 ± 1.08% | 81.19 ± 0.54% |
+| Targeted ASR before repair | 90.73% | Not applicable |
+| Targeted ASR after repair | 48.53 ± 36.96% | Not applicable |
+| Channels pruned | 156.8 ± 9.8 | 127.2 ± 10.9 |
+
+Post-repair ASR ranged from **5.68% to 80.04%** across the five subsets.
+All ten repairs stayed within the **3-percentage-point clean-accuracy loss**
+limit. The largest observed clean-accuracy loss was **1.40 points** on the
+poisoned checkpoint and **1.61 points** on the clean checkpoint.
+
+These results reveal substantial clean-subset sensitivity despite modest
+clean-accuracy changes. The earlier fixed-subset **8.20 ± 0.87% ASR** is
+**not representative performance across clean subsets**; it was also measured
+on fewer evaluation images, so the two experiments are not directly comparable.
+These findings are specific to the tested checkpoints and white-square trigger;
+the poisoned checkpoint's relatively low baseline CA also limits claims about
+transfer to more strongly trained models. The raw CSVs are intended to be shared as
+attachments in the PR #184 discussion rather than checked into the repository.
+
+The original hyperparameter search was staged, not a full Cartesian grid. The
+`threshold-seeds` stage retested selected pruning thresholds with ANP
+optimization seeds **0, 1, 2** on a fixed clean subset; the later
+`subset-variability` stage instead varied clean training-subset seeds while
+holding the ANP optimization seed constant. The `run_anp()`-based sweep
+validates the repair backend, but a separate **real CLI invocation and JSON
+report** are still needed to verify user-facing CLI behavior.
 
 ### Optional ASR evaluation (known backdoor trigger)
 
@@ -335,7 +427,9 @@ non-target images predicted as the target / total triggered non-target images.
 All triggered evaluation images are selected deterministically using `--seed`.
 The same triggered set is evaluated on the model before and after repair.
 
-The MCP `run_anp` tool accepts the corresponding arguments
+The MCP `run_anp` tool uses `seed` for clean-subset selection by default,
+with optional `anp_clean_subset_seed` to override it independently, matching
+the CLI and Python API. It accepts the corresponding arguments
 `anp_attack_target`, `anp_trigger_type`, `anp_trigger_alpha`,
 `anp_trigger_size`, `anp_trigger_pos`, and `anp_asr_samples`, with the same defaults and validation. ASR arguments must
 be supplied with the attack target; leaving all ASR arguments out retains the
@@ -346,7 +440,7 @@ not remove the current ANP model-loader restriction to ResNet-18, and other
 repair methods are not automatically wired to ASR yet. Incorrect trigger
 metadata produces misleading ASR results.
 
-**Measured demo results:** 
+**Historical pre-tuning demo results (retained for context):**
 #### ANP ASR DEMO Evaluation Results
 
 ANP was evaluated on a poisoned ResNet-18 model trained on

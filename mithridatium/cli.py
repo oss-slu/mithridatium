@@ -27,6 +27,10 @@ from mithridatium.defenses.aeva import run_aeva
 from mithridatium.defense_config import apply_freeeagle_cli_options
 from mithridatium.repair.clp import repair_clp
 from mithridatium.repair.anp import run_anp
+from mithridatium.repair.anp_defaults import (
+    ANP_ALPHA, ANP_CLEAN_SAMPLES, ANP_CLEAN_SUBSET_SEED, ANP_EPS,
+    ANP_ITERATIONS, ANP_PRUNE_THRESHOLD, ANP_STEPS,
+)
 from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_TYPES, POSITIONS
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
@@ -1029,28 +1033,32 @@ def repair(
         help="The dataset name. E.g. 'cifar10' or 'imagenet_subset'.",
     ),
     clean_samples: int = typer.Option(
-        500, "--clean-samples", "-c",
+        ANP_CLEAN_SAMPLES, "--clean-samples", "-c",
         help="Number of clean samples the repair method may use.",
     ),
     anp_eps: float = typer.Option(
-        0.4, "--anp-eps",
+        ANP_EPS, "--anp-eps",
         help="Epsilon bound for adversarial perturbation in ANP."
     ),
     anp_alpha: float = typer.Option(
-        0.2, "--anp-alpha",
+        ANP_ALPHA, "--anp-alpha",
         help="Alpha weighting for natural vs perturbed loss in ANP."
     ),
     anp_steps: int = typer.Option(
-        1, "--anp-steps",
+        ANP_STEPS, "--anp-steps",
         help="Number of optimization steps for ANP."
     ),
     anp_prune_threshold: float = typer.Option(
-        0.2, "--anp-prune-threshold",
+        ANP_PRUNE_THRESHOLD, "--anp-prune-threshold",
         help="Threshold for pruning neurons in ANP."
     ),
     anp_iterations: int = typer.Option(
-        2000, "--anp-iterations",
+        ANP_ITERATIONS, "--anp-iterations",
         help="Number of iterations cycling the clean set during ANP mask training."
+    ),
+    anp_clean_subset_seed: int | None = typer.Option(
+        ANP_CLEAN_SUBSET_SEED, "--anp-clean-subset-seed",
+        help="Override the ANP clean-reference subset seed (default: use --seed).",
     ),
     anp_prune_fraction: float = typer.Option(
         None, "--anp-prune-fraction",
@@ -1331,6 +1339,9 @@ def repair(
         if clean_samples <= 0:
             typer.secho("Error: --clean-samples must be a positive integer.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if anp_clean_subset_seed is not None and anp_clean_subset_seed < 0:
+            typer.secho("Error: --anp-clean-subset-seed must be nonnegative.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
         asr_options = (anp_trigger_type, anp_trigger_alpha, anp_trigger_size, anp_trigger_pos, anp_asr_samples)
         if anp_attack_target is None and any(option is not None for option in asr_options):
             typer.secho("Error: --anp-attack-target is required when providing ANP trigger/ASR options.", err=True)
@@ -1410,6 +1421,7 @@ def repair(
                 prune_fraction=anp_prune_fraction,
                 clean_samples=clean_samples,
                 seed=seed if seed is not None else 0,
+                clean_subset_seed=anp_clean_subset_seed,
                 version=VERSION,
                 triggered_eval_dataset=triggered_eval_dataset,
                 attack_target=anp_attack_target,
