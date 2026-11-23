@@ -3,6 +3,7 @@ import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
+from typing import Annotated
 import torch
 import typer
 import ast
@@ -172,11 +173,12 @@ def audit(
         "-f",
         help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
     ),
-    fail_on_backdoor: bool = typer.Option(
-        False,
+    # Annotated so the Python default is a real False: the MCP tools call audit() as a
+    # function, where an omitted typer.Option(False) default is a truthy OptionInfo
+    fail_on_backdoor: Annotated[bool, typer.Option(
         "--fail-on-backdoor",
         help="Exit with a distinct non-zero code when the report suspects a backdoor. Useful in CI.",
-    ),
+    )] = False,
     freeeagle_num_classes: int = typer.Option(
         0,
         "--freeeagle-num-classes",
