@@ -31,6 +31,7 @@ from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_T
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
 from mithridatium.repair import run_lmr
 
@@ -541,30 +542,33 @@ def detect(
 
         ),
         ted_num_samples: int = typer.Option(
-            256,
+            TED_DEFAULTS.num_samples,
             "--ted-num-samples",
             min=1,
             help="TED: the number of test images to score.",
         ),
         ted_reference_size: int = typer.Option(
-            1000,
+            TED_DEFAULTS.reference_size,
             "--ted-reference-size",
             min=1,
-            help="TED: the cap on known-clean reference images, drawn from the training split.",
+            help=(
+                "TED/TED++: candidate clean references from the training split. "
+                "TED++ classifies up to twice this many candidates."
+            ),
         ),
         ted_contamination: float = typer.Option(
-            0.01,
+            TED_DEFAULTS.contamination,
             "--ted-contamination",
             help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
         ),
         tedpp_samples_per_class: int = typer.Option(
-            5,
+            TEDPP_DEFAULTS.samples_per_class,
             "--tedpp-samples-per-class",
             min=2,
             help="TED++: number of correctly classified clean reference inputs selected per class.",
         ),
         tedpp_beta: float = typer.Option(
-            0.5,
+            TEDPP_DEFAULTS.beta,
             "--tedpp-beta",
             help=(
                 "TED++ tube-neighbor fraction. For each clean activation, k = "
@@ -738,17 +742,6 @@ def detect(
     except ValueError as ex:
         typer.secho(f"Error: {ex}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
-    if (
-        m == "ted++"
-        and cfg.get_num_classes() * tedpp_samples_per_class > ted_reference_size
-    ):
-        typer.secho(
-            "Error: --ted-reference-size must be at least the number of classes "
-            "times --tedpp-samples-per-class.",
-            err=True,
-        )
-        raise typer.Exit(code=EXIT_USAGE_ERROR)
-
     print(f"[cli] loading model from {p}…")
 
     try:
@@ -782,7 +775,6 @@ def detect(
                 # 2x headroom for the misclassified images ted() drops from the reference set
                 reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
                 suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
-                reference_size=ted_reference_size,
                 contamination=ted_contamination,
                 device=get_device(0),
             )
@@ -790,8 +782,13 @@ def detect(
             test_ds, train_ds = test_loader.dataset, train_loader.dataset
             results = tedpp(
                 mdl,
-                # same 2x headroom as TED for misclassified images dropped from the reference set
-                reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+                # Sample the bounded pool so a prefix cannot exclude rare classes.
+                reference_data=torch.utils.data.Subset(
+                    train_ds,
+                    torch.randperm(
+                        len(train_ds), generator=torch.Generator().manual_seed(0)
+                    )[: min(len(train_ds), 2 * ted_reference_size)].tolist(),
+                ),
                 suspect_data=torch.utils.data.Subset(
                     test_ds, range(min(len(test_ds), ted_num_samples))
                 ),

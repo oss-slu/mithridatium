@@ -6,17 +6,19 @@ import torch.nn as nn
 import torch.utils.data as data
 from pyod.models.pca import PCA
 
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
+from mithridatium.detect.verdict import batch_verdict
+
 
 class TEDPLUS():
     def __init__(self, 
                  model, 
                  reference_data, 
                  suspect_data, 
-                 reference_size=1000,
-                 contamination=0.01,
+                 contamination=TED_DEFAULTS.contamination,
                  batch_size=100,
-                 samples_per_class=5,
-                 beta=0.5,
+                 samples_per_class=TEDPP_DEFAULTS.samples_per_class,
+                 beta=TEDPP_DEFAULTS.beta,
                  seed=None,
                  device="cpu"):
         
@@ -24,16 +26,16 @@ class TEDPLUS():
         self.model = model
         self.ref_dat = reference_data
         self.sus_dat = suspect_data
-        self.ref_size = reference_size
         self.contam = contamination
         self.batch_size = batch_size
         self.seed = seed
         self.device = device
+        self.hook_handles = []
 
         if not 0 < contamination <= 0.5:
             raise ValueError("contamination must satisfy 0 < contamination <= 0.5.")
-        if samples_per_class < 2:
-            raise ValueError("samples_per_class must be at least 2.")
+        if samples_per_class < 1:
+            raise ValueError("samples_per_class must be at least 1.")
         if not 0 < beta <= 1 or math.ceil(samples_per_class * beta) >= samples_per_class:
             raise ValueError(
                 "beta must satisfy 0 < beta <= 1 and produce fewer neighbors "
@@ -45,14 +47,13 @@ class TEDPLUS():
         self.model.to(self.device)
 
         self.reference_loader = data.DataLoader(
-            reference_data, batch_size=batch_size, shuffle=False
+            self.ref_dat, batch_size=batch_size, shuffle=False
         )
         self.suspect_loader = data.DataLoader(
             suspect_data, batch_size=batch_size, shuffle=False
         )
 
         self.SAMPLES_PER_CLASS = samples_per_class
-        self.hook_handles = []
         self.activations = {}
 
         correct_indices_per_class = None
@@ -84,9 +85,6 @@ class TEDPLUS():
 
         if self.num_classes is None:
             raise ValueError("Clean reference data is empty.")
-        if samples_per_class < 1:
-            raise ValueError("samples_per_class must be positive.")
-
         rng = np.random.default_rng(seed)
         defense_indices = []
         for class_id, class_indices in enumerate(correct_indices_per_class):
@@ -392,11 +390,7 @@ class TEDPLUS():
         return {
             "mode": "input-level",
             "method": "ted++",
-            "verdict": (
-                "likely backdoored"
-                if flagged_fraction > self.contam
-                else "likely clean"
-            ),
+            "verdict": batch_verdict(flagged_fraction, self.contam),
             "num_inputs": expected_count,
             "num_flagged": num_flagged,
             "threshold": float(detector.threshold_),
@@ -434,10 +428,10 @@ def tedpp(
     model,
     reference_data,
     suspect_data,
-    contamination=0.01,
+    contamination=TED_DEFAULTS.contamination,
     batch_size=100,
-    samples_per_class=5,
-    beta=0.5,
+    samples_per_class=TEDPP_DEFAULTS.samples_per_class,
+    beta=TEDPP_DEFAULTS.beta,
     seed=None,
     device="cpu",
 ):

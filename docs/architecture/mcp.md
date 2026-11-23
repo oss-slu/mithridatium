@@ -55,6 +55,15 @@ Each tool takes the same general inputs as the CLI: `model`, `data`, `arch`, `pr
 
 Defaults match a local CIFAR-10 ResNet-18 checkpoint at `models/resnet18.pth`. Pass the checkpoint path you actually want to audit.
 
+The detection tools run synchronously (`run_in_thread=False`), so an MCP call
+blocks until detection finishes. TED's CPU runtime depends on the
+machine and its current load: in the latest CIFAR-10 sweep, the default
+500-reference setting took 255.3 ± 22.1 seconds for the poisoned model, while
+an earlier measurement was about 90 seconds. For comparison, the earlier
+128-sample/250-reference setting took about 30 seconds. Treat these as
+machine-specific examples and allow for longer requests when running TED
+through MCP.
+
 ## Reports
 
 A tool writes the report before it returns `{"report_path": ..., "report": ...}` to the caller:
