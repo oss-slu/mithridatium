@@ -38,3 +38,70 @@ The smoke test runs two iterations with small evaluation sets and writes to
 not a scientific accuracy test. The full runs use 2,000 mask-training
 iterations by default. For a fair final evaluation, use an independent holdout
 set rather than only the test data used to select hyperparameters.
+
+## Review validation and reproducibility (issue #184)
+
+### Staged parameter search
+
+The original ANP search was **staged, not a full Cartesian grid**. Across its
+stages, the tested pruning thresholds were `0`, `0.01`, `0.025`, `0.05`,
+`0.075`, `0.10`, `0.12`, `0.15`, and `0.20`; `eps` values were `0.2`, `0.4`,
+and `0.6`; `alpha` values were `0.1`, `0.2`, and `0.3`; `steps` values were
+`1` and `2`; and clean sample counts were `250`, `500`, and `1000`.
+
+The `threshold-seeds` stage retested selected thresholds with ANP optimization
+seeds **0, 1, 2** on clean and poisoned checkpoints while holding the 500-image
+training subset fixed at `clean_subset_seed=1234`. This measured optimizer-seed
+variability, **not** variation across clean training-image selections.
+
+### Five-subset validation on the full CIFAR-10 test set
+
+The reviewer-validation stage used the selected parameters:
+`prune_threshold=0.15`, `eps=0.2`, `alpha=0.2`, `steps=1`,
+`clean_samples=500`, and `iterations=2000`. It used five reproducibly selected
+training subsets (`clean_subset_seed=0,1,2,3,4`), with ANP optimization seed
+held fixed at **0** and evaluation seed held fixed at **1234**. Both clean and
+poisoned ResNet-18 checkpoints were evaluated. The stage calls the actual
+`mithridatium.repair.anp.run_anp()` implementation for loading, mask training,
+pruning, evaluation, and report generation rather than duplicating those steps.
+
+To reproduce these runs from the repository root:
+
+```bash
+python -u -m scripts.sweep_anp --stage subset-variability
+```
+
+This produces `reports/anp_subset_variability/all_results.csv`, with
+completed-run resume behavior. The evaluation covers **10,000** CIFAR-10 test
+images for clean accuracy and **9,000** non-target test images for targeted
+ASR (attack target 0).
+
+Results over the five training subsets (mean ± sample standard deviation):
+
+| Metric | Poisoned model | Clean model |
+|---|---:|---:|
+| Clean accuracy before | 61.09% | 82.18% |
+| Clean accuracy after | 61.59 ± 1.08% | 81.19 ± 0.54% |
+| Targeted ASR before | 90.73% | Not applicable |
+| Targeted ASR after | 48.53 ± 36.96% | Not applicable |
+| Channels pruned | 156.8 ± 9.8 | 127.2 ± 10.9 |
+
+Post-repair ASR ranged from **5.68% to 80.04%**. All **10** repairs kept
+clean-accuracy loss within three percentage points (worst loss: 1.40 points
+on the poisoned model; 1.61 points on the clean model). The original
+**8.20 ± 0.87% ASR** result used a single fixed clean training subset and a
+500-image evaluation subset, so it does **not** represent typical outcomes
+across training subsets; the two studies are not directly comparable.
+
+The raw tuning and validation CSVs should be **attached to PR #184**, not
+committed to the repository. `docs/repair.md` holds a shorter user-facing
+results summary. The poisoned checkpoint's low initial accuracy limits
+confidence about transfer to more strongly trained models and other triggers.
+
+### Remaining real-CLI verification
+
+Calling `run_anp()` tests the repair backend, but does **not** verify CLI
+argument parsing. A separate user-facing `mithridatium repair` run with the
+selected defaults is still required, followed by attaching its actual JSON
+report to PR #184. Check `mithridatium repair --help` for the installed CLI
+flags before running. A Slurm batch wrapper is a follow-up issue.
