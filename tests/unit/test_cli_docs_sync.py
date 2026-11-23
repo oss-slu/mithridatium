@@ -5,6 +5,7 @@ Guardrail so CLI flags stay documented.
   `audit` command must appear on that defense's page in `docs/defenses/`.
 - Each `--*` option on `detect` must appear in `docs/detect.md`.
 - Each `--*` option on `repair` must appear in `docs/repair.md`.
+- Each `--*` option on `agent` must appear in `docs/architecture/mcp.md`.
 
 The flag lists are read from the live Typer/Click command objects, not
 hard-coded snapshots.
@@ -36,6 +37,7 @@ DEFENSE_PREFIXES = {
 COMMAND_DOCS_MAP = {
     "detect": PROJECT_ROOT / "docs" / "detect.md",
     "repair": PROJECT_ROOT / "docs" / "repair.md",
+    "agent": PROJECT_ROOT / "docs" / "architecture" / "mcp.md",
 }
 
 
