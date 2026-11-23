@@ -57,3 +57,6 @@ Thumbs.db
 
 results.npy
 out/
+
+# Agent memory store (mithridatium agent)
+/memory/

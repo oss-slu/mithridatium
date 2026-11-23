@@ -256,6 +256,7 @@ The summary is built from the supervisor's message history. Each step records th
       "report_paths": ["reports/resnet18_poison_mmbd.json"],
       "checkpoint_paths": [],
       "verdicts": ["attack"],
+      "status": "success",
       "result": "..."
     }
   ],
@@ -263,7 +264,36 @@ The summary is built from the supervisor's message history. Each step records th
 }
 ```
 
+### Memory
+
+Agents remember across runs. The store is a LangMem/LangGraph store saved to `memory/memory.json` at the repo root (git-ignored). Set `MITHRIDATIUM_MEMORY_PATH` to put it somewhere else.
+
+It has two namespaces:
+
+- **semantic**: facts that stay true across runs, such as what a checkpoint is, its dataset and architecture, user preferences, and which methods suit which models.
+- **episodic**: what happened. After every run the supervisor records one episode for the run (which specialists it called, their verdicts, the checkpoint and report paths) and one for each specialist call (which MCP tools that specialist ran, whether each worked or failed, and what it returned).
+
+Every time an agent starts, it gets the relevant facts and its own past episodes in its system prompt. The supervisor sees which specialists it called for similar requests. Each specialist sees which of its tools worked or failed before, for example that AEVA ran out of memory on this checkpoint. The prompt says memory is context only: current tool results always win, and an agent never reports a past verdict as a current one.
+
+Only the supervisor writes memory. It also gets `manage_semantic_memory` and `manage_episodic_memory` tools, so the model can record facts or lessons beyond the automatic episodes. Specialists get only the `search_*_memory` tools and a read-only view. A specialist run directly (`--agent audit`) reads memory but records nothing.
+
+```bash
+mithridatium agent "Check models/resnet18_poison.pth" --no-memory   # no recall, nothing saved
+mithridatium agent --forget                                         # delete the store and exit
+```
+
+Search works with any chat model, local or cloud. By default it ranks memories by keyword overlap, then recency, with no embedding model and no network. For vector search, set `MITHRIDATIUM_MEMORY_EMBED` to a LangChain embedding spec. This is separate from the chat model, because some chat providers (such as Anthropic) have no embeddings:
+
+```bash
+MITHRIDATIUM_MEMORY_EMBED=ollama:nomic-embed-text        # local; pip install langchain-ollama
+MITHRIDATIUM_MEMORY_EMBED=openai:text-embedding-3-small  # cloud; needs OPENAI_API_KEY
+```
+
+The JSON file stores text only, never vectors. Memories are re-embedded on each run, so you can switch embedding models without clearing the store. With a cloud embedding model, all memory text is sent to that provider on every run. Use keyword search or a local model to keep it on the machine. The oldest episodes past 500 are dropped on save.
+
 ### Tests
+
+`tests/unit/test_agent_memory.py` covers memory with the fake chat model: something written in one run is found in the next, specialists only get read-only search, `--no-memory` never creates the store, and the keyword ranking and save/load order are checked.
 
 `tests/unit/test_supervisor_agent.py` checks the routing for the four sample prompts with a scripted fake chat model and mocked specialist agents, so it runs without an API key or GPU. It skips if the `[agent]` extra isn't installed.
 

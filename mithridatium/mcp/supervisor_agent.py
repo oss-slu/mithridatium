@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,25 +12,42 @@ from langchain_core.tools import tool
 from mithridatium.mcp.audit_agent import audit_agent
 from mithridatium.mcp.detect_agent import detect_agent
 from mithridatium.mcp.llm import chat_model, resolve_llm
+from mithridatium.mcp.memory import Memory, with_memory
 from mithridatium.mcp.repair_agent import repair_agent
 
-def _specialist_tools(llm: str):
-    """Wrap the three specialist agents as tools that all use the same chat model."""
+def _specialist_tools(llm: str, memory: Memory | None = None):
+    """Wrap the three specialist agents as tools that all use the same chat model.
+
+    With memory, each specialist gets a read-only view and the supervisor
+    records an episode of which tools the specialist ran and how they went.
+    """
+
+    async def call(name: str, run, request: str) -> str:
+        if memory is None:
+            return await run(request, llm=llm)
+        trace: list[Any] = []
+        try:
+            reply = await run(request, llm=llm, memory=memory.read_only(), trace=trace)
+        except Exception as ex:
+            memory.record_episode(name, _episode_text(name, request, trace, error=ex))
+            raise
+        memory.record_episode(name, _episode_text(name, request, trace))
+        return reply
 
     @tool
     async def audit(request: str) -> str:
         """Audit a checkpoint for backdoors (MMBD, STRIP, AEVA, FreeEagle). Include the model path."""
-        return await audit_agent(request, llm=llm)
+        return await call("audit", audit_agent, request)
 
     @tool
     async def detect(request: str) -> str:
         """Run poisoned-input detection (ScaleUp, TED, TED++, IBD-PSC) on a checkpoint. Include the model path."""
-        return await detect_agent(request, llm=llm)
+        return await call("detect", detect_agent, request)
 
     @tool
     async def repair(request: str) -> str:
         """Repair a backdoored checkpoint (CLP, LMR, ANP). Include the model path. Returns the repaired checkpoint path."""
-        return await repair_agent(request, llm=llm)
+        return await call("repair", repair_agent, request)
 
     return [audit, detect, repair]
 
@@ -53,6 +71,8 @@ missing (for example LMR's target class). Do not make those values up.
 End with a short summary: each tool you ran, its verdict, and where the
 repaired checkpoint and reports were saved. Report only what the tools
 returned. Do not invent metrics. A repaired checkpoint is not proven clean.
+Memory from past runs is context only. Current tool results always win.
+Never report a past verdict as a current one.
 """
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -195,6 +215,7 @@ def build_agent_run_summary(
                 "report_paths": report_paths,
                 "checkpoint_paths": checkpoint_paths,
                 "verdicts": verdicts,
+                "status": getattr(tool_msg, "status", "success") if tool_msg is not None else "no result",
                 "result": raw_result if isinstance(raw_result, str) else json.dumps(raw_result),
             }
             steps.append(step_data)
@@ -208,19 +229,94 @@ def build_agent_run_summary(
     }
 
 
+def _clip(text: str, limit: int = 200) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _error_text(result: str) -> str:
+    """The error lines of a failed tool result, without log noise or content-block JSON."""
+    try:
+        parsed = json.loads(result)
+        if isinstance(parsed, list):
+            result = _content_to_text(parsed)
+    except (TypeError, ValueError):
+        pass
+    lines = [line.strip() for line in str(result).splitlines() if line.strip()]
+    errors = [line for line in lines if "error" in line.lower() or line.lower().startswith("reason")]
+    return " ".join(errors[-2:] or lines[-1:])
+
+
+def _episode_text(agent: str, request: str, messages: list[Any], error: Exception | None = None) -> str:
+    """One-line record of a run: each tool called, whether it worked, its verdicts and paths.
+
+    Built only from tool results. The model's own reply is left out unless no
+    tool ran (then it is the only record, e.g. a missing LMR target class),
+    because a stored reply gets recalled and repeated in later runs.
+    """
+    summary = build_agent_run_summary(request, messages, agent_name=agent)
+    steps = [step for step in summary["steps"] if not _is_memory_tool(step["specialist"])]
+    parts = []
+    for step in steps:
+        detail = []
+        if step["status"] != "success":
+            detail.append(f"{step['status']}: {_clip(_error_text(step['result']), 160)}")
+        if step["verdicts"]:
+            detail.append("verdict " + ", ".join(step["verdicts"]))
+        if step["checkpoint_paths"]:
+            detail.append("checkpoint " + ", ".join(step["checkpoint_paths"]))
+        if step["report_paths"]:
+            detail.append("report " + ", ".join(step["report_paths"]))
+        ok = "ok" if step["status"] == "success" else "FAILED"
+        parts.append(f"{step['specialist']} {ok}" + (f" ({'; '.join(detail)})" if detail else ""))
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    text = f"[{stamp}] {agent} asked {_clip(request)!r} -> " + ("; ".join(parts) or "no tools called")
+    if error is not None:
+        text += f". Run failed: {_clip(error, 160)}"
+    elif not steps and summary["final_message"]:
+        text += f". Replied: {_clip(summary['final_message'])}"
+    return text
+
+
+def _is_memory_tool(name: str) -> bool:
+    return name.startswith(("search_", "manage_")) and name.endswith("_memory")
+
+
+def _called_tools(messages: list[Any]) -> bool:
+    """True if any non-memory tool was called."""
+    return any(
+        not _is_memory_tool(tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", ""))
+        for m in messages
+        for tc in (getattr(m, "tool_calls", None) or [])
+    )
+
+
 DEFAULT_PROMPT = "Run a test suite (audit and detect) as needed on models/resnet18_poison.pth and run repairs if there is sufficient evidence of a backdoor."
 
 async def supervisor_agent(
     prompt: str,
     llm: str | None = None,
     return_summary: bool = False,
+    memory: bool = True,
 ):
     # resolve once so the supervisor and every specialist it calls use one model
     llm = resolve_llm(llm)
     model = chat_model(llm)
-    agent = create_agent(model, _specialist_tools(llm), system_prompt=SUPERVISOR_SYSTEM_PROMPT)
-    result = await agent.ainvoke({"messages": prompt})
-    messages = result.get("messages", [])
+    store = Memory.open() if memory else None
+    try:
+        system_prompt, tools = with_memory(
+            store, "supervisor", prompt, SUPERVISOR_SYSTEM_PROMPT, _specialist_tools(llm, store)
+        )
+        agent = create_agent(model, tools, system_prompt=system_prompt)
+        result = await agent.ainvoke({"messages": prompt})
+        messages = result.get("messages", [])
+        # a run with no tool calls (a question about memory, a chat reply) is not an
+        # episode; recording it would feed the model's answer back as history
+        if store is not None and _called_tools(messages):
+            store.record_episode("supervisor", _episode_text("supervisor", prompt, messages))
+    finally:
+        if store is not None:
+            store.save()
     if return_summary:
         summary = build_agent_run_summary(
             prompt=prompt,

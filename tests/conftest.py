@@ -47,6 +47,15 @@ def pytest_configure(config):
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_agent_memory(tmp_path, monkeypatch) -> Path:
+    """Point agent memory at a temp file so no test reads or writes <repo>/memory/."""
+    path = tmp_path / "agent_memory" / "memory.json"
+    monkeypatch.setenv("MITHRIDATIUM_MEMORY_PATH", str(path))
+    monkeypatch.delenv("MITHRIDATIUM_MEMORY_EMBED", raising=False)
+    return path
+
+
 @pytest.fixture
 def project_root() -> Path:
     return PROJECT_ROOT
