@@ -31,8 +31,14 @@ from mithridatium.evaluation.triggered import build_triggered_dataset, TRIGGER_T
 from mithridatium.detect.scaleup import run_scaleup
 from mithridatium.detect.ted import ted
 from mithridatium.detect.tedpp import tedpp
+from mithridatium.detect.ted_defaults import TED_DEFAULTS, TEDPP_DEFAULTS
 from mithridatium.detect.ibdpsc import bn_layers, ibdpsc
-from mithridatium.repair import run_lmr
+from mithridatium.repair import (
+    DEFAULT_FINE_TUNE_STEPS,
+    DEFAULT_PRUNE_RATIO,
+    DEFAULT_REPAIR_STEPS,
+    run_lmr,
+)
 
 try:
     VERSION = package_version("mithridatium")
@@ -44,6 +50,7 @@ EXIT_USAGE_ERROR = 64     # invalid CLI usage (e.g., unsupported --defense)
 EXIT_NO_INPUT = 66        # input file missing/not a file
 EXIT_CANT_CREATE = 73     # cannot create/overwrite output without --force
 EXIT_IO_ERROR = 74        # input exists but can't be opened/read
+EXIT_BACKDOOR_SUSPECTED = 78  # backdoor suspected while running audit with --fail-on-backdoor
 
 app = typer.Typer(help="Mithridatium CLI - verify pretrained model integrity")
 
@@ -51,6 +58,7 @@ DEFENSES = {"freeeagle", "aeva", "mmbd", "strip"}
 REPAIR_METHODS = {"lmr", "clp", "anp"}
 
 DETECT_METHODS = {"scaleup", "ted", "ibdpsc", "ted++"}
+AGENTS = ("supervisor", "audit", "detect", "repair")
 
 def _check_out_writable(out_path: str, force: bool) -> None:
     """Exit early if out_path exists and --force wasn't given. "-" (stdout) always passes."""
@@ -159,6 +167,11 @@ def audit(
         "--force",
         "-f",
         help="This allows overwriting. E.g. if the output file already exists --force will overwrite it.",
+    ),
+    fail_on_backdoor: bool = typer.Option(
+        False,
+        "--fail-on-backdoor",
+        help="Exit with a distinct non-zero code when the report suspects a backdoor. Useful in CI.",
     ),
     freeeagle_num_classes: int = typer.Option(
         0,
@@ -470,6 +483,9 @@ def audit(
     _write_json(rep, out, force)
     print(rpt.render_summary(rep))
 
+    if fail_on_backdoor and rpt.report_flags_backdoor(rep):
+        raise typer.Exit(code=EXIT_BACKDOOR_SUSPECTED)
+
 @app.command()
 def detect(
         model: str = typer.Option(
@@ -531,30 +547,33 @@ def detect(
 
         ),
         ted_num_samples: int = typer.Option(
-            256,
+            TED_DEFAULTS.num_samples,
             "--ted-num-samples",
             min=1,
             help="TED: the number of test images to score.",
         ),
         ted_reference_size: int = typer.Option(
-            1000,
+            TED_DEFAULTS.reference_size,
             "--ted-reference-size",
             min=1,
-            help="TED: the cap on known-clean reference images, drawn from the training split.",
+            help=(
+                "TED/TED++: candidate clean references from the training split. "
+                "TED++ classifies up to twice this many candidates."
+            ),
         ),
         ted_contamination: float = typer.Option(
-            0.01,
+            TED_DEFAULTS.contamination,
             "--ted-contamination",
             help="TED: the fraction of clean reference inputs the threshold rejects (alpha), within 0 < alpha <= 0.5.",
         ),
         tedpp_samples_per_class: int = typer.Option(
-            5,
+            TEDPP_DEFAULTS.samples_per_class,
             "--tedpp-samples-per-class",
             min=2,
             help="TED++: number of correctly classified clean reference inputs selected per class.",
         ),
         tedpp_beta: float = typer.Option(
-            0.5,
+            TEDPP_DEFAULTS.beta,
             "--tedpp-beta",
             help=(
                 "TED++ tube-neighbor fraction. For each clean activation, k = "
@@ -728,17 +747,6 @@ def detect(
     except ValueError as ex:
         typer.secho(f"Error: {ex}", err=True)
         raise typer.Exit(code=EXIT_USAGE_ERROR)
-    if (
-        m == "ted++"
-        and cfg.get_num_classes() * tedpp_samples_per_class > ted_reference_size
-    ):
-        typer.secho(
-            "Error: --ted-reference-size must be at least the number of classes "
-            "times --tedpp-samples-per-class.",
-            err=True,
-        )
-        raise typer.Exit(code=EXIT_USAGE_ERROR)
-
     print(f"[cli] loading model from {p}…")
 
     try:
@@ -772,7 +780,6 @@ def detect(
                 # 2x headroom for the misclassified images ted() drops from the reference set
                 reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
                 suspect_data=torch.utils.data.Subset(test_ds, range(min(len(test_ds), ted_num_samples))),
-                reference_size=ted_reference_size,
                 contamination=ted_contamination,
                 device=get_device(0),
             )
@@ -780,8 +787,13 @@ def detect(
             test_ds, train_ds = test_loader.dataset, train_loader.dataset
             results = tedpp(
                 mdl,
-                # same 2x headroom as TED for misclassified images dropped from the reference set
-                reference_data=torch.utils.data.Subset(train_ds, range(min(len(train_ds), 2 * ted_reference_size))),
+                # Sample the bounded pool so a prefix cannot exclude rare classes.
+                reference_data=torch.utils.data.Subset(
+                    train_ds,
+                    torch.randperm(
+                        len(train_ds), generator=torch.Generator().manual_seed(0)
+                    )[: min(len(train_ds), 2 * ted_reference_size)].tolist(),
+                ),
                 suspect_data=torch.utils.data.Subset(
                     test_ds, range(min(len(test_ds), ted_num_samples))
                 ),
@@ -888,15 +900,11 @@ def ui(
     launch_ui(host=host, port=port, share=share)
 
 
-AGENTS = ("supervisor", "audit", "detect", "repair")
-
 # model-name prefixes that LangChain's init_chat_model routes to OpenAI
 _OPENAI_LLM_PREFIXES = ("openai:", "gpt-", "o1", "o3", "o4", "chatgpt")
 
-
 def _needs_openai_key(llm: str) -> bool:
     return llm.lower().startswith(_OPENAI_LLM_PREFIXES)
-
 
 @app.command()
 def agent(
@@ -916,10 +924,33 @@ def agent(
         help="Chat model for the agents, e.g. gpt-4o or ollama:llama3.1. "
         "Defaults to $MITHRIDATIUM_LLM, then gpt-4o-mini.",
     ),
-):
+    report: Path = typer.Option(
+        None,
+        "--report",
+        "-r",
+        help="Path to save the agent run JSON summary.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite existing files without asking.",
+    ),
+) -> None:
     """
     Run an LLM agent that calls Mithridatium through the MCP server.
     """
+    # validate report options early before running any agents
+    if report is not None:
+        if str(report) == "-":
+            typer.secho("Error: --report does not support '-' stdout.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if agent_name != "supervisor":
+            typer.secho("Error: --report is only supported for the supervisor agent.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        _check_out_writable(str(report), force)
+
+    # make sure the agent name is valid
     if agent_name not in AGENTS:
         typer.secho(
             f"Error: unknown agent '{agent_name}'. Choose from: {', '.join(AGENTS)}.",
@@ -931,6 +962,7 @@ def agent(
     import importlib
     import os
 
+    # import agent dependencies lazily
     try:
         module = importlib.import_module(f"mithridatium.mcp.{agent_name}_agent")
     except ImportError:
@@ -950,8 +982,36 @@ def agent(
         )
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    run = getattr(module, f"{agent_name}_agent")
-    typer.echo(asyncio.run(run(prompt or module.DEFAULT_PROMPT, llm=llm)))
+    # use given prompt or fall back to default agent prompt
+    actual_prompt = prompt or getattr(module, "DEFAULT_PROMPT", "")
+
+    # run supervisor with summary report output if requested
+    if agent_name == "supervisor" and report is not None:
+        try:
+            final_message, summary = asyncio.run(
+                module.supervisor_agent(actual_prompt, llm=llm, return_summary=True)
+            )
+        except Exception as ex:
+            typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
+        typer.echo(final_message)
+        _write_json(summary, str(report), force)
+    elif agent_name == "supervisor":
+        # run supervisor without writing a report file
+        try:
+            final_message = asyncio.run(module.supervisor_agent(actual_prompt, llm=llm))
+        except Exception as ex:
+            typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
+        typer.echo(final_message)
+    else:
+        # run requested specialist agent
+        run = getattr(module, f"{agent_name}_agent")
+        try:
+            typer.echo(asyncio.run(run(actual_prompt, llm=llm)))
+        except Exception as ex:
+            typer.secho(f"Error: agent execution failed.\nReason: {ex}", err=True)
+            raise typer.Exit(code=EXIT_IO_ERROR)
 
 
 @app.command("repair")
@@ -1021,7 +1081,7 @@ def repair(
         help="ANP ASR: number of non-target CIFAR-10 test samples to evaluate (default: 500).",
     ),
     seed: int = typer.Option(
-        None, "--seed", "-s",
+        0, "--seed", "-s",
         help="Random seed for reproducibility.",
     ),
     out: Path = typer.Option(
@@ -1036,13 +1096,22 @@ def repair(
         False, "--force", "-f",
         help="Overwrite the checkpoint or report if it already exists.",
     ),
+    # LMR options
     lmr_target_class: int = typer.Option(
         None, "--lmr-target-class",
         help="LMR: target class to repair. Required for LMR.",
     ),
     lmr_prune_ratio: float = typer.Option(
-        None, "--lmr-prune-ratio",
+        DEFAULT_PRUNE_RATIO, "--lmr-prune-ratio",
         help="LMR: fraction of most-moved columns to prune.",
+    ),
+    lmr_repair_steps: int = typer.Option(
+        DEFAULT_REPAIR_STEPS, "--lmr-repair-steps",
+        help="LMR: optimization steps for Phase 1.",
+    ),
+    lmr_fine_tune_steps: int = typer.Option(
+        DEFAULT_FINE_TUNE_STEPS, "--lmr-fine-tune-steps",
+        help="LMR: fine-tuning steps after pruning.",
     ),
     clp_threshold_mult: float = typer.Option(
         3.0, "--clp-threshold-mult",
@@ -1062,16 +1131,10 @@ def repair(
     
     if method == "lmr":
 
-    #validate inputs for LMR
+    # Validate inputs for LMR
         if lmr_target_class is None:
             typer.secho(
                 "Error: --lmr-target-class is required for LMR repair.",
-                err=True,
-            )
-            raise typer.Exit(code=EXIT_USAGE_ERROR)
-        if lmr_prune_ratio is None:
-            typer.secho(
-                "Error: --lmr-prune-ratio is required for LMR repair.",
                 err=True,
             )
             raise typer.Exit(code=EXIT_USAGE_ERROR)
@@ -1083,6 +1146,12 @@ def repair(
             raise typer.Exit(code=EXIT_USAGE_ERROR)
         if not 0 <= lmr_prune_ratio < 1:
             typer.secho("Error: --lmr-prune-ratio must be in [0, 1).", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if lmr_repair_steps < 0:
+            typer.secho("Error: --lmr-repair-steps must be non-negative.", err=True)
+            raise typer.Exit(code=EXIT_USAGE_ERROR)
+        if lmr_fine_tune_steps < 0:
+            typer.secho("Error: --lmr-fine-tune-steps must be non-negative.", err=True)
             raise typer.Exit(code=EXIT_USAGE_ERROR)
 
         prune_ratio = lmr_prune_ratio
@@ -1159,7 +1228,15 @@ def repair(
             raise typer.Exit(code=EXIT_IO_ERROR)
 #run lmr
         try:
-            repaired_model, results = run_lmr(mdl, clean_loader, target_class=lmr_target_class, prune_ratio=prune_ratio, seed=seed_value)
+            repaired_model, results = run_lmr(
+                mdl,
+                clean_loader,
+                target_class=lmr_target_class,
+                prune_ratio=prune_ratio,
+                seed=seed_value,
+                repair_steps=lmr_repair_steps,
+                fine_tune_steps=lmr_fine_tune_steps,
+            )
 
         except Exception as ex:
             typer.secho(
@@ -1340,6 +1417,7 @@ def repair(
         except Exception as ex:
             typer.secho(f"Error: failed to run ANP repair on model '{model}'.\nReason: {ex}", err=True)
             raise typer.Exit(code=EXIT_IO_ERROR)
+
 
 if __name__ == "__main__":
     app()

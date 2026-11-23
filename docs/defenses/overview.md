@@ -71,3 +71,4 @@ flowchart TD
 | 66 | Local model path missing or not a file |
 | 73 | Output file exists and `--force` not supplied |
 | 74 | Load, execution, report validation, or I/O failure |
+| 78 | Backdoor suspected while running `audit` with `--fail-on-backdoor` |

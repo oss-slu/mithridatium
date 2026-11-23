@@ -169,7 +169,23 @@ def fine_tune(model, clean_loader, classifier, mask, device, steps=10, learning_
 
     return completed
 
-def run_lmr(model, clean_loader, target_class, prune_ratio=0.10, seed=0, repair_steps=20, fine_tune_steps=10):
+# Tuned LMR defaults
+DEFAULT_PRUNE_RATIO = 0.10
+DEFAULT_REPAIR_STEPS = 20
+DEFAULT_FINE_TUNE_STEPS = 10
+DEFAULT_CLEAN_SAMPLES = 500
+DEFAULT_SEED = 0
+
+
+def run_lmr(
+    model,
+    clean_loader,
+    target_class,
+    prune_ratio=DEFAULT_PRUNE_RATIO,
+    seed=DEFAULT_SEED,
+    repair_steps=DEFAULT_REPAIR_STEPS,
+    fine_tune_steps=DEFAULT_FINE_TUNE_STEPS,
+):
     """Run the LMR repair algorithm on the model"""
 
     torch.manual_seed(seed)

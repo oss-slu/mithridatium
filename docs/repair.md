@@ -42,7 +42,9 @@ Currently supported:
 | `--report` / `-r` | Path for the JSON report, or `-` for stdout. Defaults to a sidecar beside `--out`. |
 | `--force` / `-f` | Overwrite the checkpoint or report if it already exists. |
 | `--lmr-target-class` | LMR: zero-based target class to repair (required; must be below the model's class count). |
-| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (required; at least `0` and less than `1`). |
+| `--lmr-prune-ratio` | LMR: fraction of most-moved columns to prune (optional; default `0.10`). |
+| `--lmr-repair-steps` | LMR: optimization steps for Phase 1 (optional; default `20`). |
+| `--lmr-fine-tune-steps` | LMR: fine-tuning steps after pruning (optional; default `10`). |
 | `--clp-threshold-mult` | CLP: finite, nonnegative pruning threshold multiplier (default `3.0`). |
 | `--anp-eps` | ANP: perturbation bound ε (finite, nonnegative; default `0.4`). |
 | `--anp-alpha` | ANP: weight on clean vs. perturbed loss (between `0` and `1`; default `0.2`). |
@@ -70,7 +72,11 @@ LMR also requires:
 
 - a small set of clean samples
 - a target class specified with `--lmr-target-class`
-- a pruning ratio specified with `--lmr-prune-ratio`
+
+Optional flags:
+- `--lmr-prune-ratio` (default `0.10`)
+- `--lmr-repair-steps` (default `20`)
+- `--lmr-fine-tune-steps` (default `10`)
 
 The clean samples are used during the repair and fine-tuning process.
 
@@ -84,10 +90,73 @@ mithridatium repair \
   --clean-samples 500 \
   --seed 42 \
   --lmr-target-class 0 \
-  --lmr-prune-ratio 0.10 \
   --out models/resnet18_repaired.pth \
   --report reports/repair_report.json
 ```
+
+### Tuned Defaults
+
+A parameter sweep was conducted using `scripts/sweep_lmr.py` on CIFAR-10 with a 4px bottom-right white-square trigger and target class 0. The poisoned model is the checkpoint CI downloads from Hugging Face (`SuperAddi1/resnet18_poison.pth` at commit `605e2f8`, sha256 `2d232167…`). The clean model is a ResNet-18 checkpoint with sha256 `e2cb1a9e…`. The script loads them from `models/resnet18_poison.pth` and `models/resnet18_clean.pth`.
+
+**Baselines before repair:**
+- Clean Model: Clean Accuracy (CA) = 60.21%, ASR = 5.90%
+- Poisoned Model: Clean Accuracy (CA) = 60.09%, ASR = 91.90%
+
+Both baseline checkpoints have around 60% clean accuracy on CIFAR-10, meaning these defaults were tuned on relatively undertrained models. Sensitivity and optimal parameter settings may differ on fully converged models.
+
+#### Grid 1: Prune Ratio Sweep
+Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`, `seed=0`:
+
+| `prune_ratio` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
+|---|---|---|---|
+| 0.02 | 54.33% | 1.50% | 0.64s |
+| 0.05 | 54.42% | 1.40% | 0.35s |
+| 0.10 | 54.21% | 0.50% | 0.35s |
+| 0.15 | 53.66% | 0.30% | 0.35s |
+| 0.20 | 53.45% | 0.70% | 0.34s |
+| 0.30 | 52.53% | 0.10% | 0.35s |
+
+#### Grid 2: Repair and Fine-Tune Steps
+Evaluated with `prune_ratio=0.10`, `clean_samples=500`, `seed=0`:
+
+| `repair_steps` | `fine_tune_steps` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
+|---|---|---|---|---|
+| 10 | 5 | 54.49% | 7.30% | 0.18s |
+| 10 | 10 | 55.68% | 5.40% | 0.23s |
+| 20 | 5 | 53.09% | 0.40% | 0.30s |
+| 20 | 10 | 54.03% | 0.40% | 0.35s |
+| 20 | 20 | 55.12% | 0.80% | 0.44s |
+| 30 | 10 | 54.64% | 0.40% | 0.47s |
+| 30 | 20 | 54.46% | 0.20% | 0.58s |
+
+#### Grid 3: Clean Samples
+Evaluated with `prune_ratio=0.10`, `repair_steps=20`, `fine_tune_steps=10`, `seed=0`:
+
+| `clean_samples` | Clean Accuracy (%) | ASR (%) | Runtime (s) |
+|---|---|---|---|
+| 250 | 53.38% | 0.00% | 0.35s |
+| 500 | 53.91% | 0.40% | 0.35s |
+| 1000 | 56.38% | 0.10% | 0.35s |
+
+The `prune_ratio=0.10`, 20/10, 500-sample configuration appears in all three grids. Its clean accuracy is 54.21% in Grid 1, 54.03% in Grid 2, and 53.91% in Grid 3, because LMR is not bit-for-bit deterministic on the GPU even with the same seed.
+
+#### Final Candidates Across 3 Seeds (Seeds 0, 42, 123)
+Evaluated with `repair_steps=20`, `fine_tune_steps=10`, `clean_samples=500`:
+
+| `prune_ratio` | Steps (rep/ft) | Samples | Mean CA (%) | Mean ASR (%) | Mean Runtime (s) |
+|---|---|---|---|---|---|
+| 0.05 | 20 / 10 | 500 | 54.31 ± 0.28% | 0.13 ± 0.19% | 0.35 ± 0.00s |
+| 0.10 | 20 / 10 | 500 | 54.23 ± 0.39% | 0.13 ± 0.19% | 0.35 ± 0.00s |
+| 0.15 | 20 / 10 | 500 | 53.72 ± 0.05% | 0.10 ± 0.14% | 0.35 ± 0.00s |
+
+#### Chosen Defaults and Rationale
+- **`prune_ratio = 0.10`**: In Grid 1, every prune ratio from 0.02 to 0.20 produced similar clean accuracy (53.45%–54.42%) and low ASR (0.30%–1.50%). Across 3 seeds, 0.05 and 0.10 had the same mean ASR (0.13 ± 0.19%) and nearly the same clean accuracy (54.31% vs. 54.23%). Because LMR was not sensitive to the prune ratio in this range, 0.10 was kept simply to retain the existing default. Clean accuracy starts to fall at 0.30 (52.53%).
+- **`repair_steps = 20` & `fine_tune_steps = 10`**: Tuning the step count showed a clearer difference: 10 repair steps left 5.40%–7.30% residual ASR, whereas 20 repair steps brought ASR down to 0.40%–0.80% on these checkpoints. 30 repair steps lowered ASR a little further (0.20%–0.40%) but took longer.
+- **`clean_samples = 500`**: Retained to match the common default used across the repair CLI and ANP. In this single-seed grid, 1000 samples gave higher clean accuracy (56.38% vs. 53.91%), so it may be worth revisiting with more seeds.
+
+At the chosen defaults, LMR lowers the poisoned model's ASR from 91.90% to under 1%, but clean accuracy drops by about 6 points (60.09% to 54.23% averaged over 3 seeds).
+
+Runtimes were measured on an NVIDIA L40S GPU via CUDA and cover the `run_lmr` call only, not evaluation. Every configuration took under a second (0.18s to 0.64s); the first run of the sweep was the slowest. Raw results, including each seed of the final candidates and the baselines, are stored in `scripts/lmr_sweep_results.csv`.
 
 ### Caveats
 
@@ -102,8 +171,6 @@ mithridatium repair \
 ### Future Work
 
 - Make this the actual LMR implementation from the repo
-
-- Add --lmr-repair-steps (default 20) and --lmr-fine-tune-steps (default 10) options to repair, following the pattern of --lmr-prune-ratio
 
 ## CLP (Channel Lipschitzness-based Pruning)
 
