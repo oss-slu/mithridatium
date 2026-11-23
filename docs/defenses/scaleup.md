@@ -79,8 +79,8 @@ target, and a model poisoned toward class 7 is not detected at any setting.
 two checkpoints flag almost the same share (17% and 15%): both flag 13 of 64
 inputs and both read "likely clean". No cutoff fixes that, because clean images
 don't separate the models. The verdict only means something when the batch may
-contain triggered inputs. The paper's data-limited NSPC (Eq. 3-4) is the planned
-follow-up.
+contain triggered inputs. The paper's data-limited NSPC (Eq. 3-4) is the follow-up,
+#210.
 
 ## Licensing
 

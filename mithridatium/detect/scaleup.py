@@ -21,7 +21,7 @@ SCALEUP_DEFAULTS = {"num_samples": 64, "threshold": 0.5, "scales": (3, 5, 7, 9, 
 
 # ponytail: flat batch cutoff. It separates mostly-clean batches from mostly-triggered
 # ones, but on clean data it can't tell a poisoned model from a clean one. Swap for
-# the paper's data-limited NSPC (Eq. 3-4) once a clean set exists.
+# the paper's data-limited NSPC (Eq. 3-4), issue #210.
 FLAGGED_FRACTION_THRESHOLD = 0.45
 
 
